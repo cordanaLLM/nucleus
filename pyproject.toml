@@ -7,7 +7,7 @@ minversion = "7.0"
 testpaths = ["tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]
-addopts = "-v --cov=. --cov-report=term-missing"
+addopts = "-v"
 
 [tool.coverage.run]
 source = ["."]

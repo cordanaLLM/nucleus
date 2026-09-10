@@ -116,5 +116,5 @@ Output `.deb` packages (`linux-image-*.deb`, `linux-headers-*.deb`) are staged u
 
 ## 6. License & Copyright
 
-`lusoris-kernel-forge` is open-source software licensed under the [Apache License 2.0](LICENSE).  
+`lusoris-kernel-forge` is open-source software licensed under the [Apache License 2.0](LICENSE).
 Copyright &copy; 2026 The Lusoris Authors. All rights reserved.

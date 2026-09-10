@@ -165,100 +165,94 @@ seed_milestones() {
     -f due_on="2026-11-29T00:00:00Z" >/dev/null 2>&1 || true
 }
 
-create_epics_batch1() {
-  local m1="$1"
-  local m2="$2"
+create_baseline_epics() {
+  local m1="v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge"
+  local m2="v1.1.0 - Multi-Arch Cross-Compilation & UKI Synthesis"
+
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Multi-Stream Kernel Release Matrix & Upstream Synchronization" \
     --label "epic,kind/feature,area/kernel-mainstream,area/kernel-lts,tier/p0" \
     --milestone "${m1}" \
     --body "### Summary
-Establish automated kernel compilation, patching, and verification across 4 live release streams (bleeding 7.3-rc2, mainstream 7.2.4, lts 6.18.50, realtime 7.2-rt).
+Automated kernel compilation and verification across 4 streams.
 
 ### Deliverables
-- [x] Declarative versions manifest (\`versions.json\`) with schema validation
-- [x] Stream build scripts adhering to NASA/JPL Power of 10
-- [ ] Containerized build matrix workflow (\`.github/workflows/build-matrix.yml\`)
-- [ ] Automated downstream release dispatch to \`lusoris-cloud-images\`" >/dev/null 2>&1 || true
+- [x] Declarative versions manifest (versions.json)
+- [x] Stream build scripts adhering to Power of 10
+- [ ] Containerized build matrix workflow
+- [ ] Downstream release dispatch to lusoris-cloud-images" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Hardened KConfig Baselines & KSPP CIS L2 Compliance" \
     --label "epic,kind/security,area/kconfig,tier/p0" \
     --milestone "${m1}" \
     --body "### Summary
-Construct composable, security-hardened kernel configuration fragments meeting Kernel Self-Protection Project (KSPP) and CIS Linux Benchmark Level 2 baselines.
+Hardened kconfig fragments meeting KSPP and CIS L2 baselines.
 
 ### Deliverables
-- [x] Base security lockdown fragments (\`kconfig/security-hardened.config\`)
-- [x] Architecture-specific virtualization and container fragments
-- [ ] Automated KConfig linter and symbol auditor
-- [ ] Inbound requirement verification workflow from cloud-images" >/dev/null 2>&1 || true
+- [x] Base security lockdown fragments
+- [x] Architecture-specific virtualization fragments
+- [ ] Automated KConfig linter and symbol auditor" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Multi-Architecture Cross-Compilation Engine (x86_64, arm64, riscv64)" \
     --label "epic,kind/feature,area/arch-x86_64,area/arch-arm64,tier/p1" \
     --milestone "${m2}" \
     --body "### Summary
-Build hermetic, cross-compilation pipeline leveraging LLVM/Clang 20 and GCC 15 toolchains across x86_64, ARM64, and RISC-V 64 targets.
+Hermetic cross-compilation pipeline across x86_64, ARM64, and RISC-V 64.
 
 ### Deliverables
-- [x] Architecture targets declared in \`versions.json\`
+- [x] Architecture targets declared in versions.json
 - [ ] Cross-compiler toolchain container definitions
-- [ ] Sub-second QEMU microVM boot verification test suite
-- [ ] Reproducible build attestation with Diffoscope" >/dev/null 2>&1 || true
+- [ ] Sub-second QEMU microVM boot verification" >/dev/null 2>&1 || true
 }
 
-create_epics_batch2() {
-  local m1="$1"
-  local m2="$2"
-  local m3="$3"
+create_advanced_epics() {
+  local m1="v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge"
+  local m2="v1.1.0 - Multi-Arch Cross-Compilation & UKI Synthesis"
+  local m3="v1.2.0 - Blackwell B200 / RTX 5090 & ROCm 10 Driver Matrix"
+
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Dual Packaging Pipeline (.deb & systemd-ukify UKI EFI)" \
     --label "epic,kind/feature,area/packaging,tier/p1" \
     --milestone "${m2}" \
     --body "### Summary
-Standardize packaging to output native Debian packages (\`linux-image\`, \`linux-headers\`) and signed Unified Kernel Image (\`.efi\`) binaries.
+Native Debian packages and signed Unified Kernel Image EFI binaries.
 
 ### Deliverables
-- [x] Upstream \`bindeb-pkg\` driver integration
+- [x] Upstream bindeb-pkg driver integration
 - [ ] systemd-ukify Unified Kernel Image packaging script
-- [ ] Cryptographic signing using Cosign keyless OIDC
-- [ ] CycloneDX and SPDX SBOM generation via Syft" >/dev/null 2>&1 || true
+- [ ] Cryptographic signing using Cosign keyless OIDC" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Enterprise CI/CD, Supply Chain Attestation & Downstream Dispatch" \
     --label "epic,kind/security,area/ci-cd,tier/p0" \
     --milestone "${m1}" \
     --body "### Summary
-Deploy an enterprise 12-workflow GitHub Actions CI/CD matrix with OpenSSF Scorecard, Semgrep SAST, Trivy CVE scanning, and branch protection aggregator.
+Enterprise 12-workflow CI/CD matrix with OpenSSF Scorecard and Semgrep.
 
 ### Deliverables
 - [x] Core CI quality gates and manifest linting
-- [ ] Single branch protection check aggregator (\`required-checks\`)
-- [ ] PR metadata and governance gate (\`pr-project-gate\`)
-- [ ] Automated downstream repository dispatch to \`lusoris-cloud-images\`" >/dev/null 2>&1 || true
+- [ ] Single branch protection check aggregator (required-checks)
+- [ ] Automated downstream dispatch to lusoris-cloud-images" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Next-Gen Hardware Acceleration & Scheduler Engine (Blackwell, Xe2, BBRv3, sched-ext)" \
     --label "epic,kind/feature,area/patches,area/ebpf-sched-ext,tier/p1" \
     --milestone "${m3}" \
     --body "### Summary
-Curate high-performance patches and drivers for NVIDIA Blackwell B200 / RTX 5090, Intel Xe2 Battlemage, AMD ROCm 10, BBRv3, and eBPF sched-ext.
+High-performance patches for Blackwell B200, Xe2, ROCm 10, BBRv3, and sched-ext.
 
 ### Deliverables
 - [x] Baseline sched-ext patch and tuning fragment
 - [ ] BBRv3 congestion control backports
-- [ ] Intel Xe2 DRM/KMS and Level Zero acceleration patches
-- [ ] NVIDIA Blackwell Day-0 open kernel module compatibility" >/dev/null 2>&1 || true
+- [ ] NVIDIA Blackwell Day-0 open kernel modules" >/dev/null 2>&1 || true
 }
 
 create_epics_issues() {
   echo "==> [7/9] Creating strategic Epics as GitHub issues..."
-  local m1="v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge"
-  local m2="v1.1.0 - Multi-Arch Cross-Compilation & UKI Synthesis"
-  local m3="v1.2.0 - Blackwell B200 / RTX 5090 & ROCm 10 Driver Matrix"
-  create_epics_batch1 "${m1}" "${m2}"
-  create_epics_batch2 "${m1}" "${m2}" "${m3}"
+  create_baseline_epics
+  create_advanced_epics
 }
 
 provision_project_board() {

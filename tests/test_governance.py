@@ -122,3 +122,4 @@ class TestGovernanceIntegrity:
         audit_script = REPO_ROOT / "scripts" / "audit-repository-health.sh"
         assert audit_script.exists(), "scripts/audit-repository-health.sh missing"
         assert audit_script.stat().st_mode & 0o111, "scripts/audit-repository-health.sh not executable"
+

@@ -30,7 +30,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck yamllint
-          pip install --no-cache-dir jsonschema pytest
+          pip install --no-cache-dir -r requirements-test.txt
 
       - name: Run Makefile Gates
         run: |

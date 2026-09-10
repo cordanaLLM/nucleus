@@ -46,3 +46,4 @@ def test_actionlint_passes():
     cmd = ["actionlint"] + [str(w) for w in workflows]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"actionlint failed on workflows:\n{res.stdout}\n{res.stderr}"
+
