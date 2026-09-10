@@ -1,7 +1,9 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
 from pathlib import Path
+import shutil
 import subprocess
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -42,8 +44,21 @@ def test_required_aggregator_contract():
 
 def test_actionlint_passes():
     """Ensure all workflows pass actionlint with zero errors."""
+    actionlint_bin = shutil.which("actionlint")
+    if not actionlint_bin:
+        for candidate in [
+            Path("/usr/local/bin/actionlint"),
+            Path("/usr/bin/actionlint"),
+            Path.home() / "go" / "bin" / "actionlint",
+        ]:
+            if candidate.exists() and candidate.is_file():
+                actionlint_bin = str(candidate)
+                break
+    if not actionlint_bin:
+        pytest.skip("actionlint binary not found in PATH or standard locations")
+
     workflows = list(WORKFLOWS_DIR.glob("*.yml"))
-    cmd = ["actionlint"] + [str(w) for w in workflows]
+    cmd = [actionlint_bin] + [str(w) for w in workflows]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"actionlint failed on workflows:\n{res.stdout}\n{res.stderr}"
 
