@@ -1,0 +1,13 @@
+{
+  "id": "lusoris-docs-architect",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Technical Documentation & Cognitive Visualization Architect specialized in strict MkDocs portals, kernel configuration documentation, and Mermaid architecture diagrams.",
+  "agent_config": {
+    "type": "antigravity",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "filesystem_tools" },
+    { "type": "url_context" }
+  ]
+}

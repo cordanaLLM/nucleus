@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "epics": [
+    {
+      "id": "EPIC-01",
+      "title": "Stream Synchronization & Upstream Tracking",
+      "cadence": "Continuous",
+      "status": "active",
+      "required_labels": ["area/streams", "area/automation"],
+      "description": "Continuous monitoring and automated synchronization of upstream kernel releases (bleeding 7.3-rc2, mainstream 7.2.4, lts 6.18.50, and realtime 7.2-rt) in versions.json."
+    },
+    {
+      "id": "EPIC-02",
+      "title": "KConfig Hardening & Minimal Attack Surface",
+      "cadence": "Monthly",
+      "status": "active",
+      "required_labels": ["area/kconfig", "area/security"],
+      "description": "Kernel Self Protection Project (KSPP) compliance, modular security configuration fragments, and sysctl hardening for containerized orchestration."
+    },
+    {
+      "id": "EPIC-03",
+      "title": "Multi-Architecture Cross Compilation",
+      "cadence": "Quarterly",
+      "status": "active",
+      "required_labels": ["area/arch", "area/toolchain"],
+      "description": "Multi-architecture compilation matrix and cross-toolchain verification across x86_64, arm64, and riscv64 architectures."
+    },
+    {
+      "id": "EPIC-04",
+      "title": "Dual Packaging & Unified Kernel Images (UKI)",
+      "cadence": "Quarterly",
+      "status": "active",
+      "required_labels": ["area/packaging", "area/uki"],
+      "description": "Dual package delivery supporting traditional Debian packages (.deb) and UEFI Unified Kernel Images (UKI) with systemd-stub and embedded initramfs for secure boot."
+    },
+    {
+      "id": "EPIC-05",
+      "title": "Supply Chain Attestation & Cryptographic Signing",
+      "cadence": "Continuous",
+      "status": "active",
+      "required_labels": ["area/security", "area/supply-chain"],
+      "description": "Cryptographic keyless artifact signing via Sigstore Cosign, Syft CycloneDX/SPDX SBOM generation, and SLSA Build Level 3 provenance attestation."
+    },
+    {
+      "id": "EPIC-06",
+      "title": "Hardware Acceleration & Driver Integration",
+      "cadence": "Quarterly",
+      "status": "active",
+      "required_labels": ["area/hardware", "area/drivers"],
+      "description": "Hardware enablement fragments and out-of-tree patchsets for NVIDIA Blackwell/Hopper, Intel Xe2 Battlemage, AMD ROCm, OpenZFS 2.3, and sched-ext extensible scheduling."
+    }
+  ]
+}

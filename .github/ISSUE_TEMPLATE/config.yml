@@ -1,0 +1,9 @@
+---
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/lusoris/lusoris-kernel-forge/discussions
+    about: Ask questions, share kernel benchmarking results, or discuss kernel features.
+  - name: Security Vulnerability Reporting
+    url: https://github.com/lusoris/lusoris-kernel-forge/security/advisories/new
+    about: Report security vulnerabilities confidentially to the Lusoris security team.

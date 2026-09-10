@@ -1,0 +1,56 @@
+---
+name: pr-project-gate
+on:
+  pull_request:
+    types: [opened, edited, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-metadata:
+    name: Validate PR Milestone & Metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify PR Milestone, Issue Reference and Labels
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_MILESTONE: ${{ github.event.pull_request.milestone.title }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          echo "==> Validating PR metadata against governance hard gates..."
+
+          # 1. Milestone Check
+          if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
+            echo "::error::PR is missing an assigned milestone! PRs must be assigned to an active milestone."
+            exit 1
+          fi
+
+          # 2. Issue/Epic Reference Check
+          COMBINED="${PR_TITLE}"$'\n'"${PR_BODY}"
+          if ! echo "${COMBINED}" | grep -Eqi '(fixes|closes|resolves|relates to|ref)[[:space:]]+(#[0-9]+|[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+#[0-9]+|EPIC-[0-9]+)'; then
+            echo "::error::PR description must reference a tracked Issue or Epic (e.g. 'Fixes #123' or 'Relates to EPIC-01')."
+            exit 1
+          fi
+
+          # 3. Label Check
+          HAS_VALID_LABEL=false
+          if echo "${PR_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
+            HAS_VALID_LABEL=true
+          fi
+
+          if [[ "${HAS_VALID_LABEL}" != "true" ]]; then
+            echo "::error::PR must carry at least one 'tier/*' or 'area/*' label."
+            exit 1
+          fi
+
+          echo "==> PR hard gate validation passed successfully."

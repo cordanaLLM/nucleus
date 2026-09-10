@@ -1,0 +1,14 @@
+# Semgrep ignore rules for lusoris-kernel-forge
+.git/
+.pytest_cache/
+__pycache__/
+output/
+dist/
+build/
+*.deb
+*.ddeb
+*.xz
+*.patch
+coverage.out
+coverage
+htmlcov/

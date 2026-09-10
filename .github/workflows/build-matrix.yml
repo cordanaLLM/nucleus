@@ -1,57 +1,74 @@
 ---
 name: build-matrix
 on:
+  schedule:
+    - cron: "0 2 * * 0"
   workflow_dispatch:
     inputs:
-      stream:
-        description: "Target kernel stream (bleeding, mainstream, lts, realtime)"
-        required: true
-        default: "mainstream"
-      arch:
-        description: "Target architecture (x86_64, arm64, riscv64)"
-        required: true
-        default: "x86_64"
+      dry_run:
+        description: "Run dry-run simulation instead of full compilation"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.inputs.stream }}-${{ github.event.inputs.arch }}
+  group: build-matrix-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build Kernel Package
+    name: Build Kernel (${{ matrix.stream }} / ${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       contents: write
+    container:
+      image: ubuntu:24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        stream:
+          - bleeding
+          - mainstream
+          - lts
+          - realtime
+        arch:
+          - x86_64
+          - arm64
+          - riscv64
 
     steps:
+      - name: Install Build Toolchain Dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential libncurses-dev bison flex libssl-dev libelf-dev \
+            bc fakeroot rsync debhelper kmod python3 git ca-certificates
+
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup Build Environment
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential libncurses-dev bison flex libssl-dev libelf-dev \
-            bc fakeroot rsync debhelper kmod python3
-
-      - name: Compile Kernel
+      - name: Compile Kernel Package
         env:
-          INPUT_STREAM: ${{ github.event.inputs.stream }}
-          INPUT_ARCH: ${{ github.event.inputs.arch }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
-          ./scripts/build_kernel.sh --stream="${INPUT_STREAM}" --arch="${INPUT_ARCH}"
+          EXTRA_ARGS=()
+          if [[ "${DRY_RUN_INPUT}" == "true" ]]; then
+            EXTRA_ARGS+=("--dry-run")
+          fi
+          ./scripts/build_kernel.sh --stream="${{ matrix.stream }}" --arch="${{ matrix.arch }}" "${EXTRA_ARGS[@]}"
 
-      - name: Generate Checksums & Stage Release
+      - name: Stage Artifacts and Checksums
         run: |
-          ./scripts/publish_release.sh "v${{ github.event.inputs.stream }}-$(date +'%Y%m%d')"
+          mkdir -p output
+          ./scripts/publish_release.sh "v${{ matrix.stream }}-$(date +'%Y%m%d')"
 
-      - name: Notify Downstream Image Forge
-        env:
-          INPUT_STREAM: ${{ github.event.inputs.stream }}
-          GITHUB_TOKEN: ${{ secrets.KERNEL_FORGE_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=$(python3 -c "import json; print(json.load(open('versions.json'))['streams']['${INPUT_STREAM}']['version'])")
-          ./scripts/notify_downstream.sh "${INPUT_STREAM}" "${VERSION}-lusoris1"
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: kernel-${{ matrix.stream }}-${{ matrix.arch }}
+          path: output/
+          retention-days: 7

@@ -1,0 +1,79 @@
+---
+name: verify-requirements
+on:
+  repository_dispatch:
+    types: [kernel_requirements_updated]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-requirements-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Downstream Kernel Requirements
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Quality Gate Dependencies
+        run: pip install --no-cache-dir jsonschema pytest
+
+      - name: Verify Downstream Kconfig Symbols
+        run: |
+          set -euo pipefail
+          echo "==> Verifying kernel configuration symbols requested by downstream lusoris-cloud-images..."
+
+          python3 -c "
+          from pathlib import Path
+          kconfig_dir = Path('kconfig')
+          x86_config = (kconfig_dir / 'x86_64.config').read_text(encoding='utf-8')
+          sec_config = (kconfig_dir / 'security-hardened.config').read_text(encoding='utf-8')
+          combined = x86_config + '\n' + sec_config
+
+          required_symbols = [
+              # Virtualization & VirtIO
+              'CONFIG_VIRTIO=y',
+              'CONFIG_VIRTIO_PCI=y',
+              'CONFIG_VIRTIO_BALLOON=y',
+              'CONFIG_VIRTIO_BLK=y',
+              'CONFIG_VIRTIO_NET=y',
+              'CONFIG_VIRTIO_CONSOLE=y',
+              'CONFIG_VIRTIO_FS=y',
+              # Scheduling & Performance
+              'CONFIG_MQ_IOSCHED_DEADLINE=y',
+              'CONFIG_TCP_CONG_BBR=y',
+              'CONFIG_NET_SCH_FQ=y',
+              'CONFIG_SCHED_CLASS_EXT=y',
+              # Security & Hardening
+              'CONFIG_STACKPROTECTOR_STRONG=y',
+              'CONFIG_STRICT_KERNEL_RWX=y',
+              'CONFIG_RANDOMIZE_BASE=y',
+              'CONFIG_SECCOMP=y',
+              'CONFIG_SECCOMP_FILTER=y',
+              # Containers & eBPF
+              'CONFIG_CGROUPS=y',
+              'CONFIG_MEMCG=y',
+              'CONFIG_BPF_SYSCALL=y',
+          ]
+
+          missing = [s for s in required_symbols if s not in combined]
+          if missing:
+              print(f'ERROR: Missing mandatory Kconfig symbols: {missing}')
+              exit(1)
+
+          print(f'SUCCESS: All {len(required_symbols)} mandatory Kconfig symbols verified.')
+          "
+
+      - name: Execute Full Test Suite
+        run: pytest tests/ -v

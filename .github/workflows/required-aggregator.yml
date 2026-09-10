@@ -1,0 +1,30 @@
+---
+# Single required status check for branch protection.
+# Protects main on THIS job only. It waits for upstream jobs and fails if any failed.
+# Branch protection: require the "required-checks" status check.
+
+name: required-aggregator
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  required-checks:
+    name: required-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for Upstream Workflows
+        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc # v1.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          running-workflow-name: required-checks
+          allowed-conclusions: success,skipped
+          wait-interval: 20
+      - name: Verify All Checks Passed
+        run: echo "ok"

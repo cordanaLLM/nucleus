@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "milestones": [
+    {
+      "title": "v1.0.0-rc1",
+      "state": "open",
+      "due_on": "2026-10-15T00:00:00Z",
+      "description": "Initial Production Release Candidate - Baseline Streams (bleeding, mainstream, lts, realtime) & KConfig Hardening"
+    },
+    {
+      "title": "v1.1.0",
+      "state": "open",
+      "due_on": "2026-11-15T00:00:00Z",
+      "description": "Unified Kernel Image (UKI) Architecture & Multi-Arch (x86_64, arm64, riscv64) Parity"
+    },
+    {
+      "title": "v1.2.0",
+      "state": "open",
+      "due_on": "2026-12-15T00:00:00Z",
+      "description": "Advanced Hardware Acceleration (Blackwell, Xe2, ROCm) & Deterministic PREEMPT_RT Integration"
+    }
+  ]
+}

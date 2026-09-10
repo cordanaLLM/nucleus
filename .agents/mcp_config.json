@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "hindsight": {
+      "command": "python3",
+      "args": ["scripts/hindsight_mcp_server.py"],
+      "env": {
+        "HINDSIGHT_URL": "http://127.0.0.1:8888",
+        "HINDSIGHT_BANK": "lusoris-kernel-forge"
+      }
+    },
+    "cauda-kb": {
+      "serverUrl": "http://127.0.0.1:38001/mcp"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@3.1.0"]
+    }
+  }
+}

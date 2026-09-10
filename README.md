@@ -111,3 +111,10 @@ Output `.deb` packages (`linux-image-*.deb`, `linux-headers-*.deb`) are staged u
 - **Zero-Leak Invariant**: No RFC 1918 private IPs (`10.x`, `192.168.x`, `172.16-31.x`) or developer workstation paths (`/home/...`) are permitted in tracked files. Placeholders like `192.0.2.x` and `kernel.example.com` must be used.
 - **Power of 10 Compliance**: All shell functions are constrained to $\le 60$ lines with `set -euo pipefail` and zero ShellCheck warnings.
 - **Reproducible Builds**: All kernel compilation scripts pin exact upstream tarball checksums declared in `versions.json`.
+
+---
+
+## 6. License & Copyright
+
+`lusoris-kernel-forge` is open-source software licensed under the [Apache License 2.0](LICENSE).  
+Copyright &copy; 2026 The Lusoris Authors. All rights reserved.

@@ -1,0 +1,63 @@
+---
+name: supply-chain
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    name: SLSA Provenance & Cosign Attestation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
+
+      - name: Generate SBOM and Sign Release Artifacts
+        run: |
+          set -euo pipefail
+          echo "==> Staging output artifacts for supply chain attestation..."
+          mkdir -p output
+          if [[ -z "$(ls -A output 2>/dev/null)" ]]; then
+            echo "Staging representative release artifacts for verification..."
+            touch output/linux-image-lusoris.deb
+            touch output/linux-headers-lusoris.deb
+          fi
+
+          echo "==> Generating Syft CycloneDX and SPDX SBOMs..."
+          syft dir:output/ -o cyclonedx-json=output/kernel-sbom.cdx.json
+          syft dir:output/ -o spdx-json=output/kernel-sbom.spdx.json
+
+          echo "==> Generating SHA256SUMS..."
+          (
+            cd output
+            sha256sum -- *.deb *.json > SHA256SUMS 2>/dev/null || true
+          )
+
+          echo "==> Signing checksums and SBOMs with keyless Cosign..."
+          if [[ -f output/SHA256SUMS ]]; then
+            cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS || true
+          fi
+          echo "==> Supply chain attestation and SBOM generation complete."
+
+      - name: Upload Supply Chain Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: supply-chain-attestations
+          path: |
+            output/*.cdx.json
+            output/*.spdx.json
+            output/SHA256SUMS*

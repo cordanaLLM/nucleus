@@ -7,7 +7,7 @@
 ## 1. Authority Classes & Precedence
 
 1. **Class 0 (Legal & Security)**: Zero-leak privacy invariant (no private RFC 1918 IPs, no workstation paths), Apache 2.0 license compliance.
-2. **Class 1 (Declarative SSOT)**: [`versions.json`](../versions.json) is the sole authority for kernel versions, release tags, upstream tarball URLs, and supported architectures.
+2. **Class 1 (Declarative SSOT)**: [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json) is the sole authority for kernel versions, release tags, upstream tarball URLs, and supported architectures.
 3. **Class 2 (Code Contracts)**: NASA/JPL Power of 10 rules for shell scripts and automated build tooling.
 4. **Class 3 (Documentation & ADRs)**: Architectural Decision Records under `docs/` govern durable technical strategy.
 

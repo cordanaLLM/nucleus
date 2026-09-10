@@ -1,0 +1,14 @@
+{
+  "id": "lusoris-security-compliance",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Principal Security & Compliance Auditor specialized in KSPP kernel self-protection, CIS Linux Benchmark L2, eBPF containment, and privacy audits.",
+  "agent_config": {
+    "type": "antigravity",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "code_execution" },
+    { "type": "filesystem_tools" },
+    { "type": "google_search" }
+  ]
+}
