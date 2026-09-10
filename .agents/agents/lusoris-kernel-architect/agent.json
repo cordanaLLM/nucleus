@@ -1,0 +1,15 @@
+{
+  "id": "lusoris-kernel-architect",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Principal Linux Kernel Architect specialized in kernel versioning, kconfig layering, patch curation, and toolchain optimization.",
+  "agent_config": {
+    "type": "antigravity",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "code_execution" },
+    { "type": "filesystem_tools" },
+    { "type": "google_search" },
+    { "type": "url_context" }
+  ]
+}

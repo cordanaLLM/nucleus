@@ -1,0 +1,20 @@
+# Global repository owners
+* @lusoris
+
+# Kernel configurations and architecture fragments
+/kconfig/ @lusoris
+
+# Build, release, and downstream notification scripts
+/scripts/ @lusoris
+
+# CI/CD Workflows, security scanners, and templates
+/.github/ @lusoris
+
+# Documentation and architecture decision records
+/docs/ @lusoris
+/README.md @lusoris
+/AGENTS.md @lusoris
+
+# Single Source of Truth version manifests and schemas
+/versions.json @lusoris
+/versions.schema.json @lusoris

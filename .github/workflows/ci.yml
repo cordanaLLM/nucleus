@@ -30,7 +30,9 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck yamllint
-          pip install --no-cache-dir jsonschema pytest
+          bash -c "$(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)"
+          sudo mv ./actionlint /usr/local/bin/
+          pip install --no-cache-dir -r requirements-test.txt
 
       - name: Run Makefile Gates
         run: |

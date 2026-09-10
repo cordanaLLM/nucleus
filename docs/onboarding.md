@@ -83,8 +83,8 @@ Verify the target kernel streams:
 3. Commit adhering to Conventional Commits: `feat(patches): add bbrv3 congestion tuning patch for mainstream`.
 
 ### Recipe C: Bumping a Kernel Version
-1. Edit [`versions.json`](../versions.json) with the new version, tag, and upstream tarball URL.
-2. Update [`docs/streams.md`](streams.md) and [`README.md`](../README.md) in the exact same commit.
+1. Edit [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json) with the new version, tag, and upstream tarball URL.
+2. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/README.md) in the exact same commit.
 3. Validate schema: `make lint && make test`.
 4. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`).
 

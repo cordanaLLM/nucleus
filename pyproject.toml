@@ -1,9 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --tb=short"
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
+addopts = "-v"
 
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "setup.py",
+    ".pytest_cache/*",
+    "output/*",
+    "build/*",
+    "dist/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    "output",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+]
+ignore = [
+    "E501",
+]
+
+[tool.codespell]
+skip = ".git,output,*.deb,*.xz,.pytest_cache,*.zst,*.iso,*.patch"
+ignore-words-list = "bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight"

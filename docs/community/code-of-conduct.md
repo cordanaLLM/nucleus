@@ -1,0 +1,53 @@
+# Contributor Covenant Code of Conduct
+
+> Authoritative Code of Conduct for `lusoris-kernel-forge` contributors, maintainers, and community members.
+
+---
+
+## 1. Our Pledge
+
+We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, caste, color, religion, or sexual identity and orientation.
+
+We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
+
+---
+
+## 2. Our Standards
+
+Examples of behavior that contributes to a positive environment for our community include:
+- Demonstrating empathy and kindness toward other people.
+- Being respectful of differing opinions, viewpoints, and experiences.
+- Giving and gracefully accepting constructive feedback.
+- Accepting responsibility and apologizing to those affected by our mistakes, and learning from the experience.
+- Focusing on what is best not just for us as individuals, but for the overall community.
+
+Examples of unacceptable behavior include:
+- The use of sexualized language or imagery, and sexual attention or advances of any kind.
+- Trolling, insulting or derogatory comments, and personal or political attacks.
+- Public or private harassment.
+- Publishing others' private information, such as physical or electronic addresses, without explicit permission.
+- Other conduct which could reasonably be considered inappropriate in a professional setting.
+
+---
+
+## 3. Enforcement Responsibilities
+
+Community leaders are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
+
+Community leaders have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, and will communicate reasons for moderation decisions when appropriate.
+
+---
+
+## 4. Scope
+
+This Code of Conduct applies within all community spaces (repositories, issue trackers, pull requests, project discussion boards), and also applies when an individual is officially representing the community in public spaces.
+
+---
+
+## 5. Reporting & Contact
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported confidentially to the project maintainers:
+- **Private Security Advisory**: Submit a confidential advisory via [GitHub Security Advisories](https://github.com/lusoris/lusoris-kernel-forge/security/advisories/new).
+- **Direct Maintainer Contact**: Reach out privately to project maintainers via GitHub.
+
+All reports will be reviewed and investigated promptly, fairly, and confidentially. Maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project leadership.

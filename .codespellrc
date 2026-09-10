@@ -1,0 +1,3 @@
+[codespell]
+skip = .git,output,*.deb,*.xz,.pytest_cache,*.zst,*.iso,*.patch
+ignore-words-list = bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight

@@ -1,0 +1,13 @@
+{
+  "id": "lusoris-deep-researcher",
+  "base_agent": "deep-research-pro-preview-12-2025",
+  "description": "Autonomous Systems Research Analyst specialized in upstream kernel tracking, CVE research, hardware patch analysis, and ADR authoring.",
+  "agent_config": {
+    "type": "deep_research",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "google_search" },
+    { "type": "url_context" }
+  ]
+}

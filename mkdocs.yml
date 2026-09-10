@@ -1,0 +1,83 @@
+site_name: lusoris-kernel-forge
+site_description: High-performance, hardened, hardware-accelerated Linux kernel compilation and packaging factory
+site_url: https://lusoris.github.io/lusoris-kernel-forge
+repo_url: https://github.com/lusoris/lusoris-kernel-forge
+repo_name: lusoris/lusoris-kernel-forge
+edit_uri: edit/main/docs/
+copyright: "Copyright &copy; 2026 The Lusoris Authors — Apache 2.0 License"
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Principles & Architecture: principles.md
+  - Onboarding & Operations: onboarding.md
+  - Kernel Streams & Matrix: streams.md
+  - Curated Patch Queues: patches.md
+  - Packaging & Delivery: packaging.md
+  - Hardware Acceleration:
+      - Multi-Architecture Strategy: hardware/architectures.md
+      - AMD ROCm 10 & Mesa RADV: hardware/amd-rocm.md
+      - Intel Battlemage Xe2: hardware/intel-xe2.md
+      - NVIDIA Blackwell & CUDA: hardware/nvidia-blackwell.md
+  - Security & Hardening:
+      - KSPP Baseline: security/kspp-baseline.md
+      - CIS Linux L2 Compliance: security/cis-l2.md
+      - eBPF & sched-ext Containment: security/ebpf-sched-ext.md
+  - Architectural Decision Records:
+      - ADR Overview: adr/README.md
+      - ADR-0001 Declarative Version Manifest: adr/0001-declarative-kernel-manifest.md
+      - ADR-0002 Modular KConfig Architecture: adr/0002-modular-kconfig-architecture.md
+      - ADR-0003 sched-ext & Realtime Coexistence: adr/0003-sched-ext-and-realtime-scheduler-coexistence.md
+      - ADR-0004 Native Debian & UKI Dual Packaging: adr/0004-native-debian-and-uki-dual-packaging.md
+      - ADR-0005 Bidirectional Downstream Sync: adr/0005-bidirectional-image-forge-synchronization.md
+  - Community:
+      - Code of Conduct: community/code-of-conduct.md
+      - Contributing: community/contributing.md
+      - Governance: community/governance.md
+      - Security: community/security.md

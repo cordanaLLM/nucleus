@@ -1,0 +1,26 @@
+title = "lusoris-kernel-forge gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-specific false positives"
+paths = [
+  '''^\.git/''',
+  '''^output/''',
+  '''^tests/''',
+  '''^versions\.json$''',
+]
+
+stopwords = [
+  "kernel.example.com",
+  "192.0.2.",
+  "placeholder-secret",
+  "example.com",
+]
+
+[[rules]]
+id = "no-cosign-private-key"
+description = "A cosign private key must never enter the repo (we use keyless OIDC)."
+regex = '''-----BEGIN ENCRYPTED COSIGN PRIVATE KEY-----'''
+tags = ["key", "cosign"]

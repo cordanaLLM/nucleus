@@ -1,0 +1,13 @@
+{
+  "id": "lusoris-downstream-sync",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Release Orchestrator & Downstream Integration Coordinator specialized in dispatching kernel release notifications to lusoris-cloud-images.",
+  "agent_config": {
+    "type": "antigravity",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "code_execution" },
+    { "type": "filesystem_tools" }
+  ]
+}

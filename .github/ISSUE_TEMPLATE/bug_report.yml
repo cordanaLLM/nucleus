@@ -1,0 +1,64 @@
+---
+name: Bug Report
+description: Report an issue with kernel compilation, kconfig fragments, or package generation
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for reporting an issue in `lusoris-kernel-forge`! Please provide the details below.
+  - type: dropdown
+    id: stream
+    attributes:
+      label: Kernel Stream
+      description: Which kernel stream is affected?
+      options:
+        - bleeding (7.3-rc2)
+        - mainstream (7.2.4)
+        - lts (6.18.50)
+        - realtime (7.2-rt)
+        - all
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Target Architecture
+      description: Which target CPU architecture is affected?
+      options:
+        - x86_64
+        - arm64
+        - riscv64
+        - all
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: What exact steps or commands did you run?
+      placeholder: |
+        1. Run `./scripts/build_kernel.sh --stream=mainstream --arch=x86_64`
+        2. Inspect output/
+        3. Observe failure...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Host Environment & Toolchain
+      description: Distribution, compiler version (gcc/clang), host architecture, and container runtime if applicable.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs / Compiler Output
+      render: shell

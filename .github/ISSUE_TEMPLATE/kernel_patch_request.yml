@@ -1,0 +1,57 @@
+---
+name: Kernel Patch / Driver Integration Request
+description: Request integration of an upstream kernel patch, backport, or out-of-tree driver module
+title: "feat(patch): add "
+labels: ["enhancement", "patch-request"]
+body:
+  - type: markdown
+    attributes:
+      value: Request a new kernel patch or driver integration for `lusoris-kernel-forge`!
+  - type: input
+    id: patch_name
+    attributes:
+      label: Patch / Driver Name
+      placeholder: e.g. sched-ext-scx_lavd, zfs-2.3-kcompat, or intel-xe-experimental
+    validations:
+      required: true
+  - type: checkboxes
+    id: streams
+    attributes:
+      label: Applicable Kernel Streams
+      options:
+        - label: "bleeding (7.3-rc2)"
+        - label: "mainstream (7.2.4)"
+        - label: "lts (6.18.50)"
+        - label: "realtime (7.2-rt)"
+    validations:
+      required: true
+  - type: checkboxes
+    id: architectures
+    attributes:
+      label: Applicable Target Architectures
+      options:
+        - label: "x86_64"
+        - label: "arm64"
+        - label: "riscv64"
+    validations:
+      required: true
+  - type: input
+    id: source_url
+    attributes:
+      label: Patch Source / Upstream Commit / LKML Link
+      placeholder: https://lore.kernel.org/... or https://git.kernel.org/...
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale & Workload Impact
+      description: Why is this patch or driver required? Detail hardware enablement, performance gains, or virtualization stability.
+    validations:
+      required: true
+  - type: textarea
+    id: kconfig_symbols
+    attributes:
+      label: Required Kconfig Symbols
+      description: List any CONFIG_* symbols that must be enabled alongside this patch.
+      render: shell

@@ -1,0 +1,13 @@
+{
+  "id": "lusoris-qa-gatekeeper",
+  "base_agent": "antigravity-preview-05-2026",
+  "description": "Release Engineering & Quality Gate Arbiter specialized in test suites, static linters, and branch protection validation.",
+  "agent_config": {
+    "type": "antigravity",
+    "model": "gemini-3.8-flash"
+  },
+  "tools": [
+    { "type": "code_execution" },
+    { "type": "filesystem_tools" }
+  ]
+}

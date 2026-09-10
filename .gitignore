@@ -2,6 +2,7 @@
 output/
 dist/
 build/
+site/
 *.deb
 *.ddeb
 *.changes

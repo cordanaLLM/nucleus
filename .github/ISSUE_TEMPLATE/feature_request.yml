@@ -1,0 +1,37 @@
+---
+name: Feature Request
+description: Propose an enhancement, new kernel configuration option, or build optimization
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for proposing a feature for `lusoris-kernel-forge`!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem or unmet requirement? Please describe.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature, config fragment, or toolchain improvement you would like to see.
+    validations:
+      required: true
+  - type: checkboxes
+    id: target_streams
+    attributes:
+      label: Target Kernel Streams
+      options:
+        - label: "bleeding (Mainline / Experimental)"
+        - label: "mainstream (Production Stable)"
+        - label: "lts (Long Term Support)"
+        - label: "realtime (Deterministic PREEMPT_RT)"
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative configurations, downstream patches, or workarounds you considered.
