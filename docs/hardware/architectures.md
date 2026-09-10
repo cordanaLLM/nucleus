@@ -78,7 +78,16 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
 
 ## 4. Hermetic Cross-Compilation Pipeline
 
-Cross-compilation is executed without installing system-wide foreign packages through pinned OCI build images:
+Cross-compilation is executed without installing system-wide foreign packages through pinned OCI build images built from `docker/Dockerfile.builder`:
+
+```bash
+# Build multi-architecture builder container
+make docker-builder
+# Or manually:
+docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
+```
+
+The container provides LLVM/Clang, cross-compilers (`gcc-aarch64-linux-gnu`, `gcc-riscv64-linux-gnu`), `systemd-ukify`, `dracut`, `diffoscope`, and QEMU emulators:
 
 ```bash
 #!/usr/bin/env bash

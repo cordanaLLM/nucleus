@@ -115,6 +115,23 @@ When booting via `systemd-boot`, the UEFI boot loader measures the entire UKI pa
 - PCR 11 matches the cryptographic digest calculated during `ukify --measure`.
 - Disk encryption keys (LUKS2 with `systemd-cryptenroll`) can be sealed to PCR 11: if the kernel, initramfs, or cmdline is altered by even a single bit, the TPM refuses to release the encryption key.
 
+### 3.4 Automated Packaging CLI Drivers
+Developers and automation pipelines utilize dedicated shell drivers complying with NASA/JPL Power of 10:
+
+```bash
+# Generate native Debian packages (.deb) with headers and libc-dev
+./scripts/package-deb.sh --stream=mainstream --arch=x86_64 --dry-run
+make package-deb STREAM=mainstream ARCH=x86_64
+
+# Synthesize Unified Kernel Image (UKI) PE binary (.efi) with PCR 11 measurements
+./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --dry-run
+make package-uki STREAM=mainstream ARCH=x86_64
+
+# Verify byte-level build reproducibility across compilation passes
+./scripts/verify-reproducibility.sh --dry-run
+make verify-reproducibility
+```
+
 ---
 
 ## 4. Initramfs Contracts & Driver Profiles

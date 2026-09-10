@@ -2,7 +2,7 @@
 name: pr-project-gate
 on:
   pull_request:
-    types: [opened, edited, labeled, unlabeled, synchronize]
+    types: [opened, edited, labeled, unlabeled, synchronize, milestoned]
 
 permissions:
   contents: read
@@ -21,6 +21,8 @@ jobs:
 
       - name: Verify PR Milestone, Issue Reference and Labels
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_MILESTONE: ${{ github.event.pull_request.milestone.title }}
@@ -29,7 +31,11 @@ jobs:
           set -euo pipefail
           echo "==> Validating PR metadata against governance hard gates..."
 
-          # 1. Milestone Check
+          # 1. Milestone Check (with live query fallback if event payload lagged)
+          if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
+            PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title 2>/dev/null || true)"
+          fi
+
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
             echo "::error::PR is missing an assigned milestone! PRs must be assigned to an active milestone."
             exit 1
@@ -42,10 +48,15 @@ jobs:
             exit 1
           fi
 
-          # 3. Label Check
+          # 3. Label Check (with live query fallback)
           HAS_VALID_LABEL=false
           if echo "${PR_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
             HAS_VALID_LABEL=true
+          else
+            LIVE_LABELS="$(gh pr view "${PR_NUMBER}" --json labels --jq '[.labels[].name] | @json' 2>/dev/null || true)"
+            if echo "${LIVE_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
+              HAS_VALID_LABEL=true
+            fi
           fi
 
           if [[ "${HAS_VALID_LABEL}" != "true" ]]; then
