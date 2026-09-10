@@ -1,0 +1,47 @@
+{
+  "$schema": "./versions.schema.json",
+  "metadata": {
+    "repository": "lusoris-kernel-forge",
+    "upstream": "https://www.kernel.org",
+    "updated": "2026-09-10"
+  },
+  "streams": {
+    "bleeding": {
+      "version": "7.3-rc2",
+      "tag": "v7.3-rc2",
+      "tarball_url": "https://git.kernel.org/torvalds/t/linux-7.3-rc2.tar.gz",
+      "status": "mainline",
+      "description": "Bleeding edge mainline kernel for next-gen hardware (Blackwell RTX 5090/B200, CXL 3.0, sched-ext)."
+    },
+    "mainstream": {
+      "version": "7.2.4",
+      "tag": "v7.2.4",
+      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.4.tar.xz",
+      "status": "stable",
+      "description": "Production stable stream for Intel Battlemage Xe2, AMD ROCm 10, and NVIDIA 565/610."
+    },
+    "lts": {
+      "version": "6.18.50",
+      "tag": "v6.18.50",
+      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.50.tar.xz",
+      "status": "longterm",
+      "description": "Long-term support stream for enterprise Kubernetes nodes, OpenZFS 2.3, and CNPG."
+    },
+    "realtime": {
+      "version": "7.2-rt",
+      "tag": "v7.2-rt",
+      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/projects/rt/7.2/linux-7.2-rt.tar.xz",
+      "status": "preempt_rt",
+      "description": "Full PREEMPT_RT deterministic low-latency stream for edge and real-time workloads."
+    }
+  },
+  "architectures": [
+    "x86_64",
+    "arm64",
+    "riscv64"
+  ],
+  "downstream": {
+    "repository": "lusoris/lusoris-cloud-images",
+    "sync_event": "kernel_release_published"
+  }
+}

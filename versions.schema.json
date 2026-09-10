@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LusorisKernelForgeVersions",
+  "type": "object",
+  "required": [
+    "metadata",
+    "streams",
+    "architectures",
+    "downstream"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repository", "upstream", "updated"],
+      "properties": {
+        "repository": {"type": "string"},
+        "upstream": {"type": "string", "format": "uri"},
+        "updated": {"type": "string"}
+      }
+    },
+    "streams": {
+      "type": "object",
+      "required": ["bleeding", "mainstream", "lts", "realtime"],
+      "additionalProperties": {
+        "type": "object",
+        "required": ["version", "tag", "tarball_url", "status", "description"],
+        "properties": {
+          "version": {"type": "string"},
+          "tag": {"type": "string"},
+          "tarball_url": {"type": "string", "format": "uri"},
+          "status": {"type": "string"},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "architectures": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "downstream": {
+      "type": "object",
+      "required": ["repository", "sync_event"],
+      "properties": {
+        "repository": {"type": "string"},
+        "sync_event": {"type": "string"}
+      }
+    }
+  }
+}

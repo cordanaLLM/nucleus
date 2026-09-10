@@ -1,0 +1,52 @@
+# Build outputs & packaging
+output/
+dist/
+build/
+*.deb
+*.ddeb
+*.changes
+*.buildinfo
+*.dsc
+*.tar.xz
+*.tar.gz
+*.orig.tar.gz
+
+# Kernel source trees & compilation artifacts
+linux-*/
+*.o
+*.ko
+*.mod
+*.mod.c
+*.order
+Module.symvers
+modules.order
+.config
+.config.old
+*.cmd
+
+# Python & testing caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+env/
+venv/
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+*.swp
+*~
+
+# Worktrees & scratch
+.workingdir2/
+.scratch/
+
+# Secrets & credentials
+*.pem
+*.key
+*.token
+.env

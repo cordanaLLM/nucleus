@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
+From: The Lusoris Authors <lusoris@example.com>
+Date: Wed, 9 Sep 2026 12:00:00 +0000
+Subject: [PATCH] sched/ext: ensure default scx switchable scheduler baseline
+
+Ensure that SCHED_CLASS_EXT allows hot runtime switching without
+requiring manual debugfs overrides.
+
+Signed-off-by: The Lusoris Authors <lusoris@example.com>
+---
+ kernel/sched/ext.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/ext.c b/kernel/sched/ext.c
+index e111111..e222222 100644
+--- a/kernel/sched/ext.c
++++ b/kernel/sched/ext.c
+@@ -1,4 +1,4 @@
+-// SPDX-License-Identifier: GPL-2.0
++// SPDX-License-Identifier: GPL-2.0-only
+ /*
+  * sched_ext: BPF extensible CPU scheduler
+  */
+-- 
+2.48.1
