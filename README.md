@@ -69,16 +69,31 @@ flowchart TD
       bc git fakeroot rsync debhelper kmod
   ```
 
-### Build Stream
+### Build & Packaging Recipes
 ```bash
-# Build the production mainstream kernel for x86_64
-./scripts/build_kernel.sh --stream=mainstream --arch=x86_64
+# Display all ergonomic developer targets
+make help
 
-# Build bleeding edge kernel with dry-run verification
-./scripts/build_kernel.sh --stream=bleeding --arch=x86_64 --dry-run
+# Merge KConfig fragments for target architecture
+make merge-config ARCH=x86_64
+
+# Package native Debian packages (.deb) with headers
+make package-deb STREAM=mainstream ARCH=x86_64
+
+# Synthesize Unified Kernel Image (UKI) PE binary (.efi)
+make package-uki STREAM=mainstream ARCH=x86_64
+
+# Run reproducible build attestation
+make verify-reproducibility
+
+# Execute sub-second QEMU microVM cold boot test
+make test-boot
+
+# Build hermetic multi-architecture container
+make docker-builder
 ```
 
-Output `.deb` packages (`linux-image-*.deb`, `linux-headers-*.deb`) are staged under `output/`.
+Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>-<arch>/`.
 
 ---
 
