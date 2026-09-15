@@ -22,13 +22,13 @@ These rules apply to ALL agents, ALL tools, and ALL commits — without exceptio
 
 ## 1. Mission & Purpose
 
-`lusoris-kernel-forge` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `lusoris-cloud-images`.
+`lusoris-kernel-forge` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
 
 Key capabilities:
 - **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc2), `mainstream` (7.2.4), `lts` (6.18.50), and `realtime` (7.2-rt).
 - **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
 - **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
-- **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `lusoris-cloud-images`.
+- **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `imago`.
 
 ---
 

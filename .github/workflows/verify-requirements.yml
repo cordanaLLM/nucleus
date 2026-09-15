@@ -32,7 +32,7 @@ jobs:
       - name: Verify Downstream Kconfig Symbols
         run: |
           set -euo pipefail
-          echo "==> Verifying kernel configuration symbols requested by downstream lusoris-cloud-images..."
+          echo "==> Verifying kernel configuration symbols requested by downstream imago..."
 
           python3 -c "
           from pathlib import Path

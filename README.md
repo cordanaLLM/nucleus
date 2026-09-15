@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Automated%20Gates-emerald.svg)](.github/workflows/ci.yml)
-[![Downstream](https://img.shields.io/badge/downstream-lusoris--cloud--images-purple.svg)](https://github.com/lusoris/lusoris-cloud-images)
+[![Downstream](https://img.shields.io/badge/downstream-imago-purple.svg)](https://github.com/cordanaLLM/imago)
 
-`lusoris-kernel-forge` is the companion repository and automated build forge producing customized, hardened, and hardware-optimized Linux kernel distributions for `lusoris-cloud-images`.
+`lusoris-kernel-forge` is the companion repository and automated build forge producing customized, hardened, and hardware-optimized Linux kernel distributions for `imago`.
 
 ---
 
@@ -14,7 +14,7 @@
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, OpenZFS 2.3 kmod compatibility, and NVMe-oF TCP optimizations.
-4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `lusoris-cloud-images` via GitHub `repository_dispatch`.
+4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `imago` via GitHub `repository_dispatch`.
 
 ```mermaid
 flowchart TD
@@ -35,7 +35,7 @@ flowchart TD
         RT["realtime (7.2-rt)<br/><small>Deterministic Low-Latency</small>"]:::stream
     end
 
-    Downstream["Downstream Image Forge<br/><small>lusoris/lusoris-cloud-images</small>"]:::dest
+    Downstream["Downstream Image Forge<br/><small>cordanaLLM/imago</small>"]:::dest
 
     Upstream --> Forge
     KConfig --> Forge

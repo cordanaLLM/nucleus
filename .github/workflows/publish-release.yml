@@ -99,10 +99,10 @@ jobs:
             output/*.spdx.json
             output/SHA256SUMS*
 
-      - name: Dispatch Downstream Notification to lusoris-cloud-images
+      - name: Dispatch Downstream Notification to imago
         uses: peter-evans/repository-dispatch@26b39f2445243964d4c7385747e4b2144255d441 # v3.0.0
         with:
           token: ${{ secrets.KERNEL_FORGE_TOKEN || secrets.GITHUB_TOKEN }}
-          repository: lusoris/lusoris-cloud-images
+          repository: cordanaLLM/imago
           event-type: kernel_release_published
           client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.version }}"}'

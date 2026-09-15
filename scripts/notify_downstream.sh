@@ -18,7 +18,7 @@ set -euo pipefail
 STREAM="${1:-mainstream}"
 VERSION="${2:-7.2.4-lusoris1}"
 DRY_RUN="${3:-false}"
-TARGET_REPO="lusoris/lusoris-cloud-images"
+TARGET_REPO="cordanaLLM/imago"
 EVENT_TYPE="kernel_release_published"
 
 validate_parameters() {
