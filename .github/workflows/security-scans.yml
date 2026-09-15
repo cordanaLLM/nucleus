@@ -86,10 +86,10 @@ jobs:
         run: |
           set -euo pipefail
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          curl -sSfL --max-time 120 --retry 3 -o /tmp/gitleaks.tar.gz \
-            "${base}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --max-time 120 --retry 3 -o "/tmp/${archive}" "${base}/${archive}"
           curl -sSfL --max-time 60 --retry 3 -o /tmp/gitleaks_checksums.txt \
             "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          (cd /tmp && grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks_checksums.txt | sha256sum -c -)
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          (cd /tmp && grep " ${archive}$" gitleaks_checksums.txt | sha256sum -c -)
+          tar -xzf "/tmp/${archive}" -C /tmp gitleaks
           /tmp/gitleaks git --redact --no-banner --exit-code 1 .
