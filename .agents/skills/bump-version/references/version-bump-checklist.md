@@ -28,6 +28,6 @@
 - [ ] `./scripts/audit-repository-health.sh` passes all 7 quality gates.
 
 ## 5. Downstream Dispatch Preparation
-- [ ] Target repository identified (`lusoris/lusoris-cloud-images`).
+- [ ] Target repository identified (`cordanaLLM/imago`).
 - [ ] Dispatch event validated: `kernel_release_published`.
 - [ ] Dry-run notification tested: `./scripts/notify_downstream.sh <stream> <version> true`.

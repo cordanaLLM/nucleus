@@ -24,7 +24,7 @@ init_remote_repo() {
   if ! gh repo view "${FULL_REPO}" >/dev/null 2>&1; then
     gh repo create "${FULL_REPO}" \
       --public \
-      --description "Deterministic Linux kernel compilation forge, hardened kconfig fragments, and deb/UKI packaging for lusoris-cloud-images." \
+      --description "Deterministic Linux kernel compilation forge, hardened kconfig fragments, and deb/UKI packaging for imago." \
       --homepage "https://lusoris.github.io/lusoris-kernel-forge"
     echo "    Created repository ${FULL_REPO}."
   else
@@ -180,7 +180,7 @@ Automated kernel compilation and verification across 4 streams.
 - [x] Declarative versions manifest (versions.json)
 - [x] Stream build scripts adhering to Power of 10
 - [ ] Containerized build matrix workflow
-- [ ] Downstream release dispatch to lusoris-cloud-images" >/dev/null 2>&1 || true
+- [ ] Downstream release dispatch to imago" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Hardened KConfig Baselines & KSPP CIS L2 Compliance" \
@@ -234,7 +234,7 @@ Enterprise 12-workflow CI/CD matrix with OpenSSF Scorecard and Semgrep.
 ### Deliverables
 - [x] Core CI quality gates and manifest linting
 - [ ] Single branch protection check aggregator (required-checks)
-- [ ] Automated downstream dispatch to lusoris-cloud-images" >/dev/null 2>&1 || true
+- [ ] Automated downstream dispatch to imago" >/dev/null 2>&1 || true
 
   gh issue create -R "${FULL_REPO}" \
     --title "Epic: Next-Gen Hardware Acceleration & Scheduler Engine (Blackwell, Xe2, BBRv3, sched-ext)" \

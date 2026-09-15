@@ -41,7 +41,7 @@
     "riscv64"
   ],
   "downstream": {
-    "repository": "lusoris/lusoris-cloud-images",
+    "repository": "cordanaLLM/imago",
     "sync_event": "kernel_release_published"
   }
 }
