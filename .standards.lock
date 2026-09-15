@@ -1,0 +1,21 @@
+version: 1
+pinned_version: v1.0.0
+digest: sha256:a690624654eade7a00231f24a0030a5a11c2548ce37ac873a6e8bd47e5e97486
+generated_at: ""
+profiles:
+    - id: os-image
+      version: v1.0.0
+      digest: sha256:236ba3a1bb7dcdde43e86a46cb49dd935ef8070ecd39584045510df842ff136f
+facets:
+    - id: security:high
+      version: v1.0.0
+      digest: sha256:34de9dc4fe2b7da48c152c2e7457891ebc41ace8e671fd1db0f49e1fafcb567f
+    - id: api:public-contract
+      version: v1.0.0
+      digest: sha256:19963be9ae6292bc4ea0dcb44cbbc5f903886209387d33fbeb3bed8af9cde486
+    - id: docs:seo-portal
+      version: v1.0.0
+      digest: sha256:3381e1b7ab5cfb1029fa1b96cd84c7d3d5a890bc2d1f340a7b4e8b5bf61e2256
+    - id: agent:sandboxed
+      version: v1.0.0
+      digest: sha256:1a89a7a93d8f054d03edd203bb15006431468641d59ac61999b1997fa0a3233f

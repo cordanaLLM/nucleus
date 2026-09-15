@@ -1,0 +1,15 @@
+version: 1
+repository:
+    owner: cordanaLLM
+    name: nucleus
+    visibility: public
+    description: ""
+    homepage: ""
+    topics: []
+profiles:
+    - os-image
+facets:
+    - security:high
+    - api:public-contract
+    - docs:seo-portal
+    - agent:sandboxed

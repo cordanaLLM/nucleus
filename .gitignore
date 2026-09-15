@@ -21,8 +21,13 @@ linux-*/
 *.order
 Module.symvers
 modules.order
+# Kernel build output, at any depth. The trailing-slash negation re-includes the
+# directory of the same name so the praetor archetype catalog under
+# .config/archetypes/ can be tracked; git cannot re-include paths inside an
+# excluded directory, so the directory itself must not be excluded.
 .config
 .config.old
+!.config/
 *.cmd
 
 # Python & testing caches
