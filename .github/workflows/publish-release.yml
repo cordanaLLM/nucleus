@@ -42,7 +42,11 @@ jobs:
         run: |
           set -euo pipefail
           RAW_TAG="${TAG_INPUT#v}"
-          echo "tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
+          export RAW_TAG
+          {
+            echo "tag=${RAW_TAG}"
+            echo "release_tag=v${RAW_TAG}"
+          } >> "$GITHUB_OUTPUT"
 
           # Extract stream and version from versions.json
           python3 -c "
@@ -76,6 +80,9 @@ jobs:
           # Generate Unified Kernel Image (UKI) placeholder binary with systemd-stub layout
           dd if=/dev/urandom of="output/linux-${STREAM}-${VERSION}-uki.efi" bs=1M count=16
 
+          # Ship the merged kconfig the build used; imago pins its digest as kernel.config_digest
+          ./scripts/merge-config.sh --arch=x86_64 --output="output/kernel-${STREAM}.config"
+
           # Generate SBOMs
           syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"
           syft dir:output/ -o "spdx-json=output/kernel-${STREAM}.spdx.json"
@@ -83,11 +90,68 @@ jobs:
           # Generate Checksums
           (
             cd output
-            sha256sum -- *.deb *.efi *.json > SHA256SUMS
+            sha256sum -- *.deb *.efi *.json *.config > SHA256SUMS
           )
 
           # Keyless Cosign signature
           cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
+
+      # imago.nucleus.kernel-artifact.v1 is owned by cordanaLLM/imago (pkg/kernel). The manifest
+      # is written after SHA256SUMS is signed and is deliberately absent from it: imago verifies
+      # the cosign bundle, the SHA256SUMS digest, and every artifact digest before pinning the stream.
+      - name: Generate Kernel Artifact Manifest
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish-release.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path("output")
+          stream = os.environ["STREAM"]
+          version = os.environ["VERSION"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+
+          def digest(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          artifacts = []
+          for line in (out / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+              if not line.strip():
+                  continue
+              hexdigest, name = line.split(maxsplit=1)
+              name = name.lstrip("*")
+              artifacts.append({"name": name, "sha256": hexdigest, "size": (out / name).stat().st_size})
+
+          manifest = {
+              "schema": "imago.nucleus.kernel-artifact.v1",
+              "provider": repository,
+              "stream": stream,
+              "version": version,
+              "kernel": {
+                  "release": version,
+                  "config_digest": "sha256:" + digest(out / f"kernel-{stream}.config"),
+              },
+              "artifacts": artifacts,
+              "checksums": {"file": "SHA256SUMS", "sha256": digest(out / "SHA256SUMS")},
+              "provenance": {
+                  "repository": repository,
+                  "tag": os.environ["RELEASE_TAG"],
+                  "revision": os.environ["GITHUB_SHA"],
+                  "bundle": "SHA256SUMS.bundle",
+                  "signer_identity": os.environ["SIGNER_IDENTITY"],
+              },
+          }
+          target = out / f"kernel-{stream}.manifest.json"
+          target.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(target.read_text(encoding="utf-8"))
+          PY
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
@@ -95,8 +159,10 @@ jobs:
           files: |
             output/*.deb
             output/*.efi
+            output/*.config
             output/*.cdx.json
             output/*.spdx.json
+            output/*.manifest.json
             output/SHA256SUMS*
 
       - name: Dispatch Downstream Notification to imago
@@ -105,4 +171,4 @@ jobs:
           token: ${{ secrets.KERNEL_FORGE_TOKEN || secrets.GITHUB_TOKEN }}
           repository: cordanaLLM/imago
           event-type: kernel_release_published
-          client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.version }}"}'
+          client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.version }}", "tag": "${{ steps.meta.outputs.release_tag }}"}'

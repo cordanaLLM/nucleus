@@ -8,11 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Kernel artifact manifest `kernel-<stream>.manifest.json` in the `imago.nucleus.kernel-artifact.v1` shape owned by `cordanaLLM/imago`: generated in `publish-release.yml` after `SHA256SUMS` is signed (stream, version, kernel release, `config_digest` over the shipped `kernel-<stream>.config`, per-artifact `sha256` and `size` from `SHA256SUMS`, checksums digest, and provenance with tag, commit, bundle name, and the workflow signer identity), uploaded with the release assets, and covered by `tests/test_workflows.py`.
+- `kernel-<stream>.config`, the merged kconfig written by `scripts/merge-config.sh`, ships as a release asset and is listed in `SHA256SUMS`.
 - Extended Renovate configuration (`renovate.json`) with automated GitHub Actions digest pinning, Monday batch scheduling, and SSOT regex managers for `versions.json`.
 - Root-level governance policies and community contracts (`CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, `SECURITY.md`, `SUPPORT.md`).
 - Static code hygiene tooling configs (`.editorconfig`, `.gitleaks.toml`, `.markdownlint.json`, `.codespellrc`, `.pre-commit-config.yaml`, `.semgrepignore`).
 - Google Release Please automated release management (`release-please-config.json`, `.release-please-manifest.json`).
 - Python test harness dependencies (`requirements-test.txt`) and unified pytest/coverage/ruff configurations in `pyproject.toml`.
+
+### Changed
+- **Breaking**: the `kernel_release_published` dispatch payload sent to `cordanaLLM/imago` carries `tag` next to `stream` and `version`; imago downloads the release named by the tag, verifies the cosign bundle over `SHA256SUMS` and every manifest digest, and refuses a payload without all three. `scripts/notify_downstream.sh` sends the same `tag` (`RELEASE_TAG`, default `v<version>`).
+- `publish-release.yml` exports `RAW_TAG` to the stream resolver (it was read from the environment but never exported, so every release resolved to `mainstream`) and emits a `release_tag` output.
 
 ## [0.1.0] - 2026-09-10
 

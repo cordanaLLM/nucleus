@@ -18,12 +18,14 @@ set -euo pipefail
 STREAM="${1:-mainstream}"
 VERSION="${2:-7.2.4-lusoris1}"
 DRY_RUN="${3:-false}"
+# Release tag the downstream verifier downloads; imago refuses a payload without it.
+RELEASE_TAG="${RELEASE_TAG:-v${VERSION}}"
 TARGET_REPO="cordanaLLM/imago"
 EVENT_TYPE="kernel_release_published"
 
 validate_parameters() {
-  if [[ -z "${STREAM}" || -z "${VERSION}" ]]; then
-    echo "Usage: $0 <stream> <version> [dry-run]" >&2
+  if [[ -z "${STREAM}" || -z "${VERSION}" || -z "${RELEASE_TAG}" ]]; then
+    echo "Usage: [RELEASE_TAG=vX.Y.Z] $0 <stream> <version> [dry-run]" >&2
     exit 1
   fi
 }
@@ -32,6 +34,7 @@ send_dispatch() {
   echo "==> Dispatching downstream release event to ${TARGET_REPO}..."
   echo "    Stream:  ${STREAM}"
   echo "    Version: ${VERSION}"
+  echo "    Tag:     ${RELEASE_TAG}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
     echo "[DRY-RUN] Would dispatch '${EVENT_TYPE}' to ${TARGET_REPO}"
@@ -46,7 +49,8 @@ send_dispatch() {
   gh api "repos/${TARGET_REPO}/dispatches" \
     --raw-field event_type="${EVENT_TYPE}" \
     --field client_payload[stream]="${STREAM}" \
-    --field client_payload[version]="${VERSION}"
+    --field client_payload[version]="${VERSION}" \
+    --field client_payload[tag]="${RELEASE_TAG}"
   echo "==> Dispatch successfully sent."
 }
 
