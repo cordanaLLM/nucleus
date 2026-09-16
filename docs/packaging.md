@@ -155,14 +155,14 @@ For bare-metal physical hypervisors and storage appliances:
 ### 5.1 Authenticated APT Repository
 Compiled `.deb` packages are imported into an authenticated Debian archive powered by `reprepro`:
 - **Repository URL**: `https://apt.example.com/kernels/`
-- **Distributions**: `bookworm`, `trixie`, `noble`
+- **Distributions**: `bookworm`, `trixie`, `resolute`
 - **Architectures**: `amd64`, `arm64`, `riscv64`
 - **Signing**: InRelease files signed with project OpenPGP key.
 
 ```bash
 # Example downstream consumption in Debian/Ubuntu:
 curl -fsSL https://apt.example.com/kernels/archive-key.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/lusoris-kernel.gpg
-echo "deb [signed-by=/etc/apt/trusted.gpg.d/lusoris-kernel.gpg] https://apt.example.com/kernels/ noble main" > /etc/apt/sources.list.d/lusoris-kernel.list
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/lusoris-kernel.gpg] https://apt.example.com/kernels/ resolute main" > /etc/apt/sources.list.d/lusoris-kernel.list
 apt-get update
 apt-get install -y linux-image-7.2.4-lusoris1-mainstream-amd64 linux-headers-7.2.4-lusoris1-mainstream-amd64
 ```
