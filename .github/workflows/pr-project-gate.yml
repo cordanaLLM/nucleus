@@ -27,9 +27,25 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_MILESTONE: ${{ github.event.pull_request.milestone.title }}
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           echo "==> Validating PR metadata against governance hard gates..."
+
+          # 0. Release automation waiver.
+          # release-please authors its release pull request from a generated changelog.
+          # It has no milestone (the API gives it no way to set one), no issue to
+          # reference, and carries only the "autorelease: pending" label, so all three
+          # gates below are unsatisfiable for it and the repository's own release train
+          # would never merge. Waive them only when the author is the Actions bot AND
+          # the branch is one release-please owns: a label alone is not enough, because
+          # any contributor can apply a label to their own pull request.
+          if [[ "${PR_AUTHOR}" == "github-actions[bot]" && "${PR_HEAD_REF}" == release-please--branches--* ]]; then
+            echo "==> Release automation pull request: ${PR_AUTHOR} on ${PR_HEAD_REF}."
+            echo "==> Metadata gates waived. Code gates (ci, codeql, security-scans) still apply."
+            exit 0
+          fi
 
           # 1. Milestone Check (with live query fallback if event payload lagged)
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
