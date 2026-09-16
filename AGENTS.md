@@ -31,7 +31,8 @@ implemented; the compile step itself refuses.
 | `kconfig/` fragments and `scripts/merge-config.sh` | real: merges architecture fragments with `security-hardened.config` |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
-| `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
+| `scripts/package-deb.sh` | implemented, but never fed a real kernel |
+| `scripts/package-uki.sh` | real `ukify` path, never fed a real kernel; **refuses** without a kernel or `ukify` (issue #21) |
 | `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
 | `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
 | downstream dispatch to `cordanaLLM/imago` | real: `kernel_release_published` carries stream, version and tag |
@@ -47,10 +48,12 @@ Implementing the real build is issue #18. In short: fetch the pinned tarball fro
 kernel.org, verify its signature, merge the kconfig fragments, run `bindeb-pkg`, and
 cross-compile for `arm64` and `riscv64` with the matching toolchain.
 
-One placeholder of the same class survives: `scripts/package-uki.sh` falls back to
-`cat "${VMLINUZ_FILE}" > "${target_efi}"` when `ukify` is absent, which produces a file
-named `.efi` that is a bare kernel image. Filed as issue #21; refuse instead, or
-install `ukify` on the runner.
+`scripts/package-uki.sh` had two placeholders of the same class, both removed under
+issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
+through to its simulation branch whenever `--vmlinuz` was missing, even without
+`--dry-run`, writing an `MZ`-prefixed text file named `BOOTX64.EFI` plus a PCR 11
+measurement of it. Both now refuse. Simulation happens only on an explicit `--dry-run`,
+and its `pcr11-measurements.json` carries `"simulated": true`.
 
 ### The contract with imago
 
