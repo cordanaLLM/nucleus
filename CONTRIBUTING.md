@@ -67,6 +67,27 @@ sequenceDiagram
    gh pr create --fill
    ```
 
+### Pull Request Metadata Gate
+
+`pr-project-gate.yml` is a hard gate. A pull request is refused unless it carries all three:
+
+| Requirement | Detail |
+| :--- | :--- |
+| Milestone | An active milestone must be assigned. |
+| Issue reference | The title or body must match `fixes`, `closes`, `resolves`, `relates to` or `ref` followed by `#123`, `owner/repo#123`, or `EPIC-01`. |
+| Label | At least one `tier/*` or `area/*` label. |
+
+The gate reports as `Validate PR Milestone & Metadata` and feeds `required-checks`, the single
+status check that protects `main`.
+
+**One waiver exists.** A release pull request is authored by `github-actions[bot]` from a
+generated changelog on a `release-please--branches--*` branch. It cannot satisfy any of the
+three — release-please has no API to assign a milestone, a changelog references no single
+issue, and it applies only the `autorelease: pending` label — so the metadata gates are
+waived for it, and only for it. Both the author and the branch prefix must match; a label
+alone does not waive anything, since a contributor can label their own pull request. The
+code gates (`ci`, `codeql`, `security-scans`) are never waived.
+
 ---
 
 ## 3. Developer Certificate of Origin (DCO)
