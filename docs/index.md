@@ -86,8 +86,10 @@ Compiled Debian packages will be placed into `output/mainstream-x86_64/`:
 ### Synthesizing Unified Kernel Images (UKI)
 Generate an authenticated, self-contained single EFI binary containing kernel, initramfs, CPU microcode, and kernel command line:
 ```bash
-./scripts/package-uki.sh mainstream x86_64
+./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> [--initrd=<path>]
 ```
+Without `--dry-run` this requires a built kernel image and `ukify` (`systemd-ukify`), and refuses
+if either is missing rather than emitting something named like a UKI.
 
 ### Running Test Gates
 Ensure all kconfig fragments, shell scripts, and privacy invariants pass validation:
