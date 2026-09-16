@@ -118,58 +118,111 @@ EOF
   echo -n "${CMDLINE_ARG}" > "${staging_dir}/cmdline"
 }
 
-synthesize_uki_binary() {
+# A simulated UKI is a text file with an MZ prefix, not a Unified Kernel Image.
+# It exists so --dry-run can exercise the pipeline, and it is now only reachable
+# when --dry-run was asked for explicitly. A production run must never land here:
+# the artifact is checksummed and covered by the release cosign signature, so a
+# simulated one would arrive at a consumer as a signed, verified UKI that is a stub.
+simulate_uki_binary() {
   local version="${1}"
   local efi_name="${2}"
-  local target_dir="${OUTPUT_DIR}/${STREAM}-${ARCH}"
-  local staging_dir="/tmp/lusoris-uki-${STREAM}-${ARCH}-$$"
-  mkdir -p "${target_dir}" "${staging_dir}"
-
-  generate_uki_metadata "${staging_dir}" "${version}"
-
+  local target_dir="${3}"
+  local staging_dir="${4}"
   local target_efi="${target_dir}/${efi_name}"
 
-  if [[ "${DRY_RUN}" == "true" || ! -f "${VMLINUZ_FILE}" ]]; then
-    echo "==> [SIMULATION] Synthesizing UKI ${efi_name} for ${version} (${ARCH})..."
-    printf "MZ\x90\x00Lusoris Unified Kernel Image %s (%s %s)\n" "${version}" "${STREAM}" "${ARCH}" > "${target_efi}"
-    cat "${staging_dir}/cmdline" >> "${target_efi}"
-    echo "" >> "${target_efi}"
+  echo "==> [SIMULATION] Synthesizing UKI ${efi_name} for ${version} (${ARCH})..."
+  printf "MZ\x90\x00Lusoris Unified Kernel Image %s (%s %s)\n" "${version}" "${STREAM}" "${ARCH}" > "${target_efi}"
+  cat "${staging_dir}/cmdline" >> "${target_efi}"
+  echo "" >> "${target_efi}"
 
-    # Calculate simulated TPM 2.0 PCR 11 measurement
-    local pcr11_digest
-    pcr11_digest="$(sha256sum "${target_efi}" | awk '{print $1}')"
-    cat <<EOF > "${target_dir}/pcr11-measurements.json"
+  # Calculate simulated TPM 2.0 PCR 11 measurement
+  local pcr11_digest
+  # Hash stdin: with a filename argument, sha256sum prefixes the digest with "\"
+  # whenever the path contains a backslash, which corrupts the JSON below.
+  pcr11_digest="$(sha256sum < "${target_efi}" | awk '{print $1}')"
+  cat <<EOF > "${target_dir}/pcr11-measurements.json"
 {
   "stream": "${STREAM}",
   "version": "${version}",
   "arch": "${ARCH}",
   "binary": "${efi_name}",
+  "simulated": true,
   "pcr11_sha256": "${pcr11_digest}"
 }
 EOF
-    (cd "${target_dir}" && sha256sum "${efi_name}" > "${efi_name}.sha256")
-    rm -rf "${staging_dir}"
-    echo "    ✓ UKI binary and PCR 11 measurement staged in ${target_dir}/"
-    return 0
+  (cd "${target_dir}" && sha256sum "${efi_name}" > "${efi_name}.sha256")
+  echo "    ✓ Simulated UKI and PCR 11 measurement staged in ${target_dir}/"
+}
+
+# Refuse rather than fabricate. Both missing inputs are build environment
+# defects: no kernel means the forge produced nothing to package, and no ukify
+# means the runner is not provisioned. Copying vmlinuz to a .efi name yields a
+# file with no stub, no embedded cmdline, no os-release, no SBAT and no
+# signature, which firmware cannot boot and which nothing downstream can tell
+# from the real artifact by its name. See issue #21.
+build_uki_binary() {
+  local version="${1}"
+  local efi_name="${2}"
+  local target_dir="${3}"
+  local staging_dir="${4}"
+  local target_efi="${target_dir}/${efi_name}"
+
+  if [[ ! -f "${VMLINUZ_FILE}" ]]; then
+    echo "Error: no kernel image to package: --vmlinuz='${VMLINUZ_FILE}' is not a file." >&2
+    echo "       Build the kernel first, or pass --dry-run to simulate the pipeline." >&2
+    return 1
   fi
 
-  echo "==> Invoking ukify synthesis engine..."
-  if command -v ukify >/dev/null 2>&1; then
-    ukify build \
-      --linux="${VMLINUZ_FILE}" \
-      --initrd="${INITRD_FILE}" \
-      --cmdline="${staging_dir}/cmdline" \
-      --os-release="@${staging_dir}/os-release" \
-      --sbat="@${staging_dir}/sbat.csv" \
-      --output="${target_efi}"
-  else
-    echo "Notice: ukify not installed, fallback to binary synthesis..."
-    cat "${VMLINUZ_FILE}" > "${target_efi}"
+  if ! command -v ukify >/dev/null 2>&1; then
+    echo "Error: ukify is not installed; a Unified Kernel Image cannot be built without it." >&2
+    echo "       Install systemd-ukify on this runner. Refusing to emit a bare kernel named ${efi_name}." >&2
+    return 1
+  fi
+
+  echo "==> Invoking ukify synthesis engine for ${version}..."
+  if ! ukify build \
+    --linux="${VMLINUZ_FILE}" \
+    --initrd="${INITRD_FILE}" \
+    --cmdline="${staging_dir}/cmdline" \
+    --os-release="@${staging_dir}/os-release" \
+    --sbat="@${staging_dir}/sbat.csv" \
+    --output="${target_efi}"; then
+    rm -f "${target_efi}"
+    echo "Error: ukify build failed; no UKI was written." >&2
+    return 1
+  fi
+
+  if [[ ! -s "${target_efi}" ]]; then
+    rm -f "${target_efi}"
+    echo "Error: ukify reported success but produced no output at ${target_efi}." >&2
+    return 1
   fi
 
   (cd "${target_dir}" && sha256sum "${efi_name}" > "${efi_name}.sha256")
-  rm -rf "${staging_dir}"
   echo "    ✓ Successfully synthesized ${target_efi}"
+}
+
+# The helpers are called directly, not as `helper || status=$?`: bash disables
+# errexit for the whole body of a function invoked in a `||` context, so a
+# failing ukify would carry on and checksum whatever it left behind. Cleanup
+# of the staging directory is an EXIT trap so it runs on refusal too.
+synthesize_uki_binary() {
+  local version="${1}"
+  local efi_name="${2}"
+  local target_dir="${OUTPUT_DIR}/${STREAM}-${ARCH}"
+  local staging_dir
+  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/lusoris-uki-${STREAM}-${ARCH}.XXXXXX")"
+  # shellcheck disable=SC2064 # expand now: staging_dir is local and out of scope at EXIT
+  trap "rm -rf '${staging_dir}'" EXIT
+  mkdir -p "${target_dir}"
+
+  generate_uki_metadata "${staging_dir}" "${version}"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    simulate_uki_binary "${version}" "${efi_name}" "${target_dir}" "${staging_dir}"
+  else
+    build_uki_binary "${version}" "${efi_name}" "${target_dir}" "${staging_dir}"
+  fi
 }
 
 main() {

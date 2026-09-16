@@ -125,7 +125,9 @@ make package-deb STREAM=mainstream ARCH=x86_64
 
 # Synthesize Unified Kernel Image (UKI) PE binary (.efi) with PCR 11 measurements
 ./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --dry-run
-make package-uki STREAM=mainstream ARCH=x86_64
+make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=true
+# Production: needs a built kernel and ukify, and refuses without either
+./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> --initrd=<path>
 
 # Verify byte-level build reproducibility across compilation passes
 ./scripts/verify-reproducibility.sh --dry-run
