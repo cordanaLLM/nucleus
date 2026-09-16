@@ -77,8 +77,6 @@ jobs:
           # Generate production deb packages
           ./scripts/build_kernel.sh --stream="${STREAM}" --arch="x86_64"
 
-          # Generate Unified Kernel Image (UKI) placeholder binary with systemd-stub layout
-          dd if=/dev/urandom of="output/linux-${STREAM}-${VERSION}-uki.efi" bs=1M count=16
 
           # Ship the merged kconfig the build used; imago pins its digest as kernel.config_digest
           ./scripts/merge-config.sh --arch=x86_64 --output="output/kernel-${STREAM}.config"
@@ -90,7 +88,7 @@ jobs:
           # Generate Checksums
           (
             cd output
-            sha256sum -- *.deb *.efi *.json *.config > SHA256SUMS
+            sha256sum -- *.deb *.json *.config > SHA256SUMS
           )
 
           # Keyless Cosign signature
@@ -158,7 +156,6 @@ jobs:
         with:
           files: |
             output/*.deb
-            output/*.efi
             output/*.config
             output/*.cdx.json
             output/*.spdx.json
