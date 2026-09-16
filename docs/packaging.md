@@ -177,3 +177,29 @@ oras push ghcr.io/lusoris/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   SHA256SUMS:text/plain
 ```
 Downstream bare-metal provisioning systems (`lusoris-cloud-images` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
+
+### 5.3 GitHub Release Assets & Downstream Artifact Manifest
+`publish-release.yml` publishes one GitHub Release per stream tag with `*.deb`, `linux-<stream>-<version>-uki.efi`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`.
+
+The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
+
+```json
+{
+  "schema": "imago.nucleus.kernel-artifact.v1",
+  "provider": "cordanaLLM/nucleus",
+  "stream": "mainstream",
+  "version": "7.2.4-lusoris1",
+  "kernel": {"release": "7.2.4-lusoris1", "config_digest": "sha256:<digest of kernel-mainstream.config>"},
+  "artifacts": [{"name": "linux-image-7.2.4-lusoris1_x86_64.deb", "sha256": "<64 hex>", "size": 123456}],
+  "checksums": {"file": "SHA256SUMS", "sha256": "<64 hex>"},
+  "provenance": {
+    "repository": "cordanaLLM/nucleus",
+    "tag": "v7.2.4-lusoris1",
+    "revision": "<40 hex commit>",
+    "bundle": "SHA256SUMS.bundle",
+    "signer_identity": "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/v7.2.4-lusoris1"
+  }
+}
+```
+
+The downstream `repository_dispatch` payload (`kernel_release_published`) carries `stream`, `version`, and `tag`; imago downloads the release named by `tag`, verifies the cosign bundle over `SHA256SUMS`, recomputes the `SHA256SUMS` digest and every artifact digest and size against the manifest, and only then pins `kernel.streams.<stream>` (version, `artifact_digest`, provenance) in its `versions.json`.
