@@ -1,7 +1,7 @@
 {
   "$schema": "./versions.schema.json",
   "metadata": {
-    "repository": "lusoris-kernel-forge",
+    "repository": "nucleus",
     "upstream": "https://www.kernel.org",
     "updated": "2026-09-10"
   },

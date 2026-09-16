@@ -6,7 +6,7 @@ labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
-      value: Thank you for proposing a feature for `lusoris-kernel-forge`!
+      value: Thank you for proposing a feature for `cordanaLLM/nucleus`!
   - type: textarea
     id: problem
     attributes:

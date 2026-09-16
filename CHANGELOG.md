@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The repository is `cordanaLLM/nucleus` and its downstream is `cordanaLLM/imago`;
+  139 references to the former names are updated across documentation, agent
+  definitions and scripts. The `-lusoris1` kernel suffix is unchanged, because it
+  names published packages rather than the repository.
+- `AGENTS.md` and `docs/onboarding.md` open with the state of the forge: what is
+  implemented, what refuses, and the contract imago verifies. A reader can no longer
+  conclude from either document that this repository compiles kernels today.
+
 ### Added
 - Kernel artifact manifest `kernel-<stream>.manifest.json` in the `imago.nucleus.kernel-artifact.v1` shape owned by `cordanaLLM/imago`: generated in `publish-release.yml` after `SHA256SUMS` is signed (stream, version, kernel release, `config_digest` over the shipped `kernel-<stream>.config`, per-artifact `sha256` and `size` from `SHA256SUMS`, checksums digest, and provenance with tag, commit, bundle name, and the workflow signer identity), uploaded with the release assets, and covered by `tests/test_workflows.py`.
 - `kernel-<stream>.config`, the merged kconfig written by `scripts/merge-config.sh`, ships as a release asset and is listed in `SHA256SUMS`.
@@ -23,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-09-10
 
 ### Added
-- Initial repository bootstrap for `lusoris-kernel-forge`.
+- Initial repository bootstrap for `cordanaLLM/nucleus`.
 - Multi-stream kernel compilation matrix across 4 streams:
   - `bleeding` (Linux 7.3-rc2) for Blackwell RTX 5090/B200, CXL 3.0, and sched-ext.
   - `mainstream` (Linux 7.2.4) for Intel Battlemage Xe2, AMD ROCm 10, and NVIDIA 565/610.
@@ -33,4 +43,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modular, security-hardened KConfig fragment framework meeting Kernel Self-Protection Project (KSPP) and CIS Linux Benchmark Level 2 baselines.
 - Single Source of Truth `versions.json` declarative manifest backed by JSON Schema validation `versions.schema.json`.
 - NASA/JPL Power of 10 compliant shell build pipelines (`scripts/build-kernel.sh`, `scripts/kconfig/merge_config.sh`) with strict ShellCheck compliance.
-- Automated downstream dispatch contracts for integration into `lusoris-cloud-images`.
+- Automated downstream dispatch contracts for integration into `cordanaLLM/imago`.

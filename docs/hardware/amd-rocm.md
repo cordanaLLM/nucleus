@@ -6,7 +6,7 @@
 
 ## 1. Architecture Overview
 
-`lusoris-kernel-forge` provides native, first-class kernel support for AMD's compute and graphics ecosystems across both datacenter accelerators and workstation GPUs:
+`cordanaLLM/nucleus` provides native, first-class kernel support for AMD's compute and graphics ecosystems across both datacenter accelerators and workstation GPUs:
 
 - **AMD ROCm 10 Stack**: HSA (Heterogeneous System Architecture) compute runtime, ROCt (KFD Thunk Interface), and the in-tree `amdgpu` kernel graphics/compute driver.
 - **Mesa RADV Vulkan**: High-performance open-source Vulkan driver with ACO shader compiler, hardware ray-tracing, and mesh shader pipelines.
@@ -23,7 +23,7 @@ graph TD
         RADV["Mesa RADV (Vulkan Compute & 3D)"]
     end
 
-    subgraph KernelSpace["Linux Kernel (lusoris-kernel-forge)"]
+    subgraph KernelSpace["Linux Kernel (nucleus)"]
         KFD["amdgpu KFD (CONFIG_HSA_AMD)"]
         AMDGPU["amdgpu Core DRM/KMS Driver"]
         HMM["Heterogeneous Memory Management (HMM)"]

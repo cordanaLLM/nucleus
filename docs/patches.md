@@ -1,12 +1,12 @@
 # Curated Patch Queue & Upstreaming Policy
 
-> Rules governing the inclusion, maintenance, and upstreaming of custom Linux kernel patches in `lusoris-kernel-forge`.
+> Rules governing the inclusion, maintenance, and upstreaming of custom Linux kernel patches in `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Patch Inclusion Criteria
 
-Every patch introduced into `lusoris-kernel-forge` must meet all of the following conditions:
+Every patch introduced into `cordanaLLM/nucleus` must meet all of the following conditions:
 1. **Targeted Justification**: Must address a verified performance, hardware enablement, or security need not yet merged in the upstream release branch.
 2. **Upstream Path**: Must either be queued in an upstream maintainer tree (e.g. `tip.git`, `net-next.git`, `drm-next.git`) or explicitly tracked against an upstream LKML discussion.
 3. **Clean Application**: Must apply cleanly with `patch -p1` with zero rejects (`*.rej`).

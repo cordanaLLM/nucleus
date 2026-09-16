@@ -20,7 +20,7 @@ graph TD
         NVRUN["NVIDIA Container Toolkit (nvidia-ctk)"]
     end
 
-    subgraph KernelSpace["Linux Kernel (lusoris-kernel-forge)"]
+    subgraph KernelSpace["Linux Kernel (nucleus)"]
         NV_OPEN["NVIDIA Open Kernel Module (nvidia.ko)"]
         NV_UVM["Unified Virtual Memory (nvidia-uvm.ko)"]
         NV_PEER["GPUDirect RDMA (nvidia-peermem.ko)"]

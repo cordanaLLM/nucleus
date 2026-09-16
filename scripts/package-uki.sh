@@ -105,14 +105,14 @@ ID=lusoris
 VERSION="${version}"
 VERSION_ID="${version}"
 PRETTY_NAME="Lusoris Linux Kernel ${version} (${STREAM})"
-HOME_URL="https://github.com/lusoris/lusoris-kernel-forge"
-SUPPORT_URL="https://github.com/lusoris/lusoris-kernel-forge/discussions"
-BUG_REPORT_URL="https://github.com/lusoris/lusoris-kernel-forge/issues"
+HOME_URL="https://github.com/cordanaLLM/nucleus"
+SUPPORT_URL="https://github.com/cordanaLLM/nucleus/discussions"
+BUG_REPORT_URL="https://github.com/cordanaLLM/nucleus/issues"
 EOF
 
   cat <<'EOF' > "${staging_dir}/sbat.csv"
 sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
-lusoris,1,Lusoris Linux,lusoris,1,https://github.com/lusoris/lusoris-kernel-forge
+lusoris,1,Lusoris Linux,lusoris,1,https://github.com/cordanaLLM/nucleus
 EOF
 
   echo -n "${CMDLINE_ARG}" > "${staging_dir}/cmdline"

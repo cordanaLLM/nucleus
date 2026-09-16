@@ -26,7 +26,7 @@ def test_mkdocs_config_exists():
     assert mkdocs_file.exists(), "mkdocs.yml must exist"
     config = _load_mkdocs_config()
     assert config.get("theme", {}).get("name") == "material"
-    assert config.get("site_name") == "lusoris-kernel-forge"
+    assert config.get("site_name") == "nucleus"
 
 
 def _extract_nav_paths(nav_item):

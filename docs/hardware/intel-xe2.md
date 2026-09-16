@@ -6,7 +6,7 @@
 
 ## 1. Architectural Overview
 
-Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `lusoris-kernel-forge`, the `mainstream` (7.2.4) and `bleeding` (7.3-rc2) streams incorporate native support for:
+Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `cordanaLLM/nucleus`, the `mainstream` (7.2.4) and `bleeding` (7.3-rc2) streams incorporate native support for:
 
 - **Intel Battlemage (Xe2-HPG)**: Discrete datacenter and workstation GPUs (BMG-G21, BMG-G31) featuring second-generation XMX (Xe Matrix eXtensions) for INT8/BF16/FP16 tensor math.
 - **Intel Lunar Lake & Arrow Lake (Xe2-LPG)**: Integrated low-power high-efficiency graphics engines.
@@ -27,7 +27,7 @@ flowchart TD
         MEDIA["Intel Media Driver (iHD VA-API)"]
     end
 
-    subgraph KernelSubsystem["Linux Kernel (lusoris-kernel-forge)"]
+    subgraph KernelSubsystem["Linux Kernel (nucleus)"]
         XE["Intel xe Kernel Driver (CONFIG_DRM_XE)"]
         GPUSVM["GPU Shared Virtual Memory (CONFIG_DRM_GPUSVM)"]
         DRM_SCHED["DRM Scheduler Engine"]
@@ -120,7 +120,7 @@ The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline sem
 - Hardware telemetry: `/sys/class/drm/card0/device/tile0/gt0/freq0/act_freq`
 
 ### MicroVM Passthrough Contract:
-When provisioning virtual machines in `lusoris-cloud-images`, the render node is passed into container runtimes (`crun` or `containerd`) with strict cgroup device rules:
+When provisioning virtual machines in `cordanaLLM/imago`, the render node is passed into container runtimes (`crun` or `containerd`) with strict cgroup device rules:
 ```text
 c 226:128 rwm
 ```

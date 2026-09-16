@@ -1,4 +1,4 @@
-"""Test zero-leak privacy and security invariants for lusoris-kernel-forge."""
+"""Test zero-leak privacy and security invariants for nucleus."""
 
 import re
 from pathlib import Path

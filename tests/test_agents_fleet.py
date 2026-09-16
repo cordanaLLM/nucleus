@@ -14,7 +14,7 @@
 """Automated verification suite for Antigravity agent fleet and skills.
 
 Asserts agent definitions, hooks configuration, privacy guardrails, and
-progressive disclosure standards for lusoris-kernel-forge.
+progressive disclosure standards for nucleus.
 """
 
 from __future__ import annotations

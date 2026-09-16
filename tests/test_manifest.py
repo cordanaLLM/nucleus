@@ -1,4 +1,4 @@
-"""Test manifest integrity and Single Source of Truth for lusoris-kernel-forge."""
+"""Test manifest integrity and Single Source of Truth for nucleus."""
 
 import json
 from pathlib import Path

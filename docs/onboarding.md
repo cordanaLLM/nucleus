@@ -1,21 +1,41 @@
 # Onboarding & Agent Migration Runbook
 
-> Authoritative runbook for autonomous AI coding agents and human contributors onboarding or executing migrations in `lusoris-kernel-forge`.
+> Authoritative runbook for autonomous AI coding agents and human contributors onboarding or executing migrations in `cordanaLLM/nucleus`.
+
+---
+
+## 0. Start here
+
+**This forge does not compile a kernel yet.** `scripts/build_kernel.sh` refuses on its
+production path and exits 1; only `--dry-run` produces output. Everything around the
+compile is implemented: the manifest, the kconfig merge, the packaging scripts, the
+release pipeline with SBOM and cosign signature, and the downstream dispatch to
+`cordanaLLM/imago`.
+
+It refuses because it used to fabricate. The production path touched two empty `.deb`
+files and exited 0, the release workflow added sixteen megabytes of `/dev/urandom` named
+as a Unified Kernel Image, and cosign signed the result. Imago verifies these artifacts
+by digest and provenance before an image consumes them, and that verification would have
+passed on empty files.
+
+The work is issue #18: fetch the pinned tarball, verify it, merge the kconfig fragments,
+run `bindeb-pkg`, and cross-compile for `arm64` and `riscv64`. `AGENTS.md` section 1 has
+the stage-by-stage state and the contract with imago.
 
 ---
 
 ## 1. System Role & Ecosystem Topology
 
-`lusoris-kernel-forge` is the kernel compilation sister repository to `lusoris-cloud-images`. 
+`cordanaLLM/nucleus` is the kernel compilation sister repository to `cordanaLLM/imago`. 
 
-Instead of compiling kernels inside image builders (which slows down Packer and wastes CI compute), `lusoris-kernel-forge` compiles, patches, and packages standardized `.deb` packages for four discrete release channels across `x86_64`, `arm64`, and `riscv64`.
+Instead of compiling kernels inside image builders (which slows down Packer and wastes CI compute), `cordanaLLM/nucleus` compiles, patches, and packages standardized `.deb` packages for four discrete release channels across `x86_64`, `arm64`, and `riscv64`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant KF as lusoris-kernel-forge (Sister Repo)
+    participant KF as nucleus (Sister Repo)
     participant GH as GitHub Releases & Apt Repository
-    participant CI as lusoris-cloud-images (Image Forge)
+    participant CI as imago (Image Forge)
 
     Note over KF: Kernel source fetched, patched, compiled
     KF->>KF: make bindeb-pkg (linux-image, linux-headers)
@@ -83,8 +103,8 @@ Verify the target kernel streams:
 3. Commit adhering to Conventional Commits: `feat(patches): add bbrv3 congestion tuning patch for mainstream`.
 
 ### Recipe C: Bumping a Kernel Version
-1. Edit [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json) with the new version, tag, and upstream tarball URL.
-2. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/README.md) in the exact same commit.
+1. Edit [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) with the new version, tag, and upstream tarball URL.
+2. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/cordanaLLM/nucleus/blob/main/README.md) in the exact same commit.
 3. Validate schema: `make lint && make test`.
 4. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`).
 

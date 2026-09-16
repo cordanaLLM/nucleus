@@ -6,7 +6,7 @@ labels: ["enhancement", "patch-request"]
 body:
   - type: markdown
     attributes:
-      value: Request a new kernel patch or driver integration for `lusoris-kernel-forge`!
+      value: Request a new kernel patch or driver integration for `cordanaLLM/nucleus`!
   - type: input
     id: patch_name
     attributes:

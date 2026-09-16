@@ -6,13 +6,13 @@
 
 ## 1. Architectural Role of eBPF in Lusoris
 
-Extended Berkeley Packet Filter (eBPF) provides kernel-level programmability across three foundational pillars in `lusoris-cloud-images`:
+Extended Berkeley Packet Filter (eBPF) provides kernel-level programmability across three foundational pillars in `cordanaLLM/imago`:
 
 1. **High-Performance Networking**: Cilium eBPF datapaths, XDP (eXpress Data Path) DDoS mitigation, and BBRv3 congestion telemetry.
 2. **Runtime Security Telemetry**: BPF LSM (Linux Security Module) hooks, system call interception, and container privilege monitoring.
 3. **Dynamic CPU Scheduling (`sched-ext`)**: User-space extensible scheduler framework (`CONFIG_SCHED_CLASS_EXT=y`) enabling workload-specific schedulers (e.g., `scx_bpfland`, `scx_rusty`, `scx_lavd`) to optimize cache affinity and gaming/database latencies.
 
-However, loading arbitrary bytecode into the kernel introduces severe risks if not strictly contained. `lusoris-kernel-forge` implements defense-in-depth verifier hardening and hardware watchdog mechanisms.
+However, loading arbitrary bytecode into the kernel introduces severe risks if not strictly contained. `cordanaLLM/nucleus` implements defense-in-depth verifier hardening and hardware watchdog mechanisms.
 
 ```mermaid
 flowchart TD

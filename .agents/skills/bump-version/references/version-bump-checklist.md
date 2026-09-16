@@ -1,6 +1,6 @@
 # Kernel Version Bump Quality Gate Checklist
 
-> Verification checklist for upgrading kernel stream versions in `lusoris-kernel-forge`.
+> Verification checklist for upgrading kernel stream versions in `cordanaLLM/nucleus`.
 
 ---
 

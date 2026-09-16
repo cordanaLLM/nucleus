@@ -1,12 +1,12 @@
 # Project Governance & Technical Stewardship
 
-> Governance framework, decision-making processes, maintainer responsibilities, and Architecture Decision Record (ADR) contracts for `lusoris-kernel-forge`.
+> Governance framework, decision-making processes, maintainer responsibilities, and Architecture Decision Record (ADR) contracts for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Governance Overview
 
-`lusoris-kernel-forge` is an open-source engineering project providing foundational infrastructure to `imago` and the wider Lusoris ecosystem. This document outlines how architectural decisions are reached, how maintainership is earned, and how release channels are governed.
+`cordanaLLM/nucleus` is an open-source engineering project providing foundational infrastructure to `imago` and the wider Lusoris ecosystem. This document outlines how architectural decisions are reached, how maintainership is earned, and how release channels are governed.
 
 ---
 
