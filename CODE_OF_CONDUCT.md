@@ -1,6 +1,6 @@
 # Contributor Covenant Code of Conduct
 
-> Authoritative Code of Conduct for `lusoris-kernel-forge` contributors, maintainers, and community members.
+> Authoritative Code of Conduct for `cordanaLLM/nucleus` contributors, maintainers, and community members.
 
 ---
 
@@ -47,7 +47,7 @@ This Code of Conduct applies within all community spaces (repositories, issue tr
 ## 5. Reporting & Contact
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported confidentially to the project maintainers:
-- **Private Security Advisory**: Submit a confidential advisory via [GitHub Security Advisories](https://github.com/lusoris/lusoris-kernel-forge/security/advisories/new).
+- **Private Security Advisory**: Submit a confidential advisory via [GitHub Security Advisories](https://github.com/cordanaLLM/nucleus/security/advisories/new).
 - **Direct Maintainer Contact**: Reach out privately to project maintainers via GitHub.
 
 All reports will be reviewed and investigated promptly, fairly, and confidentially. Maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project leadership.

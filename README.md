@@ -4,13 +4,13 @@
 [![CI](https://img.shields.io/badge/CI-Automated%20Gates-emerald.svg)](.github/workflows/ci.yml)
 [![Downstream](https://img.shields.io/badge/downstream-imago-purple.svg)](https://github.com/cordanaLLM/imago)
 
-`lusoris-kernel-forge` is the companion repository and automated build forge producing customized, hardened, and hardware-optimized Linux kernel distributions for `imago`.
+`cordanaLLM/nucleus` is the companion repository and automated build forge producing customized, hardened, and hardware-optimized Linux kernel distributions for `imago`.
 
 ---
 
 ## 1. Mission & Architecture
 
-`lusoris-kernel-forge` decouples low-level kernel compilation from cloud image creation:
+`cordanaLLM/nucleus` decouples low-level kernel compilation from cloud image creation:
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, OpenZFS 2.3 kmod compatibility, and NVMe-oF TCP optimizations.
@@ -24,7 +24,7 @@ flowchart TD
     classDef dest fill:#d97706,stroke:#b45309,stroke-width:2px,color:#ffffff
 
     Upstream["Upstream kernel.org CDN<br/><small>Mainline, Stable, LTS, Realtime</small>"]:::upstream
-    Forge["lusoris-kernel-forge Engine<br/><small>scripts/build_kernel.sh</small>"]:::engine
+    Forge["nucleus Engine<br/><small>scripts/build_kernel.sh</small>"]:::engine
     KConfig["Hardened KConfig Fragments<br/><small>kconfig/*.config</small>"]:::engine
     Patches["Curated Patch Queue<br/><small>patches/*</small>"]:::engine
 
@@ -131,5 +131,5 @@ Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>
 
 ## 6. License & Copyright
 
-`lusoris-kernel-forge` is open-source software licensed under the [Apache License 2.0](LICENSE).
+`cordanaLLM/nucleus` is open-source software licensed under the [Apache License 2.0](LICENSE).
 Copyright &copy; 2026 The Lusoris Authors. All rights reserved.

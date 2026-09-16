@@ -1,6 +1,6 @@
 # AGENTS.md — Agent & Contributor Directives
 
-> Authoritative operating guide for all autonomous engineering agents and human contributors in `lusoris-kernel-forge`.
+> Authoritative operating guide for all autonomous engineering agents and human contributors in `cordanaLLM/nucleus`.
 >
 > **Read [`docs/principles.md`](docs/principles.md) before changing this repository.** It defines the authority classes, Holzmann Power of 10 adaptations, and architectural contracts for kernel compilation and packaging.
 
@@ -20,9 +20,54 @@ These rules apply to ALL agents, ALL tools, and ALL commits — without exceptio
 
 ---
 
-## 1. Mission & Purpose
+## 1. State of the forge — read this before planning anything
 
-`lusoris-kernel-forge` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
+This repository does not compile a kernel yet. Everything around the compile step is
+implemented; the compile step itself refuses.
+
+| Stage | State |
+| :--- | :--- |
+| `versions.json` stream and architecture manifest | real |
+| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges architecture fragments with `security-hardened.config` |
+| `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
+| `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
+| `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
+| `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
+| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
+| downstream dispatch to `cordanaLLM/imago` | real: `kernel_release_published` carries stream, version and tag |
+
+The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
+reported success on all twelve legs in under three minutes, and `publish-release` would
+have packaged those empty files with sixteen megabytes of `/dev/urandom` named as a UKI,
+generated an SBOM for them, and signed the result with cosign. That is why it refuses
+now: **a forge that cannot compile must not report that it did.** Do not restore a
+placeholder to make the build green.
+
+Implementing the real build is issue #18. In short: fetch the pinned tarball from
+kernel.org, verify its signature, merge the kconfig fragments, run `bindeb-pkg`, and
+cross-compile for `arm64` and `riscv64` with the matching toolchain.
+
+One placeholder of the same class survives: `scripts/package-uki.sh` falls back to
+`cat "${VMLINUZ_FILE}" > "${target_efi}"` when `ukify` is absent, which produces a file
+named `.efi` that is a bare kernel image. Filed as issue #21; refuse instead, or
+install `ukify` on the runner.
+
+### The contract with imago
+
+`cordanaLLM/imago` consumes what this forge publishes, and verifies it:
+
+- **Inbound**: `kernel/requirement.json` in imago, shape `aegis.p01-nucleus.kernel-requirement.v1`, listing the kernel symbols its flavors need.
+- **Outbound**: `kernel-<stream>.manifest.json`, shape `imago.nucleus.kernel-artifact.v1`, carrying the stream, version, kernel release, config digest, per-artifact digests and sizes, the checksum file, and provenance (tag, revision, cosign bundle, signer identity).
+- Imago verifies the cosign bundle over `SHA256SUMS`, then the checksum file digest, then every per-artifact digest, before an image build consumes anything.
+
+That verification passes on whatever is published. It would have passed on empty files,
+which is the second reason the production path refuses rather than fabricates.
+
+---
+
+## 2. Mission & Purpose
+
+`cordanaLLM/nucleus` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
 
 Key capabilities:
 - **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc2), `mainstream` (7.2.4), `lts` (6.18.50), and `realtime` (7.2-rt).
@@ -32,16 +77,27 @@ Key capabilities:
 
 ---
 
-## 2. Working Sequence
+## 3. Working Sequence
 
 1. **Inspect Authority**: Read `docs/principles.md` and `versions.json` before touching build scripts or kconfigs.
 2. **Smallest Coherent Patch**: Make the minimal changes necessary. Do not rewrite nearby build scripts or kconfigs for style alone.
 3. **Run Local Checks**: Execute `make lint` and `make test` before pushing or creating a pull request.
+   `make build-kernel STREAM=<stream> ARCH=<arch> DRY_RUN=true` exercises the pipeline without
+   producing an artifact; without `DRY_RUN` it refuses, by design (section 1).
+4. **Prove it in CI, not only locally**: `gh workflow run build-matrix.yml -R cordanaLLM/nucleus -f dry_run=true`
+   runs all twelve legs. A change to the build path that has not been run there has not been tested.
+
+### Working on Windows
+
+The build container runs `sh`, not `bash`: a step using arrays or `[[` needs an explicit
+`shell: bash`, and the workflow installs `bash` for that reason. Two test failures,
+`test_scripts_executable` and `test_audit_repository_health_script_executable`, are exec-bit
+checks that fail on a Windows checkout and pass in CI; the index modes are already `100755`.
 4. **Conventional Commits**: Draft clear, descriptive commit messages adhering strictly to Conventional Commits (`type(scope): subject`).
 
 ---
 
-## 3. Hard Rules
+## 4. Hard Rules
 
 1. **Single Source of Truth**: All kernel streams, tags, URLs, and architectures originate exclusively from [`versions.json`](versions.json).
 2. **Never `git push --force` to `main`**.

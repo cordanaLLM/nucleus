@@ -5,7 +5,7 @@
       "args": ["scripts/hindsight_mcp_server.py"],
       "env": {
         "HINDSIGHT_URL": "http://127.0.0.1:8888",
-        "HINDSIGHT_BANK": "lusoris-kernel-forge"
+        "HINDSIGHT_BANK": "nucleus"
       }
     },
     "cauda-kb": {

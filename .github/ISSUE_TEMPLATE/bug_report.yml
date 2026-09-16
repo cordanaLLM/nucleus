@@ -6,7 +6,7 @@ labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: Thank you for reporting an issue in `lusoris-kernel-forge`! Please provide the details below.
+      value: Thank you for reporting an issue in `cordanaLLM/nucleus`! Please provide the details below.
   - type: dropdown
     id: stream
     attributes:

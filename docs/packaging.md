@@ -6,13 +6,13 @@
 
 ## 1. Overview & Dual Packaging Strategy
 
-`lusoris-kernel-forge` delivers compiled kernels through two complementary delivery formats:
+`cordanaLLM/nucleus` delivers compiled kernels through two complementary delivery formats:
 
 1. **Standard Debian Packages (`.deb`)**:
    - `linux-image-<version>-<stream>-<arch>.deb`: Contains the compressed kernel binary (`vmlinuz`), core drivers/modules (`/lib/modules/<version>`), and Device Tree Blobs (for ARM64/RISC-V).
    - `linux-headers-<version>-<stream>-<arch>.deb`: C headers and Makefiles required for out-of-tree DKMS modules (NVIDIA open kernel modules, OpenZFS 2.3).
    - `linux-libc-dev-<version>-<stream>-<arch>.deb`: Linux API user-space headers for glibc/musl compilation.
-   - Designed for standard Debian/Ubuntu OS installations, container base hosts, and golden image provisioning in `lusoris-cloud-images`.
+   - Designed for standard Debian/Ubuntu OS installations, container base hosts, and golden image provisioning in `cordanaLLM/imago`.
 
 2. **Unified Kernel Images (UKI, `.efi`)**:
    - Single, signed, self-contained UEFI PE binary combining the Linux kernel (`.linux`), microcode + initramfs (`.initrd`), kernel command line (`.cmdline`), and OS release metadata (`.osrel`).
@@ -103,7 +103,7 @@ ukify build \
   --cmdline="console=tty1 console=ttyS0,115200 root=UUID=5f6a9e10-3b4c-4e8f-9a2d-1c3b5e7f9a12 ro quiet splash loglevel=3 mitigations=auto" \
   --os-release="@/etc/os-release" \
   --uname="7.2.4-lusoris1-mainstream-amd64" \
-  --sbat="sbat,1,SBAT Version,sbat,1,https://github.com/systemd/systemd/blob/main/docs/SBAT.md\nlusoris,1,Lusoris Linux,lusoris,1,https://github.com/lusoris/lusoris-kernel-forge" \
+  --sbat="sbat,1,SBAT Version,sbat,1,https://github.com/systemd/systemd/blob/main/docs/SBAT.md\nlusoris,1,Lusoris Linux,lusoris,1,https://github.com/cordanaLLM/nucleus" \
   --secureboot-private-key="/etc/ssl/certs/db.key" \
   --secureboot-certificate="/etc/ssl/certs/db.crt" \
   --measure \
@@ -176,7 +176,7 @@ oras push ghcr.io/lusoris/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
 ```
-Downstream bare-metal provisioning systems (`lusoris-cloud-images` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
+Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
 `publish-release.yml` publishes one GitHub Release per stream tag with `*.deb`, `linux-<stream>-<version>-uki.efi`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`.

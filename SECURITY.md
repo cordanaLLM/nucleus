@@ -1,12 +1,12 @@
 # Security Policy & Audit Ledger
 
-> Authoritative security governance, vulnerability reporting protocols, cryptographic attestation, and continuous audit ledger for `lusoris-kernel-forge`.
+> Authoritative security governance, vulnerability reporting protocols, cryptographic attestation, and continuous audit ledger for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Supported Releases & Security Maintenance
 
-`lusoris-kernel-forge` actively patches, tests, and backports security advisories for the following release channels:
+`cordanaLLM/nucleus` actively patches, tests, and backports security advisories for the following release channels:
 
 | Stream Channel | Tracked Upstream Version | Security Maintenance Status | Update Frequency |
 | :--- | :--- | :--- | :--- |
@@ -24,7 +24,7 @@ Older point releases are deprecated as soon as superseded by the next version de
 We treat all security vulnerability disclosures with utmost urgency and confidentiality:
 
 1. **Private GitHub Security Advisory**:
-   - Navigate to [Report a Vulnerability](https://github.com/lusoris/lusoris-kernel-forge/security/advisories/new).
+   - Navigate to [Report a Vulnerability](https://github.com/cordanaLLM/nucleus/security/advisories/new).
    - Provide a clear vulnerability description, affected kernel streams, proof-of-concept if available, and any relevant kconfig flags.
 2. **Never File Public Issues**: Do not submit vulnerability reports, zero-day disclosures, or exploit PoCs to public GitHub Issues or PRs.
 

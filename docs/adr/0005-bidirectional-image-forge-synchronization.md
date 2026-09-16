@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-`lusoris-kernel-forge` is architected as the dedicated kernel compilation sister repository to [`lusoris-cloud-images`](https://github.com/lusoris/lusoris-cloud-images). 
+`cordanaLLM/nucleus` is architected as the dedicated kernel compilation sister repository to [`cordanaLLM/imago`](https://github.com/cordanaLLM/imago). 
 
 In decoupled multi-repository architectures, cross-repository synchronization often deteriorates into manual coordination:
 1. **Release Lag**: When a new kernel release or critical security patch is compiled, days or weeks pass before human operators manually edit `versions.json` in the downstream image repository.
@@ -26,9 +26,9 @@ We establish an automated **Bidirectional Cross-Repository Synchronization Engin
 ```mermaid
 sequenceDiagram
     autonumber
-    participant KF as lusoris-kernel-forge (Upstream)
+    participant KF as nucleus (Upstream)
     participant GH as GitHub API / Dispatch Bus
-    participant CI as lusoris-cloud-images (Downstream)
+    participant CI as imago (Downstream)
 
     rect rgb(240, 248, 255)
     Note over KF,CI: Channel 1: Downstream Release Dispatch (Push)
@@ -49,21 +49,21 @@ sequenceDiagram
 ```
 
 ### 1. Downstream Release Dispatch (`kernel-forge` -> `cloud-images`)
-Upon successful compilation, cryptographic signing, and package publication, `lusoris-kernel-forge` executes `.github/workflows/publish-release.yml`:
-- Dispatches a `kernel_release_published` event to `lusoris/lusoris-cloud-images`.
+Upon successful compilation, cryptographic signing, and package publication, `cordanaLLM/nucleus` executes `.github/workflows/publish-release.yml`:
+- Dispatches a `kernel_release_published` event to `cordanaLLM/imago`.
 - The payload includes the stream name, semver version, target architectures, and cryptographic SHA-256 digests.
-- Downstream, an automated workflow opens a pull request or commits directly to `lusoris-cloud-images/versions.json`, triggering smoke image builds across all affected flavors.
+- Downstream, an automated workflow opens a pull request or commits directly to `imago/versions.json`, triggering smoke image builds across all affected flavors.
 
 ### 2. Upstream Requirement Verification (`cloud-images` -> `kernel-forge`)
-When `lusoris-cloud-images` defines new kernel requirements in its flavor specs:
-- It emits a `kernel_requirements_updated` event to `lusoris-kernel-forge`.
+When `cordanaLLM/imago` defines new kernel requirements in its flavor specs:
+- It emits a `kernel_requirements_updated` event to `cordanaLLM/nucleus`.
 - `verify-requirements.yml` validates that all active `.config` trees contain the requested symbols (`CONFIG_VIRTIO_NET=y`, `CONFIG_BBR3=y`, etc.).
 
 ### 3. Declarative SSOT Linkage
-The downstream dispatch targets and event names are declared in [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json):
+The downstream dispatch targets and event names are declared in [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json):
 ```json
 "downstream": {
-  "repository": "lusoris/lusoris-cloud-images",
+  "repository": "cordanaLLM/imago",
   "sync_event": "kernel_release_published"
 }
 ```

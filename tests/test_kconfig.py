@@ -1,4 +1,4 @@
-"""Test kernel configuration fragments in lusoris-kernel-forge."""
+"""Test kernel configuration fragments in nucleus."""
 
 from pathlib import Path
 

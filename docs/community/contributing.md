@@ -1,17 +1,17 @@
-# Contributing to lusoris-kernel-forge
+# Contributing to nucleus
 
-> Authoritative contributor guidelines, quality gates, and pull request workflows for `lusoris-kernel-forge`.
+> Authoritative contributor guidelines, quality gates, and pull request workflows for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Core Operating Principles
 
-Thank you for contributing to `lusoris-kernel-forge`! We welcome contributions ranging from new hardware driver fragments and curated patch queues to cross-compilation enhancements and security hardening.
+Thank you for contributing to `cordanaLLM/nucleus`! We welcome contributions ranging from new hardware driver fragments and curated patch queues to cross-compilation enhancements and security hardening.
 
 All contributions must honor the repository's foundational invariants:
 
 1. **Trunk-Based Development**: Direct commits to `main` are strictly prohibited. Always branch from `main` using short-lived branches (`feat/*`, `fix/*`, `chore/*`, `docs/*`).
-2. **Single Source of Truth (`versions.json`)**: Upstream tarball URLs, release tags, and supported architectures must originate exclusively from [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json).
+2. **Single Source of Truth (`versions.json`)**: Upstream tarball URLs, release tags, and supported architectures must originate exclusively from [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json).
 3. **NASA/JPL Power of 10**: All shell build and automation functions must be $\le 60$ lines, enforce `set -euo pipefail`, check return codes, and pass `shellcheck` with zero warnings.
 4. **Docs & Code Synchrony**: Every user-discoverable change (new stream, configuration variable, or build script modification) must be reflected in documentation in the **exact same commit**.
 5. **Zero-Leak Invariant**: Never commit RFC 1918 private IP addresses (`10.x`, `192.168.x`, `172.16-31.x`) or local workstation home paths. Use standard placeholders (`192.0.2.x`, `kernel.example.com`, `/opt/lusoris/...`).

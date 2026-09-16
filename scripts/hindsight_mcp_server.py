@@ -39,7 +39,7 @@ import urllib.parse
 
 HINDSIGHT_URL = os.environ.get("HINDSIGHT_URL", "http://127.0.0.1:8888").rstrip("/")
 HINDSIGHT_TENANT = os.environ.get("HINDSIGHT_TENANT", "default")
-DEFAULT_BANK = os.environ.get("HINDSIGHT_BANK", "lusoris-kernel-forge")
+DEFAULT_BANK = os.environ.get("HINDSIGHT_BANK", "nucleus")
 REQUEST_TIMEOUT = int(os.environ.get("HINDSIGHT_TIMEOUT", "15"))
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

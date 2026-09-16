@@ -1,6 +1,6 @@
 # Kernel Release Streams
 
-> Comprehensive specifications and workload mappings for all 4 kernel release streams in `lusoris-kernel-forge`.
+> Comprehensive specifications and workload mappings for all 4 kernel release streams in `cordanaLLM/nucleus`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Repository Formatting & Style Guidelines
 
-> Layer 3 reference for `/format-all`. Standard styling conventions for `lusoris-kernel-forge`.
+> Layer 3 reference for `/format-all`. Standard styling conventions for `cordanaLLM/nucleus`.
 
 ---
 

@@ -10,7 +10,7 @@ The **CIS Distribution-Independent Linux Benchmark** categorizes security config
 - **Level 1 (Basic / Operational)**: Prudent security baselines achievable with minimal performance impact and broad software compatibility.
 - **Level 2 (High-Security / Defense-in-Depth)**: Specialized security controls for high-assurance, multi-tenant environments where attack surface minimization supersedes legacy backwards compatibility.
 
-In `lusoris-kernel-forge`, kernel configuration fragments (`kconfig/security-hardened.config` and `kconfig/base.config`) directly enforce CIS Level 2 requirements at compile time, guaranteeing that unauthorized features cannot be activated even if requested by user-space binaries.
+In `cordanaLLM/nucleus`, kernel configuration fragments (`kconfig/security-hardened.config` and `kconfig/base.config`) directly enforce CIS Level 2 requirements at compile time, guaranteeing that unauthorized features cannot be activated even if requested by user-space binaries.
 
 ```mermaid
 graph TD
@@ -22,7 +22,7 @@ graph TD
         LOCK["Domain 1.4: Kernel Lockdown & Signature Enforcement"]
     end
 
-    subgraph KConfig["lusoris-kernel-forge Implementations"]
+    subgraph KConfig["nucleus Implementations"]
         FS_CFG["Disable cramfs, freevxfs, jffs2, hfs, hfsplus, squashfs unpriv"]
         NET_CFG["Disable DCCP, SCTP, RDS, TIPC, ATM, FireWire"]
         AUDIT_CFG["CONFIG_AUDIT=y & CONFIG_AUDITSYSCALL=y"]
@@ -122,7 +122,7 @@ The **Kernel Lockdown** mechanism prevents user-space root accounts from modifyi
 - **Confidentiality Mode (`lockdown=confidentiality`)**:
   - Extends integrity mode by also preventing root from reading kernel memory contents (e.g. via `/proc/kcore` or raw PCI configuration spaces), protecting in-memory encryption keys and TLS credentials.
 
-In `lusoris-kernel-forge`, the kernel supports runtime transition to `lockdown=integrity` automatically whenever UEFI Secure Boot is active.
+In `cordanaLLM/nucleus`, the kernel supports runtime transition to `lockdown=integrity` automatically whenever UEFI Secure Boot is active.
 
 ---
 

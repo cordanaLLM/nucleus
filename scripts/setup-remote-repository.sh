@@ -16,7 +16,7 @@
 set -euo pipefail
 
 REPO_OWNER="lusoris"
-REPO_NAME="lusoris-kernel-forge"
+REPO_NAME="nucleus"
 FULL_REPO="${REPO_OWNER}/${REPO_NAME}"
 
 init_remote_repo() {
@@ -25,7 +25,7 @@ init_remote_repo() {
     gh repo create "${FULL_REPO}" \
       --public \
       --description "Deterministic Linux kernel compilation forge, hardened kconfig fragments, and deb/UKI packaging for imago." \
-      --homepage "https://lusoris.github.io/lusoris-kernel-forge"
+      --homepage "https://lusoris.github.io/nucleus"
     echo "    Created repository ${FULL_REPO}."
   else
     echo "    Repository ${FULL_REPO} already exists."
@@ -257,7 +257,7 @@ create_epics_issues() {
 
 provision_project_board() {
   echo "==> [8/9] Provisioning GitHub Project v2 Board and linking epics..."
-  local proj_title="lusoris-kernel-forge Roadmap"
+  local proj_title="nucleus Roadmap"
   local proj_num
   proj_num=$(gh project list --owner "${REPO_OWNER}" --format json | python3 -c "
 import json, sys
@@ -316,7 +316,7 @@ EOF
 
 main() {
   echo "=========================================================="
-  echo " lusoris-kernel-forge — Remote GitHub Setup & Parity Sync"
+  echo " nucleus — Remote GitHub Setup & Parity Sync"
   echo "=========================================================="
   init_remote_repo
   configure_repo_settings

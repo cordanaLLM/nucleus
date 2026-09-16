@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-`lusoris-kernel-forge` compiles, patches, hardens, and packages four concurrent Linux kernel release streams (`bleeding`, `mainstream`, `lts`, `realtime`) across three hardware architectures (`x86_64`, `arm64`, `riscv64`). 
+`cordanaLLM/nucleus` compiles, patches, hardens, and packages four concurrent Linux kernel release streams (`bleeding`, `mainstream`, `lts`, `realtime`) across three hardware architectures (`x86_64`, `arm64`, `riscv64`). 
 
 In traditional kernel packaging setups, release numbers, Git commit hashes, upstream tarball URLs, and architecture targets are frequently scattered across Makefiles, shell build scripts, Dockerfiles, and GitHub Actions workflow YAML files. This fragmentation leads to:
 1. **Configuration Drift**: A version bumped in a build script may be omitted in the packaging or CI matrix workflow, causing mismatched binaries.
@@ -21,7 +21,7 @@ In traditional kernel packaging setups, release numbers, Git commit hashes, upst
 
 ## Decision
 
-We establish [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json) paired with a formal JSON Schema ([`versions.schema.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.schema.json)) as the sole, authoritative **Single Source of Truth (SSOT)** for the repository:
+We establish [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) paired with a formal JSON Schema ([`versions.schema.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.schema.json)) as the sole, authoritative **Single Source of Truth (SSOT)** for the repository:
 
 1. **Mandatory Schema Validation**: Every kernel stream must declare `version`, `tag`, `tarball_url`, `status`, and `description`. Target architectures must be explicitly enumerated in `architectures`.
 2. **Zero Hardcoded Versions in Scripts**: Shell scripts (`scripts/build-kernel.sh`, `scripts/package-deb.sh`, `scripts/package-uki.sh`) and GitHub Actions workflows are strictly prohibited from hardcoding kernel version strings, URLs, or architectural lists. They must dynamically query `versions.json` using `python3` or `jq`.
@@ -33,7 +33,7 @@ graph TD
     VJ -->|Queried by| SH["build-kernel.sh & package-deb.sh"]
     VJ -->|Queried by| CI[".github/workflows/build-matrix.yml"]
     VJ -->|Monitored by| REN["Renovate Custom Regex Managers"]
-    VJ -->|Dispatched to| DOWN["lusoris-cloud-images"]
+    VJ -->|Dispatched to| DOWN["imago"]
 ```
 
 ---

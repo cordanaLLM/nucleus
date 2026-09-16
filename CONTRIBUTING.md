@@ -1,12 +1,12 @@
-# Contributing to lusoris-kernel-forge
+# Contributing to nucleus
 
-> Authoritative contributor guidelines, quality gates, and pull request workflows for `lusoris-kernel-forge`.
+> Authoritative contributor guidelines, quality gates, and pull request workflows for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Core Operating Principles
 
-Thank you for contributing to `lusoris-kernel-forge`! We welcome contributions ranging from new hardware driver fragments and curated patch queues to cross-compilation enhancements and security hardening.
+Thank you for contributing to `cordanaLLM/nucleus`! We welcome contributions ranging from new hardware driver fragments and curated patch queues to cross-compilation enhancements and security hardening.
 
 All contributions must honor the repository's foundational invariants:
 

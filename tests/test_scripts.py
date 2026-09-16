@@ -1,4 +1,4 @@
-"""Test shell script standards and Power of 10 compliance for lusoris-kernel-forge."""
+"""Test shell script standards and Power of 10 compliance for nucleus."""
 
 import subprocess
 from pathlib import Path

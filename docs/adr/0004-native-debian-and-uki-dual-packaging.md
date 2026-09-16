@@ -10,9 +10,9 @@ Accepted
 
 ## Context
 
-Kernels compiled by `lusoris-kernel-forge` are consumed across two fundamentally different deployment patterns:
+Kernels compiled by `cordanaLLM/nucleus` are consumed across two fundamentally different deployment patterns:
 
-1. **Standard Cloud & Virtual Machine Instances (`lusoris-cloud-images`)**:
+1. **Standard Cloud & Virtual Machine Instances (`cordanaLLM/imago`)**:
    - VM flavors (Proxmox VE, VMware, KVM, Docker, Kubernetes) rely on standard Debian/Ubuntu package managers (`apt`, `dpkg`).
    - Third-party out-of-tree drivers (e.g. OpenZFS 2.3, NVIDIA Open Kernel Modules) require matching C development headers (`linux-headers`) to compile kernel modules via DKMS during golden image provisioning.
 2. **High-Assurance Bare-Metal & Confidential Computing**:

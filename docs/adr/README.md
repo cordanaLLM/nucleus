@@ -1,12 +1,12 @@
 # Architecture Decision Records (ADRs)
 
-> Historical index and governance registry of Architectural Decision Records for `lusoris-kernel-forge`.
+> Historical index and governance registry of Architectural Decision Records for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Overview & ADR Lifecycle
 
-An **Architecture Decision Record (ADR)** documents a significant software architecture decision made for `lusoris-kernel-forge`, along with its context, rationale, consequences, and automated compliance enforcement.
+An **Architecture Decision Record (ADR)** documents a significant software architecture decision made for `cordanaLLM/nucleus`, along with its context, rationale, consequences, and automated compliance enforcement.
 
 Once an ADR is reviewed, approved, and merged, its status is marked **Accepted**, and its text becomes an immutable historical document. If future technical requirements necessitate reversing or modifying an accepted architectural decision, a new ADR must be drafted that explicitly supersedes the earlier decision.
 
@@ -24,7 +24,7 @@ stateDiagram-v2
 
 ## 2. ADR Index
 
-The following table indexes all architectural decision records governing `lusoris-kernel-forge`:
+The following table indexes all architectural decision records governing `cordanaLLM/nucleus`:
 
 | ADR Number | Title | Status | Date | Primary Focus Area |
 | :--- | :--- | :--- | :--- | :--- |

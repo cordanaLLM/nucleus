@@ -1,4 +1,4 @@
-title = "lusoris-kernel-forge gitleaks configuration"
+title = "nucleus gitleaks configuration"
 
 [extend]
 useDefault = true

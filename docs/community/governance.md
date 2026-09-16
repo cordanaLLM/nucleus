@@ -1,12 +1,12 @@
 # Project Governance & Technical Stewardship
 
-> Governance framework, decision-making processes, maintainer responsibilities, and Architecture Decision Record (ADR) contracts for `lusoris-kernel-forge`.
+> Governance framework, decision-making processes, maintainer responsibilities, and Architecture Decision Record (ADR) contracts for `cordanaLLM/nucleus`.
 
 ---
 
 ## 1. Governance Overview
 
-`lusoris-kernel-forge` is an open-source engineering project providing foundational infrastructure to `lusoris-cloud-images` and the wider Lusoris ecosystem. This document outlines how architectural decisions are reached, how maintainership is earned, and how release channels are governed.
+`cordanaLLM/nucleus` is an open-source engineering project providing foundational infrastructure to `cordanaLLM/imago` and the wider Lusoris ecosystem. This document outlines how architectural decisions are reached, how maintainership is earned, and how release channels are governed.
 
 ---
 
@@ -20,7 +20,7 @@ To prevent architectural drift and preserve institutional knowledge across human
    - Introducing new CPU architecture cross-compilation targets.
    - Modifying core packaging formats (e.g. UKI specifications or APT repository metadata).
    - Changing security baseline invariants (KSPP or CIS Level 2).
-   - Altering the downstream dispatch protocol to `lusoris-cloud-images`.
+   - Altering the downstream dispatch protocol to `cordanaLLM/imago`.
 3. **ADR Immutability**: Once an ADR is merged with status `Accepted`, its contents become immutable history. Any future directional pivot must be documented in a new, superseding ADR referencing the original.
 
 ---

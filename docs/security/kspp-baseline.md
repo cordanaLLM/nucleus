@@ -1,6 +1,6 @@
 # Kernel Self-Protection Project (KSPP) Baseline
 
-> Comprehensive engineering specification for the proactive security hardening, memory safety mitigations, and compiler instrumentations implemented in `lusoris-kernel-forge`.
+> Comprehensive engineering specification for the proactive security hardening, memory safety mitigations, and compiler instrumentations implemented in `cordanaLLM/nucleus`.
 
 ---
 
@@ -8,7 +8,7 @@
 
 The **Kernel Self-Protection Project (KSPP)** shifts the Linux security paradigm from reactive CVE patching to proactive architectural defense. Rather than treating memory corruption bugs as isolated anomalies, KSPP enforces invariants that prevent entire bug classes from being weaponized into privilege escalation or arbitrary code execution.
 
-In cloud environments where multi-tenant workloads, untrusted containers, and untrusted microVMs share underlying host hardware, `lusoris-kernel-forge` enforces KSPP baseline options across **all** release streams (`lts`, `mainstream`, `bleeding`, `realtime`).
+In cloud environments where multi-tenant workloads, untrusted containers, and untrusted microVMs share underlying host hardware, `cordanaLLM/nucleus` enforces KSPP baseline options across **all** release streams (`lts`, `mainstream`, `bleeding`, `realtime`).
 
 ```mermaid
 graph TD
@@ -20,7 +20,7 @@ graph TD
         INFO["Information Leaks / Pointer Leakage"]
     end
 
-    subgraph Mitigations["KSPP Defense Layers (lusoris-kernel-forge)"]
+    subgraph Mitigations["KSPP Defense Layers (nucleus)"]
         CANARY["CONFIG_STACKPROTECTOR_STRONG"]
         SLAB_HARD["CONFIG_SLAB_FREELIST_HARDENED"]
         W_X["CONFIG_STRICT_KERNEL_RWX & STRICT_MODULE_RWX"]
@@ -107,7 +107,7 @@ CONFIG_IO_STRICT_DEVMEM=y
 
 ## 4. Sysctl Runtime Security Knobs
 
-In addition to compile-time flags, `lusoris-kernel-forge` documents mandatory sysctl security settings applied by `lusoris-cloud-images` at boot:
+In addition to compile-time flags, `cordanaLLM/nucleus` documents mandatory sysctl security settings applied by `cordanaLLM/imago` at boot:
 
 ```ini
 # /etc/sysctl.d/99-kernel-security.conf

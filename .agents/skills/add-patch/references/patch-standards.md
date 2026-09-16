@@ -1,6 +1,6 @@
 # Kernel Patch Quality & Format Standards
 
-> Layer 3 reference for `/add-patch`. Standards for Linux kernel patches in `lusoris-kernel-forge`.
+> Layer 3 reference for `/add-patch`. Standards for Linux kernel patches in `cordanaLLM/nucleus`.
 
 ---
 

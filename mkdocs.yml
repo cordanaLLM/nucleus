@@ -1,8 +1,8 @@
-site_name: lusoris-kernel-forge
+site_name: nucleus
 site_description: High-performance, hardened, hardware-accelerated Linux kernel compilation and packaging factory
-site_url: https://lusoris.github.io/lusoris-kernel-forge
-repo_url: https://github.com/lusoris/lusoris-kernel-forge
-repo_name: lusoris/lusoris-kernel-forge
+site_url: https://lusoris.github.io/nucleus
+repo_url: https://github.com/cordanaLLM/nucleus
+repo_name: cordanaLLM/nucleus
 edit_uri: edit/main/docs/
 copyright: "Copyright &copy; 2026 The Lusoris Authors — Apache 2.0 License"
 

@@ -6,7 +6,7 @@
 
 ## 1. Architectural Support Matrix
 
-`lusoris-kernel-forge` targets three primary ISA families, each optimized for specific virtualization, cloud-native, and bare-metal hardware platforms:
+`cordanaLLM/nucleus` targets three primary ISA families, each optimized for specific virtualization, cloud-native, and bare-metal hardware platforms:
 
 | Architecture | ISA Baseline | Target Microarchitectures | Boot Artifact | Page Size | Primary Virtualization |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -35,7 +35,7 @@ graph TD
 
 ## 2. Toolchain Selection: LLVM/Clang 20 vs. GNU GCC 15
 
-All kernels in `lusoris-kernel-forge` default to the **LLVM/Clang 20** toolchain via `LLVM=1`:
+All kernels in `cordanaLLM/nucleus` default to the **LLVM/Clang 20** toolchain via `LLVM=1`:
 
 ```bash
 make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg

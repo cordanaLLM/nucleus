@@ -1,24 +1,24 @@
-# lusoris-kernel-forge
+# nucleus
 
-> Enterprise-grade, hardened, hardware-accelerated Linux kernel compilation and packaging factory for `lusoris-cloud-images` and high-performance bare-metal clusters.
+> Enterprise-grade, hardened, hardware-accelerated Linux kernel compilation and packaging factory for `cordanaLLM/imago` and high-performance bare-metal clusters.
 
 ---
 
 ## 1. Mission & Ecosystem Architecture
 
-`lusoris-kernel-forge` is the dedicated kernel compilation sister repository to [`lusoris-cloud-images`](https://github.com/lusoris/lusoris-cloud-images). 
+`cordanaLLM/nucleus` is the dedicated kernel compilation sister repository to [`cordanaLLM/imago`](https://github.com/cordanaLLM/imago). 
 
-In traditional cloud image builds, compiling custom Linux kernels directly inside Packer or Image Builder virtual machines introduces severe bottlenecks: multi-hour build cycles, CPU resource exhaustion, duplicate compilation across matrix variants, and brittle compiler toolchain setup. `lusoris-kernel-forge` solves this by decoupling kernel compilation into a dedicated, hermetic build pipeline.
+In traditional cloud image builds, compiling custom Linux kernels directly inside Packer or Image Builder virtual machines introduces severe bottlenecks: multi-hour build cycles, CPU resource exhaustion, duplicate compilation across matrix variants, and brittle compiler toolchain setup. `cordanaLLM/nucleus` solves this by decoupling kernel compilation into a dedicated, hermetic build pipeline.
 
-The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and signed systemd-boot Unified Kernel Images (`.efi`)—are published to an authenticated APT repository and OCI registry, then consumed downstream by `lusoris-cloud-images`.
+The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and signed systemd-boot Unified Kernel Images (`.efi`)—are published to an authenticated APT repository and OCI registry, then consumed downstream by `cordanaLLM/imago`.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant KF as lusoris-kernel-forge (Sister Repo)
+    participant KF as nucleus (Sister Repo)
     participant GH as GitHub Releases & APT Repository
     participant OCI as GitHub Container Registry (ghcr.io)
-    participant CI as lusoris-cloud-images (Image Forge)
+    participant CI as imago (Image Forge)
     participant BM as Bare-Metal & Hypervisor Fleet
 
     Note over KF: Upstream kernel.org source unpacked & patched
@@ -37,7 +37,7 @@ sequenceDiagram
 
 ## 2. Live Kernel Release Streams
 
-All versions, upstream source tarball URLs, and release tags are managed exclusively through [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json).
+All versions, upstream source tarball URLs, and release tags are managed exclusively through [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json).
 
 | Stream | Linux Version | Status | Primary Target Workloads | Hardware Acceleration | Key Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -50,7 +50,7 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 ## 3. Core Architectural Pillars
 
-- **Single Source of Truth (SSOT)**: Kernel versions, upstream archives, patch queues, and architecture targets are strictly declared in [`versions.json`](https://github.com/lusoris/lusoris-kernel-forge/blob/main/versions.json) and validated by JSON Schema.
+- **Single Source of Truth (SSOT)**: Kernel versions, upstream archives, patch queues, and architecture targets are strictly declared in [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) and validated by JSON Schema.
 - **NASA / JPL Power of 10 Compliance**: All automation and build scripts enforce `set -euo pipefail`, short functions ($\le 60$ lines), localized variables, bounded control loops, and zero ShellCheck warnings.
 - **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (`base/`, `security/`, `drivers/`, `streams/`), merged deterministically with `merge_config.sh`.
 - **Zero-Leak Invariant**: Codebase is protected against private network leaks (zero RFC 1918 addresses) and local workstation paths (zero `/home/...` or `/Users/...` references).
