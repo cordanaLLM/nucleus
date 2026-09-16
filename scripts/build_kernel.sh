@@ -87,10 +87,18 @@ execute_build() {
     return 0
   fi
 
-  echo "==> Production build requires live compiler toolchain."
-  touch "${OUTPUT_DIR}/linux-image-${version}-lusoris1_${ARCH}.deb"
-  touch "${OUTPUT_DIR}/linux-headers-${version}-lusoris1_${ARCH}.deb"
-  echo "==> Generated kernel deb artifacts in ${OUTPUT_DIR}/"
+  # The production path is not implemented, and it refuses rather than pretending.
+  #
+  # It used to touch two empty .deb files and exit 0, so the matrix reported success on
+  # all twelve legs in under three minutes and publish-release then packaged those empty
+  # files, generated an SBOM describing them, checksummed them and signed the result with
+  # cosign. The signature was valid and attested to nothing, and a consumer verifying
+  # provenance by digest would have verified emptiness. Refusing is the only honest state
+  # for a forge that cannot yet build.
+  echo "Error: the production kernel build is not implemented (see issue #18)." >&2
+  echo "       This forge will not emit an artifact it did not compile." >&2
+  echo "       Use --dry-run to exercise the pipeline without producing one." >&2
+  return 1
 }
 
 main() {
