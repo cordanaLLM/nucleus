@@ -141,8 +141,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # No credential stays in .git/config while this job runs a binary built from another
+      # repository.
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Check out pinned praetor source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -175,6 +179,14 @@ jobs:
       # below fails when the copies under .config/archetypes/ do not match the lock.
       - name: Verify the lock against the pinned praetor catalog
         run: praetorctl plan --catalog-root praetor-src
+
+      # plan passes without .standards.lock: it then resolves built-in defaults and reports
+      # the missing lock as drift without failing. sync fails on a missing lock, and it
+      # fails when .github/rulesets/main.json differs from the policy .standards.yaml
+      # declares. It runs locally, without --remote, and only writes .config/labels.yaml into
+      # this workspace.
+      - name: Verify the lock exists and the committed ruleset matches the policy
+        run: praetorctl sync --catalog-root praetor-src
 
       # The praetor checkout is a build and verification input only; nothing after this
       # step may read it as nucleus content.

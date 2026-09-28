@@ -467,7 +467,10 @@ def test_ruleset_requires_exactly_the_checks_every_pull_request_reports():
     """A required check that no pull request reports would block every merge.
 
     .github/rulesets/main.json is rendered by `make ruleset`; re-render it whenever a
-    workflow that runs on pull requests gains, loses or renames a job.
+    workflow that runs on pull requests gains, loses or renames a job. This test compares
+    the required check names only. The review counts, signature and history rules, and the
+    review-mode override are checked by the `praetorctl sync` step of the governance job,
+    which fails when the file differs from the policy `.standards.yaml` declares.
     """
     ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
     rules = [rule for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
@@ -481,19 +484,31 @@ def test_ruleset_requires_exactly_the_checks_every_pull_request_reports():
 
 
 def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
-    """The praetor pin is one full commit SHA, and CI checks the vendored catalog against it."""
+    """The praetor pin is one full commit SHA, and CI checks the vendored catalog against it.
+
+    `plan` passes when `.standards.lock` is missing, so the job also runs
+    `praetorctl sync --catalog-root praetor-src`, which fails on a missing lock and on a
+    committed ruleset that differs from the declared policy. It must stay local: `--remote`
+    would write to GitHub from a pull request job.
+    """
     parsed = yaml.safe_load((WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))
     pin = parsed["env"]["PRAETOR_COMMIT"]
     assert re.fullmatch(r"[0-9a-f]{40}", pin), f"PRAETOR_COMMIT must be a full commit SHA: {pin}"
+    assert (REPO_ROOT / ".standards.lock").is_file(), ".standards.lock must be committed"
 
     steps = parsed["jobs"]["governance"]["steps"]
+    for step in steps:
+        uses = step.get("uses", "")
+        if uses.startswith("actions/checkout@"):
+            assert step["with"]["persist-credentials"] is False, f"checkout keeps credentials: {step}"
     checkout = next(step for step in steps if step.get("with", {}).get("repository") == "cordanaLLM/praetor")
     assert checkout["with"]["ref"] == "${{ env.PRAETOR_COMMIT }}"
-    assert checkout["with"]["persist-credentials"] is False
 
     commands = [step["run"].strip() for step in steps if "run" in step]
+    assert not [command for command in commands if "--remote" in command], "governance job must stay local"
     order = [
         "praetorctl plan --catalog-root praetor-src",
+        "praetorctl sync --catalog-root praetor-src",
         "rm -rf praetor-src",
         "praetorctl plan",
         "praetorctl compile-context --verify",

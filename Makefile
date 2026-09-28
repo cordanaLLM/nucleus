@@ -68,6 +68,8 @@ lint-workflows: ## Run actionlint on GitHub Actions workflows
 			actionlint .github/workflows/*.yml; \
 		elif [ -x "$$HOME/go/bin/actionlint" ]; then \
 			"$$HOME/go/bin/actionlint" .github/workflows/*.yml; \
+		else \
+			echo "==> SKIP: actionlint not installed; workflow lint did not run."; \
 		fi \
 	fi
 	@echo "==> Workflow linting complete."
@@ -126,12 +128,24 @@ ruleset: ## Re-render .github/rulesets/main.json from .standards.yaml and the wo
 	fi; \
 	exit "$$status"
 
-governance-check: ## Run the praetor checks CI runs (PRAETOR_SRC=<praetor checkout> adds the catalog check)
+governance-check: ## Run the praetor checks CI runs (PRAETOR_SRC=<praetor checkout at the pin> adds the catalog checks)
 	@if [ -n "$(PRAETOR_SRC)" ]; then \
+		pin=$$(sed -n 's/^  PRAETOR_COMMIT: "\([0-9a-f]\{40\}\)"$$/\1/p' .github/workflows/ci.yml); \
+		head=$$(git -C "$(PRAETOR_SRC)" rev-parse HEAD); \
+		if [ -z "$$pin" ] || [ "$$head" != "$$pin" ]; then \
+			echo "==> ERROR: PRAETOR_SRC is at '$$head', PRAETOR_COMMIT is '$$pin'." >&2; \
+			exit 1; \
+		fi; \
 		$(PRAETORCTL) plan --catalog-root "$(PRAETOR_SRC)"; \
 	else \
 		echo "==> SKIP: PRAETOR_SRC unset; the catalog check against the praetor pin did not run."; \
 	fi
+	@had_labels=false; \
+	if [ -f .config/labels.yaml ]; then had_labels=true; fi; \
+	status=0; \
+	$(PRAETORCTL) sync $(if $(PRAETOR_SRC),--catalog-root "$(PRAETOR_SRC)") || status=$$?; \
+	if [ "$$had_labels" = false ]; then rm -f .config/labels.yaml; fi; \
+	exit "$$status"
 	@$(PRAETORCTL) plan
 	@$(PRAETORCTL) compile-context --verify
 

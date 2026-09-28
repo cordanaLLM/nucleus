@@ -25,6 +25,9 @@ Commit what `make context` and `make ruleset` write together with the change tha
 `make test` fails when `.github/rulesets/main.json` requires a check that no pull request
 reports, or omits one that every pull request reports
 (`tests/test_workflows.py::test_ruleset_requires_exactly_the_checks_every_pull_request_reports`).
+That test compares check names only. The `Praetor Governance` CI job also fails when the file
+differs from the policy `.standards.yaml` declares, for example after an edited approval count
+or a removed review-mode override (section 5).
 
 ## 2. Profile and facets
 
@@ -48,7 +51,11 @@ default facet set, which the repository received when it was adopted.
 `.standards.lock` pins the SHA-256 digest of each of the five catalog files and an aggregate
 digest over them. `praetorctl plan` fails when the vendored files no longer match the lock, and
 `praetorctl plan --catalog-root <praetor checkout>` fails when the lock does not match the
-catalog at that praetor commit; together they hold the vendored catalog to the pin.
+catalog at that praetor commit. Neither fails when `.standards.lock` is missing: `plan` then
+resolves built-in defaults, which are weaker than this policy (no signed commits, SLSA 1, no
+Cosign), and reports the missing file as drift without failing. `praetorctl sync
+--catalog-root <praetor checkout>` fails on a missing lock, so CI runs it as well (section 5);
+together the three hold the vendored catalog to the pin.
 
 ## 3. Review mode
 
@@ -89,7 +96,7 @@ requires nine checks:
 | `Praetor Governance` | `ci.yml` | every pull request to `main` |
 | `Lint & Pytest Quality Gates` | `ci.yml` | every pull request to `main` |
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
-| `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (opened, edited, labelled, synchronized, milestoned) |
+| `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
 | `required-checks` | `required-aggregator.yml` | every pull request |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
 | `Security Scan Gate` | `security-scans.yml` | every pull request; fails when any scan job failed or was cancelled |
@@ -139,13 +146,22 @@ runs:
 
 1. `praetorctl plan --catalog-root praetor-src`: `.standards.lock` matches the catalog of the
    pinned praetor.
-2. `praetorctl plan`: the vendored catalog matches `.standards.lock`, and the effective policy
+2. `praetorctl sync --catalog-root praetor-src`: `.standards.lock` exists, and
+   `.github/rulesets/main.json` matches the policy `.standards.yaml` declares (approval count,
+   review mode, signature, history and check rules). This step runs locally, without
+   `--remote`, and writes only `.config/labels.yaml` into the CI workspace. A missing lock, a
+   removed review-mode override, a changed review mode or an edited approval count fails it.
+3. `praetorctl plan`: the vendored catalog matches `.standards.lock`, and the effective policy
    resolves from it alone.
-3. `praetorctl compile-context --verify`: the six compiled agent context files match
+4. `praetorctl compile-context --verify`: the six compiled agent context files match
    `AGENTS.md`, and `AGENTS.md` and every `.agents/skills/*/SKILL.md` pass praetor's caveman
    lint. The human-authored part of `AGENTS.md` sits between `<!-- caveman:off -->` and
    `<!-- caveman:on -->`, the exemption praetor documents for text that must stay in full
    sentences; the Text Register block after it is rendered from `.standards.yaml`.
+
+The lock's `pinned_version: v1.0.0` and the `version: v1.0.0` of each entry are a constant
+that `praetorctl adopt` writes; praetor has no `v1.0.0` tag. They do not name the pin;
+`PRAETOR_COMMIT` does, and the digests hold the catalog to it.
 
 ### Building praetorctl at the pin
 
@@ -176,6 +192,8 @@ Pass it to the Makefile targets as `PRAETORCTL=<bin dir>/praetorctl`.
 4. Set `PRAETOR_COMMIT` in `.github/workflows/ci.yml` to the full SHA.
 5. Run `make governance-check PRAETOR_SRC=<praetor checkout>`, `make context`,
    `make ruleset`, `make lint` and `make test`, and commit every file they changed.
+   `governance-check` refuses a praetor checkout whose `HEAD` is not `PRAETOR_COMMIT`; it
+   cannot tell which commit your `praetorctl` was built from, so build it at the pin.
 
 A pin whose catalog and lock did not move needs step 4 and step 5 only.
 
