@@ -17,6 +17,7 @@
 # Complies with NASA/JPL Power of 10: functions <= 60 lines, checked returns.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STREAM="mainstream"
 ARCH="x86_64"
 VMLINUZ_FILE=""
@@ -31,8 +32,8 @@ Usage: package-uki.sh [options]
 Options:
   --stream=<stream>       Release stream (bleeding, mainstream, lts, realtime) [default: mainstream]
   --arch=<arch>           Kernel architecture (x86_64, arm64, riscv64) [default: x86_64]
-  --vmlinuz=<file>        Path to vmlinuz kernel binary [optional]
-  --initrd=<file>         Path to initrd / initramfs archive [optional]
+  --vmlinuz=<file>        Path to vmlinuz kernel binary [required unless --dry-run]
+  --initrd=<file>         Path to initrd / initramfs archive [optional; no .initrd without it]
   --cmdline=<string>      Kernel commandline parameters
   --output-dir=<dir>      Target directory for UKI output [default: output]
   --dry-run               Simulate UKI synthesis and PCR measurements
@@ -154,22 +155,23 @@ EOF
   echo "    ✓ Simulated UKI and PCR 11 measurement staged in ${target_dir}/"
 }
 
-# Refuse rather than fabricate. Both missing inputs are build environment
-# defects: no kernel means the forge produced nothing to package, and no ukify
+# Refuse rather than fabricate. Every missing input is a build environment
+# defect: no kernel means the forge produced nothing to package, and no ukify
 # means the runner is not provisioned. Copying vmlinuz to a .efi name yields a
 # file with no stub, no embedded cmdline, no os-release, no SBAT and no
 # signature, which firmware cannot boot and which nothing downstream can tell
 # from the real artifact by its name. See issue #21.
-build_uki_binary() {
-  local version="${1}"
-  local efi_name="${2}"
-  local target_dir="${3}"
-  local staging_dir="${4}"
-  local target_efi="${target_dir}/${efi_name}"
+require_uki_inputs() {
+  local efi_name="${1}"
 
   if [[ ! -f "${VMLINUZ_FILE}" ]]; then
     echo "Error: no kernel image to package: --vmlinuz='${VMLINUZ_FILE}' is not a file." >&2
     echo "       Build the kernel first, or pass --dry-run to simulate the pipeline." >&2
+    return 1
+  fi
+
+  if [[ -n "${INITRD_FILE}" && ! -f "${INITRD_FILE}" ]]; then
+    echo "Error: --initrd='${INITRD_FILE}' is not a file." >&2
     return 1
   fi
 
@@ -178,23 +180,45 @@ build_uki_binary() {
     echo "       Install systemd-ukify on this runner. Refusing to emit a bare kernel named ${efi_name}." >&2
     return 1
   fi
+}
+
+# ukify reads --cmdline as literal text unless it starts with "@", so the
+# cmdline file is passed as "@<file>"; without the "@" the UKI would boot with
+# the staging path as its command line. --initrd is passed only when one was
+# given: ukify fails on an empty --initrd=. Whatever ukify writes is then
+# checked by check_uki.py (PE headers, machine type, UKI sections) before it is
+# checksummed, and deleted if the check refuses it.
+build_uki_binary() {
+  local version="${1}"
+  local efi_name="${2}"
+  local target_dir="${3}"
+  local staging_dir="${4}"
+  local target_efi="${target_dir}/${efi_name}"
+  local -a ukify_args=(
+    --linux="${VMLINUZ_FILE}"
+    --cmdline="@${staging_dir}/cmdline"
+    --os-release="@${staging_dir}/os-release"
+    --sbat="@${staging_dir}/sbat.csv"
+    --output="${target_efi}"
+  )
+  local -a check_args=(--arch="${ARCH}")
+
+  require_uki_inputs "${efi_name}"
+  if [[ -n "${INITRD_FILE}" ]]; then
+    ukify_args+=(--initrd="${INITRD_FILE}")
+    check_args+=(--expect-initrd)
+  fi
 
   echo "==> Invoking ukify synthesis engine for ${version}..."
-  if ! ukify build \
-    --linux="${VMLINUZ_FILE}" \
-    --initrd="${INITRD_FILE}" \
-    --cmdline="${staging_dir}/cmdline" \
-    --os-release="@${staging_dir}/os-release" \
-    --sbat="@${staging_dir}/sbat.csv" \
-    --output="${target_efi}"; then
+  if ! ukify build "${ukify_args[@]}"; then
     rm -f "${target_efi}"
     echo "Error: ukify build failed; no UKI was written." >&2
     return 1
   fi
 
-  if [[ ! -s "${target_efi}" ]]; then
+  if ! python3 "${SCRIPT_DIR}/check_uki.py" "${check_args[@]}" "${target_efi}"; then
     rm -f "${target_efi}"
-    echo "Error: ukify reported success but produced no output at ${target_efi}." >&2
+    echo "Error: ${target_efi} is not a Unified Kernel Image; deleted, not checksummed." >&2
     return 1
   fi
 
@@ -211,7 +235,7 @@ synthesize_uki_binary() {
   local efi_name="${2}"
   local target_dir="${OUTPUT_DIR}/${STREAM}-${ARCH}"
   local staging_dir
-  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/lusoris-uki-${STREAM}-${ARCH}.XXXXXX")"
+  staging_dir="$(mktemp -d --tmpdir "lusoris-uki-${STREAM}-${ARCH}.XXXXXX")"
   # shellcheck disable=SC2064 # expand now: staging_dir is local and out of scope at EXIT
   trap "rm -rf '${staging_dir}'" EXIT
   mkdir -p "${target_dir}"

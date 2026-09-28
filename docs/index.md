@@ -84,12 +84,20 @@ Compiled Debian packages will be placed into `output/mainstream-x86_64/`:
 - `linux-libc-dev-7.2.4-lusoris1_amd64.deb`
 
 ### Synthesizing Unified Kernel Images (UKI)
-Generate an authenticated, self-contained single EFI binary containing kernel, initramfs, CPU microcode, and kernel command line:
+
+Wrap a built kernel into a single EFI binary with `ukify`: the systemd-stub plus the kernel, its
+command line, os-release, kernel release and SBAT metadata. An initramfs is embedded only when
+`--initrd` is given. The image is not Secure Boot signed, and no CPU microcode is embedded.
+
 ```bash
 ./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> [--initrd=<path>]
 ```
-Without `--dry-run` this requires a built kernel image and `ukify` (`systemd-ukify`), and refuses
-if either is missing rather than emitting something named like a UKI.
+
+Without `--dry-run` this requires a built kernel image and `ukify` (`systemd-ukify`, plus
+`systemd-boot-efi` for the stub), and refuses if either is missing rather than emitting something
+named like a UKI. `scripts/check_uki.py` then checks what `ukify` wrote and deletes it, before any
+checksum, unless it is a PE image with the UKI sections; see section 3 of
+[Packaging](packaging.md).
 
 ### Running Test Gates
 Ensure all kconfig fragments, shell scripts, and privacy invariants pass validation:

@@ -83,39 +83,88 @@ Production builds strip debug symbols from in-tree kernel modules before packagi
 A Unified Kernel Image is an executable UEFI PE binary conforming to the [UAPI Group Boot Loader Specification (Type 2)](https://uapi-group.org/specifications/specs/boot_loader_specification/).
 
 ### 3.1 UKI Section Layout
-Inside the synthesized `.efi` file, multiple sections are embedded:
 
-| PE Section Name | Contents | Purpose |
-| :--- | :--- | :--- |
-| `.linux` | `bzImage` / `Image.gz` | The raw compressed Linux kernel executable |
-| `.initrd` | CPIO archive (Dracut / Microcode) | Combined early CPU microcode + rootfs discovery initramfs |
-| `.cmdline` | UTF-8 text string | Cryptographically pinned kernel parameters (e.g. `root=LABEL=cloudimg-rootfs ro console=ttyS0`) |
-| `.osrel` | `/etc/os-release` | System identification for systemd-boot menu presentation |
-| `.sbat` | SBAT metadata string | Secure Boot Advanced Targeting for revocation management |
-| `.pcrpkey` | Public key PEM | Public key used for TPM 2.0 policy sealing |
+`ukify` builds the image on the systemd-stub and adds one PE section per input. Section names
+follow the [UAPI Group UKI specification](https://uapi-group.org/specifications/specs/unified_kernel_image/).
+This is what `scripts/package-uki.sh` produces, and what `scripts/check_uki.py` requires before
+the image may be checksummed:
+
+| PE Section Name | Contents | In the image | Checked |
+| :--- | :--- | :--- | :--- |
+| `.linux` | The `--vmlinuz` kernel image, unchanged | Always | Required, not empty |
+| `.initrd` | The `--initrd` archive | Only when `--initrd` is given | Required if given, refused if not |
+| `.cmdline` | The kernel command line text (`--cmdline`, or the script's default) | Always | Required, not empty |
+| `.osrel` | os-release written from `versions.json` (`ID=lusoris`, stream version) | Always | Required, not empty |
+| `.uname` | Kernel release, detected by `ukify` from the kernel image | Always | Required, not empty |
+| `.sbat` | The stub's SBAT entries plus the `lusoris` entry | Always | Required, not empty |
+| `.sdmagic` | The systemd-stub version marker | Always, from the stub | Required, must name systemd-stub |
+| `.pcrpkey`, `.pcrsig` | TPM 2.0 PCR 11 policy key and signature | Never: no PCR keys are passed yet | Not checked |
+
+No CPU microcode is embedded, and the image is not Secure Boot signed.
 
 ### 3.2 Synthesis with `ukify`
-`scripts/package-uki.sh` calls `ukify` to assemble and measure the image:
+
+`build_uki_binary` in `scripts/package-uki.sh` writes the os-release, SBAT and command line inputs
+to a private staging directory and calls `ukify build` with `--linux`, `--cmdline=@<file>`,
+`--os-release=@<file>`, `--sbat=@<file>` and `--output=output/<stream>-<arch>/BOOTX64.EFI`
+(`BOOTAA64.EFI`, `BOOTRISCV64.EFI`), plus `--initrd` only when one was given.
+
+- `ukify` reads a `--cmdline` value as literal text unless it starts with `@`. Without the `@`,
+  the image would boot with the staging file's path as its kernel command line.
+- `ukify` fails on an empty `--initrd=`, so the flag is omitted rather than passed empty.
+- The stub comes from `systemd-boot-efi`, which Ubuntu installs only as a recommendation of
+  `systemd-ukify`. Install both on the runner.
+- Secure Boot signing (`--secureboot-private-key`, `--secureboot-certificate`) and PCR 11
+  pre-calculation (`--measure`, `--pcr-private-key`) are not wired yet.
+
+### 3.3 Refusing an Image That Is Not a UKI
+
+`scripts/package-uki.sh` runs `scripts/check_uki.py` on whatever `ukify` wrote, before
+`sha256sum`. If the check fails, the image is deleted and the script exits non-zero, so a
+refused image never gets a checksum. The checker uses only the Python standard library. It
+refuses a file that:
+
+- is empty, or does not start with an `MZ` DOS header;
+- has an `e_lfanew` outside the file, or no `PE\0\0` signature at it;
+- has a COFF machine type other than `--arch` (`0x8664` x86_64, `0xaa64` arm64, `0x5064` riscv64);
+- is not PE32 or PE32+ with subsystem EFI application (10);
+- has a section table or section data that runs past the end of the file;
+- lacks a section that 3.1 marks required, carries one of them twice, or carries `.initrd`
+  without `--expect-initrd`.
+
+These checks prove shape, not bootability or provenance: a deliberately crafted file with these
+sections passes. They stop a failed or missing tool, or a placeholder, from being published
+under a UKI name (issue #21). To check an image by hand:
+
 ```bash
-ukify build \
-  --linux=/opt/lusoris/build/mainstream-x86_64/arch/x86/boot/bzImage \
-  --initrd=/opt/lusoris/build/initramfs-mainstream-x86_64.img \
-  --cmdline="console=tty1 console=ttyS0,115200 root=UUID=5f6a9e10-3b4c-4e8f-9a2d-1c3b5e7f9a12 ro quiet splash loglevel=3 mitigations=auto" \
-  --os-release="@/etc/os-release" \
-  --uname="7.2.4-lusoris1-mainstream-amd64" \
-  --sbat="sbat,1,SBAT Version,sbat,1,https://github.com/systemd/systemd/blob/main/docs/SBAT.md\nlusoris,1,Lusoris Linux,lusoris,1,https://github.com/cordanaLLM/nucleus" \
-  --secureboot-private-key="/etc/ssl/certs/db.key" \
-  --secureboot-certificate="/etc/ssl/certs/db.crt" \
-  --measure \
-  --output="/opt/lusoris/output/mainstream-x86_64/BOOTX64.EFI"
+python3 scripts/check_uki.py --arch=x86_64 [--expect-initrd] output/mainstream-x86_64/BOOTX64.EFI
 ```
 
-### 3.3 TPM 2.0 PCR 11 Measurement & Sealing
+How this is tested:
+
+- `tests/test_package_uki.py` runs `package-uki.sh` with a stand-in `ukify` on a `PATH` that
+  holds nothing else, so the result does not depend on whether the host has `ukify`. The
+  stand-in writes PE images the test builds with `struct`: valid, empty, non-PE, and PE images
+  missing a section.
+- The `uki-real-ukify` job in `.github/workflows/ci.yml` builds a UKI in `ubuntu:26.04` with the
+  real `ukify` from Ubuntu's own kernel image, since no nucleus kernel exists until issue #18.
+  It checks the image, prints `ukify inspect`, verifies the checksum, and runs the tests with a
+  real kernel, failing if any test skips.
+- To run the real-`ukify` test locally, install `ukify` and the stub, then run
+  `NUCLEUS_UKI_TEST_VMLINUZ=<kernel image> pytest tests/test_package_uki.py`.
+
+### 3.4 TPM 2.0 PCR 11 Measurement & Sealing
+
 When booting via `systemd-boot`, the UEFI boot loader measures the entire UKI payload directly into **TPM 2.0 PCR 11**:
+
 - PCR 11 matches the cryptographic digest calculated during `ukify --measure`.
 - Disk encryption keys (LUKS2 with `systemd-cryptenroll`) can be sealed to PCR 11: if the kernel, initramfs, or cmdline is altered by even a single bit, the TPM refuses to release the encryption key.
 
-### 3.4 Automated Packaging CLI Drivers
+`scripts/package-uki.sh` does not pass `--measure` yet. The `pcr11-measurements.json` that
+`--dry-run` writes hashes the simulated file and is marked `"simulated": true`.
+
+### 3.5 Automated Packaging CLI Drivers
+
 Developers and automation pipelines utilize dedicated shell drivers complying with NASA/JPL Power of 10:
 
 ```bash
@@ -123,11 +172,12 @@ Developers and automation pipelines utilize dedicated shell drivers complying wi
 ./scripts/package-deb.sh --stream=mainstream --arch=x86_64 --dry-run
 make package-deb STREAM=mainstream ARCH=x86_64
 
-# Synthesize Unified Kernel Image (UKI) PE binary (.efi) with PCR 11 measurements
+# Simulate UKI synthesis: a marked stand-in image and a "simulated": true PCR 11 digest
 ./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --dry-run
 make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=true
-# Production: needs a built kernel and ukify, and refuses without either
-./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> --initrd=<path>
+# Production: needs a built kernel and ukify, refuses without either, and deletes any
+# output that scripts/check_uki.py refuses before it is checksummed
+./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> [--initrd=<path>]
 
 # Verify byte-level build reproducibility across compilation passes
 ./scripts/verify-reproducibility.sh --dry-run

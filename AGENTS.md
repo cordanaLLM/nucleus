@@ -32,7 +32,7 @@ implemented; the compile step itself refuses.
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
 | `scripts/package-deb.sh` | implemented, but never fed a real kernel |
-| `scripts/package-uki.sh` | real `ukify` path, never fed a real kernel; **refuses** without a kernel or `ukify` (issue #21) |
+| `scripts/package-uki.sh` | real, unsigned: `ukify` build, then `scripts/check_uki.py` deletes any output that is not a PE with the UKI sections before it is checksummed; CI builds one from Ubuntu's kernel, never yet from a nucleus kernel; **refuses** without a kernel or `ukify` (issue #21) |
 | `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
 | `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
 | downstream dispatch to `cordanaLLM/imago` | wired, has never run: `publish-release.yml` has no runs yet. `kernel_release_published` carries stream, version and tag, and needs the `KERNEL_FORGE_TOKEN` secret, which is not configured; without it the run stops with an error naming the secret |
@@ -53,7 +53,12 @@ issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it 
 through to its simulation branch whenever `--vmlinuz` was missing, even without
 `--dry-run`, writing an `MZ`-prefixed text file named `BOOTX64.EFI` plus a PCR 11
 measurement of it. Both now refuse. Simulation happens only on an explicit `--dry-run`,
-and its `pcr11-measurements.json` carries `"simulated": true`.
+and its `pcr11-measurements.json` carries `"simulated": true`. Its `ukify` call was also
+wrong: it embedded the cmdline file's path as the kernel command line, and passed an
+empty `--initrd=`, on which `ukify` crashes. Whatever `ukify` writes now goes through
+`scripts/check_uki.py` (PE headers, machine type, UKI sections) and is deleted, not
+checksummed, if refused. The `uki-real-ukify` job in `ci.yml` builds a real UKI from
+Ubuntu's kernel image on every pull request.
 
 ### The contract with imago
 
