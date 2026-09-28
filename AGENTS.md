@@ -1,5 +1,13 @@
 # AGENTS.md — Agent & Contributor Directives
 
+<!-- caveman:off -->
+<!--
+  The sections up to the caveman:on marker are written for human contributors as well as
+  agents, in full English sentences (rule 7), so the caveman lint that
+  `praetorctl compile-context --verify` runs skips them. The Text Register block at the end
+  is rendered from .standards.yaml by `make context` and is linted.
+-->
+
 > Authoritative operating guide for all autonomous engineering agents and human contributors in `cordanaLLM/nucleus`.
 >
 > **Read [`docs/principles.md`](docs/principles.md) before changing this repository.** It defines the authority classes, Holzmann Power of 10 adaptations, and architectural contracts for kernel compilation and packaging.
@@ -116,6 +124,7 @@ which is the second reason the production path refuses rather than fabricates.
 `cordanaLLM/nucleus` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
 
 Key capabilities:
+
 - **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc5), `mainstream` (7.2.8), `lts` (6.18.54), and `realtime` (7.2.8 with in-tree `PREEMPT_RT`).
 - **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
 - **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
@@ -156,3 +165,22 @@ checks that fail on a Windows checkout and pass in CI; the index modes are alrea
 7. **Every user-discoverable surface ships human-readable documentation** under `docs/` in the same PR.
 8. **Power of 10 compliance**: Shell functions $\le$ 60 lines, `set -euo pipefail`, bounded loops, zero linter warnings.
 9. **Privacy & Zero-Leak invariant**: Zero private RFC 1918 IPs, zero `/home/*` workstation paths.
+10. **AGENTS.md is the only hand-edited agent context**: `CLAUDE.md`, `.codex/rules.md`, `.cursor/rules/hiss-invariants.mdc`, `.gemini/GEMINI.md`, `.github/copilot-instructions.md` and `.windsurfrules` are compiled from it. After every change to AGENTS.md, run `make context` and commit the regenerated files with it; the `praetorctl compile-context --verify` step in CI fails otherwise. Never edit the Text Register block by hand: it is rendered from `.standards.yaml`. The praetor pin, profile, review mode and branch ruleset are described in [`docs/repository-governance.md`](docs/repository-governance.md).
+
+<!-- caveman:on -->
+
+## Text Register
+
+<!-- praetor:register:start -->
+Register follows the audience, then the task label of your brief (`register:` in `.standards.yaml`; labels are the router's `target_tasks`).
+
+| Register | Where | Form |
+| :--- | :--- | :--- |
+| social | forge: issues, PR bodies, review comments, commit bodies | `social-text` skill: BLUF, full sentences, scannable, enough and no more; PR template, receipt fence, conventional commit subject and changelog fragment unchanged |
+| docs | docs/, README, ADR bodies | complete without bloat: newcomer path first, expert reference after; every claim points at a file, command or test; no restated code |
+| internal | briefs, agent-to-agent traffic, research fan-outs, workflow returns | `caveman` skill: fragments, no filler, verbatim code/paths/errors; facts, paths, commands, verdict |
+
+- Task rows: social = commit_message_synthesis, waiver_signoff; docs = architecture_synthesis, function_docstrings; every other label and any unlabeled text = internal. Subagent launch brief: `caveman` brief shape with `task:` = routing label.
+- Evidence above 58 lines or 1500 tokens leaves the message as a file under `.workingdir/evidence/`; return `evidence: <path> sha256:<12 hex> lines:<n>` and fetch it only when a decision needs it.
+- An internal return carries verdict, changed paths, commands run, evidence pointers and open questions, nothing else.
+<!-- praetor:register:end -->
