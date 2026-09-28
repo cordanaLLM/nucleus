@@ -10,7 +10,7 @@
 
 In traditional cloud image builds, compiling custom Linux kernels directly inside Packer or Image Builder virtual machines introduces severe bottlenecks: multi-hour build cycles, CPU resource exhaustion, duplicate compilation across matrix variants, and brittle compiler toolchain setup. `cordanaLLM/nucleus` solves this by decoupling kernel compilation into a dedicated, hermetic build pipeline.
 
-The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and signed systemd-boot Unified Kernel Images (`.efi`)—are published to an authenticated APT repository and OCI registry, then consumed downstream by `cordanaLLM/imago`.
+The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and systemd Unified Kernel Images (`.efi`, unsigned until Secure Boot signing is wired)—are published to an authenticated APT repository and OCI registry, then consumed downstream by `cordanaLLM/imago`.
 
 ```mermaid
 sequenceDiagram
@@ -23,9 +23,9 @@ sequenceDiagram
 
     Note over KF: Upstream kernel.org source unpacked & patched
     KF->>KF: make bindeb-pkg (linux-image, linux-headers, linux-libc-dev)
-    KF->>KF: systemd-ukify (Kernel + initramfs + cmdline -> UKI .efi)
+    KF->>KF: systemd-ukify (Kernel + cmdline + optional initrd -> unsigned UKI .efi)
     KF->>GH: Publish signed Debian .deb packages & apt repository
-    KF->>OCI: Push signed Unified Kernel Images (UKI) as OCI artifacts
+    KF->>OCI: Push Unified Kernel Images (UKI) as OCI artifacts (planned; unsigned today)
     KF->>CI: repository_dispatch (kernel_release_published)
     CI->>CI: Renovate / sync workflow updates versions.json
     CI->>GH: Download pre-compiled .deb packages during Packer build
@@ -54,7 +54,7 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 - **NASA / JPL Power of 10 Compliance**: All automation and build scripts enforce `set -euo pipefail`, short functions ($\le 60$ lines), localized variables, bounded control loops, and zero ShellCheck warnings.
 - **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (`base/`, `security/`, `drivers/`, `streams/`), merged deterministically with `merge_config.sh`.
 - **Zero-Leak Invariant**: Codebase is protected against private network leaks (zero RFC 1918 addresses) and local workstation paths (zero `/home/...` or `/Users/...` references).
-- **Dual Packaging Engine**: Standard Debian packages (`.deb`) for apt-based distributions and systemd Unified Kernel Images (`.efi`) for authenticated secure boot and bare-metal streaming.
+- **Dual Packaging Engine**: Standard Debian packages (`.deb`) for apt-based distributions and systemd Unified Kernel Images (`.efi`, unsigned until Secure Boot signing is wired) for bare-metal streaming.
 
 ---
 
@@ -95,9 +95,10 @@ command line, os-release, kernel release and SBAT metadata. An initramfs is embe
 
 Without `--dry-run` this requires a built kernel image and `ukify` (`systemd-ukify`, plus
 `systemd-boot-efi` for the stub), and refuses if either is missing rather than emitting something
-named like a UKI. `scripts/check_uki.py` then checks what `ukify` wrote and deletes it, before any
-checksum, unless it is a PE image with the UKI sections; see section 3 of
-[Packaging](packaging.md).
+named like a UKI. `scripts/check_uki.py` then checks what `ukify` wrote, and `package-uki.sh` deletes
+it before any checksum unless it is a PE image with the UKI sections the script wires; see section 3
+of [Packaging](packaging.md). `--dry-run` writes a marked text file under
+`output/<stream>-<arch>-dry-run/`, never a `.efi` and never a checksum.
 
 ### Running Test Gates
 Ensure all kconfig fragments, shell scripts, and privacy invariants pass validation:

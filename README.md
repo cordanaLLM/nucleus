@@ -80,8 +80,9 @@ make merge-config ARCH=x86_64
 # Package native Debian packages (.deb) with headers
 make package-deb STREAM=mainstream ARCH=x86_64
 
-# Simulate Unified Kernel Image (UKI) synthesis: DRY_RUN=true is the Makefile default.
-# A real UKI needs a built kernel and ukify; see docs/packaging.md, section 3.
+# Simulate Unified Kernel Image (UKI) synthesis: DRY_RUN=true is the Makefile default. It writes a
+# marked text file under output/<stream>-<arch>-dry-run/, never a .efi.
+# A real UKI needs a built kernel and ukify (DRY_RUN=false VMLINUZ=<path>); see docs/packaging.md, section 3.
 make package-uki STREAM=mainstream ARCH=x86_64
 
 # Run reproducible build attestation
