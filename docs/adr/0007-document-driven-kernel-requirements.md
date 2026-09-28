@@ -1,4 +1,4 @@
-# ADR-0006: Document-Driven Kernel Requirement Verification with Per-Consumer Stream Binding
+# ADR-0007: Document-Driven Kernel Requirement Verification with Per-Consumer Stream Binding
 
 Date: 2026-09-29
 

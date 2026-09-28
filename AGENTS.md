@@ -60,7 +60,7 @@ install `ukify` on the runner.
 - **Inbound**: requirement documents of shape `aegis.p01-nucleus.kernel-requirement.v1`, declared in
   `versions.json` under `downstream.requirements`, each bound to the streams its consumer uses:
   imago's `kernel/requirement.json` to all four, Aegis-OS's `build/kernel-requirement.json` to
-  `realtime`. The policy is [ADR-0006](docs/adr/0006-document-driven-kernel-requirements.md).
+  `realtime`. The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md).
   - `scripts/fetch-kernel-requirements.sh` reads each document at one commit. A
     `kernel_requirements_updated` dispatch pins its own row to the dispatched commit, and the
     verifier proves the dispatched SHA-256 and correlation id before reading it; the other rows are

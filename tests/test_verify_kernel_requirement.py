@@ -4,7 +4,7 @@ Fixtures under tests/fixtures/kernel-requirement are byte-identical copies of th
 documents: imago.json is cordanaLLM/imago kernel/requirement.json at 16f964b4dafa, and
 aegis-os.json is cordanaLLM/Aegis-OS build/kernel-requirement.json at 54c710c (unchanged
 since 5148ab2). The workflow verifies the live documents; these pin the parser, the
-evaluation and the policy of docs/adr/0006.
+evaluation and the policy of docs/adr/0007.
 
 Tests marked "Aegis" port a vector of Aegis-OS crates/aegis-fabrica-defs/tests/
 kernel_requirement.rs, the contract owner's own tests. Stream names and versions in the
@@ -171,7 +171,7 @@ def test_a_repeated_architecture_is_accepted_like_the_owner_and_evaluated_once()
 
 
 def test_required_by_accepts_imago_flavor_ids_the_one_divergence():
-    """Aegis demands REQ-; imago's live document uses FLAVOR-* (docs/adr/0006, open question)."""
+    """Aegis demands REQ-; imago's live document uses FLAVOR-* (docs/adr/0007, open question)."""
     doc = _fixture()
     doc["features"] = [_row("CONFIG_A", required_by="FLAVOR-BASE"), _row("CONFIG_B")]
     assert vkr.parse_requirement(_raw(doc)).features[0].required_by == "FLAVOR-BASE"
@@ -511,7 +511,7 @@ def test_merge_config_keeps_unsets_and_refuses_what_is_not_kconfig(tmp_path):
     assert not out.exists()
 
 
-# --- decide(): the policy of docs/adr/0006 ------------------------------------------------
+# --- decide(): the policy of docs/adr/0007 ------------------------------------------------
 
 KVM_MODULE = _feature("CONFIG_KVM", "module")
 BTF = _feature("CONFIG_DEBUG_INFO_BTF", "built-in", "btf-vmlinux")

@@ -1,7 +1,7 @@
 ---
 # Verifies the kernel requirement documents downstream consumers publish against the kconfig
 # this forge declares for the streams each consumer is bound to. Sources and bindings are
-# declared in versions.json downstream.requirements; the policy is docs/adr/0006.
+# declared in versions.json downstream.requirements; the policy is docs/adr/0007.
 #
 # repository_dispatch  a consumer sends kernel_requirements_updated with the commit, sha256
 #                      and correlation id of the document it validated; that exact document

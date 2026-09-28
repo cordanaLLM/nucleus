@@ -21,7 +21,7 @@ for field, with one deliberate divergence on ``required-by`` (see ``_REQUIRED_BY
 versions.json ``downstream.requirements`` declares where each document lives and which
 streams its consumer is bound to.
 
-The policy is docs/adr/0006-document-driven-kernel-requirements.md:
+The policy is docs/adr/0007-document-driven-kernel-requirements.md:
 
 - every bound stream must hold the document on every architecture it lists: the stream's
   release is at least ``abi.minimum-release`` and every feature is in exactly its state;
@@ -83,7 +83,7 @@ _DIGEST = re.compile(r"[0-9a-f]{64}")
 _SIGNATURE = re.compile(r"(?:[0-9a-f]{2})+")
 _REVISION = re.compile(r"[0-9a-f]{40}")
 # The one deliberate divergence from field.rs RequirementId, an open question to Aegis-OS
-# (docs/adr/0006): Aegis demands a REQ- prefix, and imago's live document names its flavors
+# (docs/adr/0007): Aegis demands a REQ- prefix, and imago's live document names its flavors
 # (FLAVOR-BASE, FLAVOR-K8S-NODE). Accepted here: an upper-case identifier of [A-Z0-9-].
 _REQUIRED_BY = re.compile(r"[A-Z][A-Z0-9-]*")
 
@@ -643,7 +643,7 @@ def stream_failures(correlation_id: str, minimum: str, result: StreamResult) -> 
 
 
 def decide(requirement: Requirement, results: Sequence[StreamResult]) -> Verdict:
-    """Every bound stream must hold the document, or it fails (docs/adr/0006).
+    """Every bound stream must hold the document, or it fails (docs/adr/0007).
 
     A bound stream holds when its release is at least minimum-release and every feature is
     in its required state on every listed architecture. Unbound streams never gate, and

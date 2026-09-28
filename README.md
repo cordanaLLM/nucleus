@@ -74,7 +74,7 @@ python3 scripts/verify_kernel_requirement.py \
   --requirement aegis-os=tests/fixtures/kernel-requirement/aegis-os.json
 ```
 
-The policy is [ADR-0006](docs/adr/0006-document-driven-kernel-requirements.md); the stream fragments and bindings are in [docs/streams.md](docs/streams.md).
+The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); the stream fragments and bindings are in [docs/streams.md](docs/streams.md).
 
 ---
 

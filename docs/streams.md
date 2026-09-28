@@ -84,4 +84,4 @@ its consumer uses:
 `verify-requirements.yml` fails a document when a bound stream does not hold it: the stream's
 release is below `abi.minimum-release`, or a required symbol is not in its exact state on every
 architecture the document lists. Streams a consumer is not bound to are reported as information
-and never gate. The policy and the contract are [ADR-0006](adr/0006-document-driven-kernel-requirements.md).
+and never gate. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).
