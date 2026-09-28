@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-REPO_OWNER="lusoris"
+REPO_OWNER="cordanaLLM"
 REPO_NAME="nucleus"
 FULL_REPO="${REPO_OWNER}/${REPO_NAME}"
 
@@ -25,7 +25,7 @@ init_remote_repo() {
     gh repo create "${FULL_REPO}" \
       --public \
       --description "Deterministic Linux kernel compilation forge, hardened kconfig fragments, and deb/UKI packaging for imago." \
-      --homepage "https://lusoris.github.io/nucleus"
+      --homepage "https://cordanallm.github.io/nucleus/"
     echo "    Created repository ${FULL_REPO}."
   else
     echo "    Repository ${FULL_REPO} already exists."
