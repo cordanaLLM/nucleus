@@ -118,8 +118,10 @@ def test_the_command_exits_0_1_or_2(tmp_path):
     assert ok.returncode == 0 and "all 1 requested symbols hold" in ok.stdout
     failed = _run("--config", str(config), str(holds), str(lost))
     assert failed.returncode == 1 and "CONFIG_SMP: requested =m" in failed.stderr
-    assert _run("--config", str(config), str(garbage)).returncode == 2
-    assert _run("--config", str(tmp_path / "missing"), str(holds)).returncode == 2
+    unreadable = _run("--config", str(config), str(garbage))
+    assert unreadable.returncode == 2
+    missing = _run("--config", str(tmp_path / "missing"), str(holds))
+    assert missing.returncode == 2
 
 
 # --- scripts/merge-config.sh --source-tree, against a stand-in kernel tree -------------------

@@ -831,8 +831,8 @@ def test_a_bound_stream_is_judged_on_its_resolved_config_and_the_rest_on_declare
     outcome = _aegis_outcome({("realtime", "x86_64"): _declared("realtime")})
     assert outcome.status == "PASS", outcome.verdict
     levels = {result.stream: result.evidence for result in outcome.results}
-    assert levels.pop("realtime") == "resolved"
-    assert set(levels.values()) == {"declared"}
+    assert levels["realtime"] == "resolved"
+    assert {level for stream, level in levels.items() if stream != "realtime"} == {"declared"}
 
 
 def test_a_symbol_olddefconfig_dropped_fails_the_resolved_level():
@@ -882,7 +882,8 @@ def test_main_refuses_a_resolved_config_versions_json_does_not_build(tmp_path, v
 
 def test_the_plan_is_every_bound_stream_on_every_listed_architecture(tmp_path, capsys):
     plan = tmp_path / "plan.json"
-    assert _cli(tmp_path, f"--plan={plan}") == 0
+    code = _cli(tmp_path, f"--plan={plan}")
+    assert code == 0
     bound = {stream for row in ROWS.values() for stream in row["streams"]}
     expected = [
         {"stream": stream, "arches": "x86_64"} for stream in VERSIONS["streams"] if stream in bound
@@ -893,7 +894,8 @@ def test_the_plan_is_every_bound_stream_on_every_listed_architecture(tmp_path, c
 def test_a_refused_document_adds_nothing_to_the_plan(tmp_path, capsys):
     plan = tmp_path / "plan.json"
     imago = _altered("features", [], name="imago.json")
-    assert _cli(tmp_path, f"--plan={plan}", imago=imago) == 0
+    code = _cli(tmp_path, f"--plan={plan}", imago=imago)
+    assert code == 0
     assert json.loads(plan.read_text(encoding="utf-8")) == {
         "include": [{"stream": "realtime", "arches": "x86_64"}]
     }
