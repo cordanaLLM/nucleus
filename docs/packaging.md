@@ -15,8 +15,8 @@
    - Designed for standard Debian/Ubuntu OS installations, container base hosts, and golden image provisioning in `cordanaLLM/imago`.
 
 2. **Unified Kernel Images (UKI, `.efi`)**:
-   - Single, signed, self-contained UEFI PE binary combining the Linux kernel (`.linux`), microcode + initramfs (`.initrd`), kernel command line (`.cmdline`), and OS release metadata (`.osrel`).
-   - Designed for modern UEFI Secure Boot, TPM 2.0 measured boot, and direct network streaming (iPXE / systemd-boot).
+   - Single, self-contained, unsigned UEFI PE binary combining the systemd-stub, the Linux kernel (`.linux`), the kernel command line (`.cmdline`), and OS release, kernel release and SBAT metadata (`.osrel`, `.uname`, `.sbat`). An initramfs (`.initrd`) is embedded only when one is passed; no CPU microcode is embedded (section 3.1).
+   - Designed for UEFI boot and direct network streaming (iPXE / systemd-boot). Secure Boot signing and TPM 2.0 PCR 11 pre-calculation are planned and not wired yet (sections 3.2 and 3.4).
 
 ```mermaid
 flowchart TD
@@ -29,17 +29,16 @@ flowchart TD
     DEB_STAGE --> DEB_DEV["linux-libc-dev-*.deb"]
 
     BUILD -->|"vmlinux / bzImage + modules"| UKI_STAGE["systemd-ukify Pipeline"]
-    INITRD["Minimal Dracut Initramfs + CPU Microcode"] --> UKI_STAGE
+    INITRD["Optional Initramfs (--initrd)"] -.-> UKI_STAGE
     CMDLINE["Immutable Kernel Cmdline (console=ttyS0 quiet)"] --> UKI_STAGE
-    CERT["UEFI Secure Boot Keys / Cosign OIDC"] --> UKI_STAGE
 
-    UKI_STAGE --> UKI_BIN["signed-kernel-*.efi (UKI)"]
+    UKI_STAGE --> UKI_BIN["BOOTX64.EFI (unsigned UKI)"]
 
     DEB_IMG --> APT_REPO["APT Repository (apt.example.com)"]
     DEB_HDR --> APT_REPO
     DEB_DEV --> APT_REPO
 
-    UKI_BIN --> OCI_REG["OCI Registry (ghcr.io/cordanallm/nucleus/kernels)"]
+    UKI_BIN -.->|"planned"| OCI_REG["OCI Registry (ghcr.io/cordanallm/nucleus/kernels)"]
 ```
 
 ---
@@ -83,39 +82,111 @@ Production builds strip debug symbols from in-tree kernel modules before packagi
 A Unified Kernel Image is an executable UEFI PE binary conforming to the [UAPI Group Boot Loader Specification (Type 2)](https://uapi-group.org/specifications/specs/boot_loader_specification/).
 
 ### 3.1 UKI Section Layout
-Inside the synthesized `.efi` file, multiple sections are embedded:
 
-| PE Section Name | Contents | Purpose |
-| :--- | :--- | :--- |
-| `.linux` | `bzImage` / `Image.gz` | The raw compressed Linux kernel executable |
-| `.initrd` | CPIO archive (Dracut / Microcode) | Combined early CPU microcode + rootfs discovery initramfs |
-| `.cmdline` | UTF-8 text string | Cryptographically pinned kernel parameters (e.g. `root=LABEL=cloudimg-rootfs ro console=ttyS0`) |
-| `.osrel` | `/etc/os-release` | System identification for systemd-boot menu presentation |
-| `.sbat` | SBAT metadata string | Secure Boot Advanced Targeting for revocation management |
-| `.pcrpkey` | Public key PEM | Public key used for TPM 2.0 policy sealing |
+`ukify` builds the image on the systemd-stub and adds one PE section per input. Section names
+follow the [UAPI Group UKI specification](https://uapi-group.org/specifications/specs/unified_kernel_image/).
+This is what `scripts/package-uki.sh` produces, and what `scripts/check_uki.py` requires before
+the image may be checksummed:
+
+| PE Section Name | Contents | In the image | Checked |
+| :--- | :--- | :--- | :--- |
+| `.linux` | The `--vmlinuz` kernel image, unchanged | Always | Required, not empty |
+| `.initrd` | The `--initrd` archive | Only when `--initrd` is given | Required if given, refused if not |
+| `.cmdline` | The kernel command line text (`--cmdline`, or the script's default) | Always | Required, not empty |
+| `.osrel` | os-release written from `versions.json` (`ID=lusoris`, stream version) | Always | Required, not empty |
+| `.uname` | Kernel release, detected by `ukify` from the kernel image | Always | Required, not empty |
+| `.sbat` | The stub's SBAT entries plus the `lusoris` entry | Always | Required, not empty |
+| `.sdmagic` | The systemd-stub version marker | Always, from the stub | Required, must name systemd-stub |
+| `.ucode`, `.splash`, `.dtb`, `.dtbauto`, `.efifw`, `.hwids`, `.pcrsig`, `.pcrpkey`, `.profile` | CPU microcode, boot splash, device trees, firmware, HWIDs, TPM 2.0 PCR 11 signature and key, extra profiles | Never: `package-uki.sh` passes none of them | Refused if present |
+
+No CPU microcode is embedded, and the image is not Secure Boot signed. The refusal in the last row
+is what enforces this: a section joins the image only when `package-uki.sh` is changed to wire it,
+so the image does not depend on what the build host has installed or configured.
 
 ### 3.2 Synthesis with `ukify`
-`scripts/package-uki.sh` calls `ukify` to assemble and measure the image:
+
+`build_uki_binary` in `scripts/package-uki.sh` writes the os-release, SBAT and command line inputs
+to a private staging directory and calls `ukify build` with `--config=/dev/null`, `--efi-arch`,
+`--linux`, `--cmdline=@<file>`, `--os-release=@<file>`, `--sbat=@<file>` and
+`--output=output/<stream>-<arch>/BOOTX64.EFI` (`BOOTAA64.EFI`, `BOOTRISCV64.EFI`), plus
+`--initrd` only when one was given.
+
+- `ukify` reads a `--cmdline` value as literal text unless it starts with `@`. Without the `@`,
+  the image would boot with the staging file's path as its kernel command line.
+- `ukify` fails on an empty `--initrd=`, so the flag is omitted rather than passed empty.
+- `ukify` reads the first `ukify.conf` it finds in `/etc/systemd`, `/run/systemd`,
+  `/usr/local/lib/systemd` or `/usr/lib/systemd`, which can add microcode, device tree, splash
+  or PCR signature sections or sign the image. `--config=/dev/null` stops that.
+- `ukify` picks the systemd-stub by EFI architecture (`linux<efi-arch>.efi.stub`) and, without
+  `--efi-arch`, uses the build host's. The script passes it (`x86_64` to `x64`, `arm64` to `aa64`,
+  `riscv64` to `riscv64`), so an arm64 or riscv64 build on a host without that stub fails with an
+  error that names the missing stub instead of wrapping the kernel in an x64 stub. Building
+  for those architectures needs the matching stub and kernel (issue #18).
+- The stub comes from `systemd-boot-efi`, which Ubuntu installs only as a recommendation of
+  `systemd-ukify`. Install both on the runner.
+- Secure Boot signing (`--secureboot-private-key`, `--secureboot-certificate`) and PCR 11
+  pre-calculation (`--measure`, `--pcr-private-key`) are not wired yet.
+
+### 3.3 Refusing an Image That Is Not a UKI
+
+`scripts/package-uki.sh` runs `scripts/check_uki.py` on whatever `ukify` wrote, before
+`sha256sum`. If the check fails, the script deletes the image and exits non-zero, so a
+refused image never gets a checksum. The checker itself only reads the file. A production run
+also removes the image, its `.sha256` and `pcr11-measurements.json` from an earlier run before
+it checks any input, so a refused run leaves nothing at that path. The checker uses only the
+Python standard library. It refuses a file that:
+
+- is empty, or does not start with an `MZ` DOS header;
+- has an `e_lfanew` outside the file, or no `PE\0\0` signature at it;
+- has a COFF machine type other than `--arch` (`0x8664` x86_64, `0xaa64` arm64, `0x5064` riscv64);
+- is not PE32 or PE32+ with subsystem EFI application (10);
+- has a section table or section data that runs past the end of the file;
+- lacks a section that 3.1 marks required, carries one of them twice, or carries `.initrd`
+  without `--expect-initrd`;
+- carries a section that `package-uki.sh` does not wire (last row of 3.1);
+- holds a `.linux` kernel that starts with `MZ` but has another machine type than `--arch`, so an
+  x64 stub around a kernel for another architecture is refused;
+- with `--expect-cmdline`, holds a `.cmdline` other than the requested text (`package-uki.sh`
+  passes the command line it wrote), so a command line that is a file path is refused.
+
+These checks prove shape, not bootability or provenance: a deliberately crafted file with these
+sections passes. They stop a failed or missing tool, or a placeholder, from being published
+under a UKI name (issue #21). To check an image by hand:
+
 ```bash
-ukify build \
-  --linux=/opt/lusoris/build/mainstream-x86_64/arch/x86/boot/bzImage \
-  --initrd=/opt/lusoris/build/initramfs-mainstream-x86_64.img \
-  --cmdline="console=tty1 console=ttyS0,115200 root=UUID=5f6a9e10-3b4c-4e8f-9a2d-1c3b5e7f9a12 ro quiet splash loglevel=3 mitigations=auto" \
-  --os-release="@/etc/os-release" \
-  --uname="7.2.4-lusoris1-mainstream-amd64" \
-  --sbat="sbat,1,SBAT Version,sbat,1,https://github.com/systemd/systemd/blob/main/docs/SBAT.md\nlusoris,1,Lusoris Linux,lusoris,1,https://github.com/cordanaLLM/nucleus" \
-  --secureboot-private-key="/etc/ssl/certs/db.key" \
-  --secureboot-certificate="/etc/ssl/certs/db.crt" \
-  --measure \
-  --output="/opt/lusoris/output/mainstream-x86_64/BOOTX64.EFI"
+python3 scripts/check_uki.py --arch=x86_64 [--expect-initrd] [--expect-cmdline=TEXT|@FILE] \
+  output/mainstream-x86_64/BOOTX64.EFI
 ```
 
-### 3.3 TPM 2.0 PCR 11 Measurement & Sealing
+How this is tested:
+
+- `tests/test_package_uki.py` runs `package-uki.sh` with a stand-in `ukify` on a `PATH` that
+  holds nothing else, so the result does not depend on whether the host has `ukify`. The
+  stand-in writes PE images the test builds with `struct`: valid, empty, non-PE, PE images
+  missing a section, and images with an unwired section, a kernel for another machine or a
+  wrong command line.
+- The `UKI Real ukify Build` job (`uki-real-ukify` in `.github/workflows/ci.yml`) builds a UKI in
+  `ubuntu:26.04` with the real `ukify` from Ubuntu's own kernel image, since no nucleus kernel
+  exists until issue #18. It first installs a `ukify.conf` that asks for a microcode section and
+  shows that `ukify` honours it without `--config=/dev/null`. It then checks that the image has
+  no such section, prints `ukify inspect`, verifies the checksum, and runs the tests with a real
+  kernel, failing if any test skips. Its name does not carry the container tag, so an Ubuntu
+  bump does not rename the check.
+- To run the real-`ukify` test locally, install `ukify` and the stub, then run
+  `NUCLEUS_UKI_TEST_VMLINUZ=<kernel image> pytest tests/test_package_uki.py`.
+
+### 3.4 TPM 2.0 PCR 11 Measurement & Sealing
+
 When booting via `systemd-boot`, the UEFI boot loader measures the entire UKI payload directly into **TPM 2.0 PCR 11**:
+
 - PCR 11 matches the cryptographic digest calculated during `ukify --measure`.
 - Disk encryption keys (LUKS2 with `systemd-cryptenroll`) can be sealed to PCR 11: if the kernel, initramfs, or cmdline is altered by even a single bit, the TPM refuses to release the encryption key.
 
-### 3.4 Automated Packaging CLI Drivers
+`scripts/package-uki.sh` does not pass `--measure` yet. The `pcr11-measurements.json` that
+`--dry-run` writes hashes the simulated file and is marked `"simulated": true`.
+
+### 3.5 Automated Packaging CLI Drivers
+
 Developers and automation pipelines utilize dedicated shell drivers complying with NASA/JPL Power of 10:
 
 ```bash
@@ -123,9 +194,14 @@ Developers and automation pipelines utilize dedicated shell drivers complying wi
 ./scripts/package-deb.sh --stream=mainstream --arch=x86_64 --dry-run
 make package-deb STREAM=mainstream ARCH=x86_64
 
-# Synthesize Unified Kernel Image (UKI) PE binary (.efi) with PCR 11 measurements
+# Simulate UKI synthesis: writes output/mainstream-x86_64-dry-run/BOOTX64.EFI.simulated.txt and a
+# "simulated": true PCR 11 digest. Never a .efi and never a checksum
 ./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --dry-run
-make package-uki STREAM=mainstream ARCH=x86_64
+make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=true
+# Production: needs a built kernel and ukify, refuses without either, and deletes any
+# output that scripts/check_uki.py refuses before it is checksummed
+./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> [--initrd=<path>]
+make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=false VMLINUZ=<path> [INITRD=<path>]
 
 # Verify byte-level build reproducibility across compilation passes
 ./scripts/verify-reproducibility.sh --dry-run
@@ -168,7 +244,7 @@ apt-get install -y linux-image-7.2.4-lusoris1-mainstream-amd64 linux-headers-7.2
 ```
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
-Signed `.efi` UKI binaries are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. No workflow runs this push yet: `publish-release.yml` publishes GitHub Release assets only (section 5.3).
+Planned: UKI binaries (`.efi`) are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. The image is unsigned today (section 3.1), and no workflow publishes or pushes one: CI builds one only to test it, and `publish-release.yml` publishes GitHub Release assets, none of them a UKI (section 5.3).
 ```bash
 # Packaging UKI as an OCI artifact using oras:
 oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
@@ -176,10 +252,10 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
 ```
-Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
+Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) are meant to pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
-`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`. No UKI (`.efi`) is uploaded yet: the workflow uploads no `.efi`, and `SHA256SUMS` covers `*.deb`, `*.json` and `*.config` only (issue #21 covers the UKI path).
+`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`. No UKI (`.efi`) is uploaded yet: the workflow uploads no `.efi`, and `SHA256SUMS` covers `*.deb`, `*.json` and `*.config` only because `publish-release.yml` does not call `scripts/package-uki.sh`.
 
 The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
 

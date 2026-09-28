@@ -41,7 +41,7 @@ To safeguard the kernel supply chain against tampering and compromise:
 
 1. **Cryptographic Package Signing**:
    - Debian packages (`.deb`) and repository metadata (`InRelease`) are cryptographically signed using GPG with 4096-bit RSA keys.
-   - Unified Kernel Images (`.efi`) are signed with custom UEFI Secure Boot keys using `sbsign` and attested with **Cosign** keyless signatures via GitHub Actions OIDC.
+   - Unified Kernel Images (`.efi`) are not signed yet. `sbsign` Secure Boot signing is not wired into `scripts/package-uki.sh`, and no release workflow publishes a UKI, so the release **Cosign** signature over `SHA256SUMS` covers no UKI. Both are planned.
 2. **Software Bill of Materials (SBOM)**:
    - Every release generates both **CycloneDX** (`bom.cdx.json`) and **SPDX** (`bom.spdx.json`) files via Syft, indexing all compiled objects, firmware blobs, and C header sources.
 3. **Reproducible Builds**:
