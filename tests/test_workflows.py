@@ -1,8 +1,11 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
-from pathlib import Path
+import os
+import re
 import shutil
 import subprocess
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -56,6 +59,96 @@ def test_publish_release_ships_kernel_artifact_manifest():
         assert f'"{key}"' in payload, f"downstream payload must carry {key}"
 
 
+def _publish_release_steps():
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["publish"]["steps"]
+    return steps, [step.get("name", "") for step in steps]
+
+
+def test_publish_release_resolves_tags_without_fallback():
+    """A kernel tag must resolve to exactly one versions.json stream; there is no default."""
+    steps, names = _publish_release_steps()
+    resolve = steps[names.index("Resolve Stream and Version")]
+    assert resolve["id"] == "meta"
+    assert "scripts/resolve_release_tag.py" in resolve["run"]
+    assert '--github-output "${GITHUB_OUTPUT}"' in resolve["run"]
+    assert "python3 -c" not in resolve["run"], "the tag grammar lives in scripts/resolve_release_tag.py"
+    assert "${{" not in resolve["run"], "the tag reaches the resolver through env, never inline"
+
+
+def test_publish_release_tag_and_ref_cannot_diverge():
+    """A dispatched run must start from the tag it releases, and the release names that tag."""
+    steps, names = _publish_release_steps()
+    resolve = steps[names.index("Resolve Stream and Version")]
+    assert '--ref "${GITHUB_REF}"' in resolve["run"], "the resolver must compare the run's ref with the tag"
+    release = steps[names.index("Publish to GitHub Release")]
+    assert release["with"]["tag_name"] == "${{ steps.meta.outputs.release_tag }}"
+
+
+def _guard_step():
+    steps, names = _publish_release_steps()
+    return steps, names, steps[names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")]
+
+
+def _run_guard(token_set: str) -> subprocess.CompletedProcess:
+    """Execute the guard's run block the way the runner does, with only the boolean in its env."""
+    _, _, guard = _guard_step()
+    env = {"PATH": os.environ["PATH"], "KERNEL_FORGE_TOKEN_SET": token_set}
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-c", guard["run"]],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+def test_publish_release_dispatch_requires_kernel_forge_token():
+    """GITHUB_TOKEN cannot dispatch to another repository, so nothing falls back to it."""
+    steps, names, guard = _guard_step()
+    dispatch = steps[names.index("Dispatch Downstream Notification to imago")]
+    assert dispatch["with"]["token"] == "${{ secrets.KERNEL_FORGE_TOKEN }}"
+    assert guard["env"] == {"KERNEL_FORGE_TOKEN_SET": "${{ secrets.KERNEL_FORGE_TOKEN != '' }}"}
+    assert "${{" not in guard["run"], "the guard reads its env, never an inline expression"
+    payload = dispatch["with"]["client-payload"]
+    assert "steps.meta.outputs.release_version" in payload
+    assert "steps.meta.outputs.release_tag" in payload
+
+
+def test_publish_release_stops_before_building_or_publishing_without_the_token():
+    """A missing credential must publish nothing: the guard runs before every other step."""
+    _, names, _ = _guard_step()
+    guard = names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")
+    for later in ("Package Signed Deb and UKI Binaries", "Publish to GitHub Release"):
+        assert guard < names.index(later), f"the guard must run before {later!r}"
+
+
+def test_publish_release_secret_is_read_only_by_the_dispatch_step():
+    """ADR-0005: the token value reaches the dispatch step alone; the guard sees a boolean."""
+    steps, names, _ = _guard_step()
+    dispatch = names.index("Dispatch Downstream Notification to imago")
+    text = (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
+    plain = re.findall(r"secrets\.KERNEL_FORGE_TOKEN(?! != '')", text)
+    assert len(plain) == 1 and "secrets.KERNEL_FORGE_TOKEN" in str(steps[dispatch])
+    assert "secrets.GITHUB_TOKEN" not in text, "there is no fallback to GITHUB_TOKEN"
+
+
+def test_publish_release_guard_refuses_without_the_token():
+    """The guard's run block exits 1 with an annotation naming the secret when it is not set."""
+    for unset in ("false", ""):
+        result = _run_guard(unset)
+        assert result.returncode == 1, (unset, result.stdout, result.stderr)
+        assert result.stderr.startswith("::error title=Missing secret KERNEL_FORGE_TOKEN::")
+        assert "GITHUB_TOKEN cannot reach it" in result.stderr
+        assert result.stdout == ""
+
+
+def test_publish_release_guard_passes_with_the_token():
+    """With the secret set the guard is silent and exits 0."""
+    result = _run_guard("true")
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
 def test_required_aggregator_contract():
     """Ensure required-aggregator.yml defines the required-checks job."""
     aggregator = WORKFLOWS_DIR / "required-aggregator.yml"
@@ -85,4 +178,3 @@ def test_actionlint_passes():
     cmd = [actionlint_bin] + [str(w) for w in workflows]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"actionlint failed on workflows:\n{res.stdout}\n{res.stderr}"
-

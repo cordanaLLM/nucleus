@@ -38,3 +38,10 @@ jobs:
         run: |
           make lint
           make test
+
+      # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
+      # commit carries fails only at "Set up job" of the workflow that uses it.
+      - name: Verify Action Pins Upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make lint-pins

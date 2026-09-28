@@ -5,7 +5,7 @@ STREAM ?= mainstream
 ARCH ?= x86_64
 DRY_RUN ?= true
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -60,6 +60,9 @@ lint-manifest: ## Validate versions.json against versions.schema.json
 	@echo "==> Validating versions.json schema..."
 	@python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('versions.json')), json.load(open('versions.schema.json')))"
 	@echo "==> versions.json is valid."
+
+lint-pins: ## Verify every SHA-pinned action against its upstream tag (network; needs an authenticated gh)
+	@./scripts/check-action-pins.sh
 
 test: ## Run pytest automated test suite
 	@echo "==> Running pytest test suite..."
