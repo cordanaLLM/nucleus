@@ -6,7 +6,7 @@
 
 ## 1. Architectural Overview
 
-Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `cordanaLLM/nucleus`, the `mainstream` (7.2.4) and `bleeding` (7.3-rc2) streams incorporate native support for:
+Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `cordanaLLM/nucleus`, the `mainstream` (7.2.8) and `bleeding` (7.3-rc5) streams incorporate native support for:
 
 - **Intel Battlemage (Xe2-HPG)**: Discrete datacenter and workstation GPUs (BMG-G21, BMG-G31) featuring second-generation XMX (Xe Matrix eXtensions) for INT8/BF16/FP16 tensor math.
 - **Intel Lunar Lake & Arrow Lake (Xe2-LPG)**: Integrated low-power high-efficiency graphics engines.
@@ -42,15 +42,15 @@ flowchart TD
     OV --> L0
     TORCH --> L0
     FFMPEG --> MEDIA
-    
+
     L0 --> XE
     ANV --> XE
     MEDIA --> XE
-    
+
     XE --> GPUSVM
     XE --> DRM_SCHED
     XE --> SRIOV
-    
+
     GPUSVM --> BMG
     DRM_SCHED --> LNL
 ```

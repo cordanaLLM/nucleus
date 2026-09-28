@@ -10,10 +10,10 @@
 
 | Stream Channel | Tracked Upstream Version | Security Maintenance Status | Update Frequency |
 | :--- | :--- | :--- | :--- |
-| **`bleeding`** | Linux `7.3-rc2` / Mainline | Active (Day-0 fixes for next-gen silicon) | Weekly / On-demand |
-| **`mainstream`** | Linux `7.2.4` / Stable | Active (Full production support) | Weekly point releases |
-| **`lts`** | Linux `6.18.50` / Longterm | Active (Enterprise extended security) | Bi-weekly / Immediate on CVE |
-| **`realtime`** | Linux `7.2-rt` / PREEMPT_RT | Active (Deterministic low-latency) | Monthly / On RT patch release |
+| **`bleeding`** | Linux `7.3-rc5` / Mainline | Active (Day-0 fixes for next-gen silicon) | Weekly / On-demand |
+| **`mainstream`** | Linux `7.2.8` / Stable | Active (Full production support) | Weekly point releases |
+| **`lts`** | Linux `6.18.54` / Longterm | Active (Enterprise extended security) | Bi-weekly / Immediate on CVE |
+| **`realtime`** | Linux `7.2.8` / in-tree PREEMPT_RT | Active (Deterministic low-latency) | With the `mainstream` stable release |
 
 Older point releases are deprecated as soon as superseded by the next version declared in [`versions.json`](versions.json).
 

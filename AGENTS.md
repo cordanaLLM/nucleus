@@ -27,9 +27,10 @@ implemented; the compile step itself refuses.
 
 | Stage | State |
 | :--- | :--- |
-| `versions.json` stream and architecture manifest | real |
-| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp |
-| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to; first green run 36493866531 |
+| `versions.json` stream and architecture manifest | real: each stream names a signed `source` (a tarball with its `sha256` and signers, or a git tag with its commit and signers); each architecture its `ARCH`, base defconfig and toolchain prefix |
+| `scripts/fetch-kernel-source.sh` | real: fetches a stream's source and proves it (pinned `sha256` and `gpgv` over the uncompressed tar, or `git verify-tag` and the pinned commit) against `keys/`; refuses otherwise and writes no tree |
+| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp. With `--source-tree` it resolves them against a verified tree (defconfig, the kernel's `merge_config.sh -m`, `olddefconfig`) and refuses when a requested value did not survive (`scripts/kconfig_survival.py`); all twelve legs survive |
+| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to (first green run 36493866531), then against the resolved `.config` of each bound stream on each listed architecture |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
 | `scripts/package-deb.sh` | implemented, but never fed a real kernel |
@@ -45,9 +46,11 @@ generated an SBOM for them, and signed the result with cosign. That is why it re
 now: **a forge that cannot compile must not report that it did.** Do not restore a
 placeholder to make the build green.
 
-Implementing the real build is issue #18. In short: fetch the pinned tarball from
-kernel.org, verify its signature, merge the kconfig fragments, run `bindeb-pkg`, and
-cross-compile for `arm64` and `riscv64` with the matching toolchain.
+Implementing the real build is issue #18. Its first part is in place: the signed source is
+fetched and verified, and the kconfig is resolved against it with the survival check
+(docs/adr/0008). What remains is the compile: `bindeb-pkg` in the resolved build directory,
+cross-compiled for `arm64` and `riscv64` with the toolchain `versions.json` names, and a
+localversion per stream, since `mainstream` and `realtime` share the 7.2.8 tree.
 
 `scripts/package-uki.sh` had two placeholders of the same class, both removed under
 issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
@@ -86,10 +89,11 @@ image on every pull request.
     feature's exact state on every listed architecture; a failure names the correlation id,
     stream, architecture, symbol, `required-by`, required state and observed value. Unbound
     streams are reported, never gating.
-  - It proves the fragments *declare* a symbol (evidence level `declared`). `make olddefconfig` can
-    still drop one whose Kconfig dependencies are unmet, which only the real build (#18) can show.
-    The fragments declare the chains the requirement symbols need, such as `EXPERT` for
-    `PREEMPT_RT` and `DEBUG_KERNEL` with `DEBUG_INFO_DWARF5` for `DEBUG_INFO_BTF`, and say why.
+  - It checks at two evidence levels. `declared`: the fragments name the symbol. `resolved`: the
+    symbol is in the `.config` that `make olddefconfig` produced from the stream's verified source,
+    which catches a symbol whose Kconfig dependencies are unmet. The fragments declare the chains
+    the requirement symbols need, such as `EXPERT` for `PREEMPT_RT` and `DEBUG_KERNEL` with
+    `DEBUG_INFO_DWARF5` for `DEBUG_INFO_BTF`, and say why.
 - **Outbound**: `kernel-<stream>.manifest.json`, shape `imago.nucleus.kernel-artifact.v1`, carrying the stream, version, kernel release, config digest, per-artifact digests and sizes, the checksum file, and provenance (tag, revision, cosign bundle, signer identity).
 - Imago verifies the cosign bundle over `SHA256SUMS`, then the checksum file digest, then every per-artifact digest, before an image build consumes anything.
 
@@ -103,7 +107,7 @@ which is the second reason the production path refuses rather than fabricates.
 `cordanaLLM/nucleus` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
 
 Key capabilities:
-- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc2), `mainstream` (7.2.4), `lts` (6.18.50), and `realtime` (7.2-rt).
+- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc5), `mainstream` (7.2.8), `lts` (6.18.54), and `realtime` (7.2.8 with in-tree `PREEMPT_RT`).
 - **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
 - **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
 - **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `imago`.

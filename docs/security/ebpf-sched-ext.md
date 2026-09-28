@@ -92,7 +92,7 @@ kernel.unprivileged_bpf_disabled = 1
 ```
 
 ### JIT Constant Blinding (`bpf_jit_harden = 2`):
-When user-space programs load BPF instructions containing immediate scalar constants (e.g. `mov r1, 0xdeadbeef`), an attacker might attempt JIT spraying to inject executable shellcode fragments into JIT memory pages. 
+When user-space programs load BPF instructions containing immediate scalar constants (e.g. `mov r1, 0xdeadbeef`), an attacker might attempt JIT spraying to inject executable shellcode fragments into JIT memory pages.
 
 Setting `bpf_jit_harden = 2` forces the JIT compiler to blind all user-supplied constants:
 1. The kernel generates a cryptographically secure random 32/64-bit mask $M$.
@@ -107,7 +107,7 @@ Setting `bpf_jit_harden = 2` forces the JIT compiler to blind all user-supplied 
 `sched-ext` allows developers to replace the default Linux CPU scheduler (`EEVDF`) with dynamic, user-space-directed BPF schedulers:
 
 ### 4.1 Failsafe Watchdog & Automatic CFS/EEVDF Fallback
-The primary hazard of dynamic scheduling is starvation: an errant BPF scheduler could starve vital system tasks, deadlocking the machine. 
+The primary hazard of dynamic scheduling is starvation: an errant BPF scheduler could starve vital system tasks, deadlocking the machine.
 
 To prevent this, the kernel's `sched-ext` subsystem enforces strict safety invariants:
 1. **Heartbeat Timer**: The kernel runs an independent hardware watchdog timer (`scx_watchdog`).
@@ -136,7 +136,7 @@ sequenceDiagram
 
 ### 4.2 `sched-ext` & Realtime (`PREEMPT_RT`) Coexistence Contract
 - In standard kernels (`bleeding`, `mainstream`), `sched-ext` operates freely.
-- In the `realtime` (7.2-rt) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
+- In the `realtime` (7.2.8, in-tree `PREEMPT_RT`) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
 
 ---
 
