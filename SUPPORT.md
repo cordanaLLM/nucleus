@@ -7,7 +7,7 @@ Welcome to the `cordanaLLM/nucleus` community! This guide outlines how to get as
 ## Documentation Portal
 
 Always check the authoritative documentation portal first:
-- Documentation portal: `https://lusoris.github.io/nucleus`
+- Documentation portal: `https://cordanallm.github.io/nucleus/`
 - Architecture & Principles: [`docs/principles.md`](docs/principles.md)
 - Kernel Release Matrix: [`versions.json`](versions.json)
 

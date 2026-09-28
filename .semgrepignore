@@ -1,4 +1,4 @@
-# Semgrep ignore rules for lusoris-kernel-forge
+# Semgrep ignore rules for cordanaLLM/nucleus
 .git/
 .pytest_cache/
 __pycache__/

@@ -1,6 +1,6 @@
 site_name: nucleus
 site_description: High-performance, hardened, hardware-accelerated Linux kernel compilation and packaging factory
-site_url: https://lusoris.github.io/nucleus
+site_url: https://cordanallm.github.io/nucleus/
 repo_url: https://github.com/cordanaLLM/nucleus
 repo_name: cordanaLLM/nucleus
 edit_uri: edit/main/docs/
@@ -76,6 +76,7 @@ nav:
       - ADR-0003 sched-ext & Realtime Coexistence: adr/0003-sched-ext-and-realtime-scheduler-coexistence.md
       - ADR-0004 Native Debian & UKI Dual Packaging: adr/0004-native-debian-and-uki-dual-packaging.md
       - ADR-0005 Bidirectional Downstream Sync: adr/0005-bidirectional-image-forge-synchronization.md
+      - ADR-0006 OCI Registry Namespace: adr/0006-oci-registry-namespace.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

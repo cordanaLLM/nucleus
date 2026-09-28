@@ -39,7 +39,7 @@ flowchart TD
     DEB_HDR --> APT_REPO
     DEB_DEV --> APT_REPO
     
-    UKI_BIN --> OCI_REG["OCI Registry (ghcr.io/lusoris/kernels)"]
+    UKI_BIN --> OCI_REG["OCI Registry (ghcr.io/cordanallm/nucleus/kernels)"]
 ```
 
 ---
@@ -168,10 +168,10 @@ apt-get install -y linux-image-7.2.4-lusoris1-mainstream-amd64 linux-headers-7.2
 ```
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
-Signed `.efi` UKI binaries are pushed as OCI artifacts conforming to the OCI Artifact Specification:
+Signed `.efi` UKI binaries are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. No workflow runs this push yet: `publish-release.yml` publishes GitHub Release assets only (section 5.3).
 ```bash
 # Packaging UKI as an OCI artifact using oras:
-oras push ghcr.io/lusoris/kernels/mainstream-x86_64:7.2.4-lusoris1 \
+oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   --artifact-type application/vnd.efi.uki \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
