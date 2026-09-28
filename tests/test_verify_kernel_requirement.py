@@ -359,16 +359,16 @@ def test_a_dispatched_digest_is_proven_before_the_bytes_are_parsed():
 @pytest.mark.parametrize(
     ("release", "floor", "expected"),
     [
-        ("7.3", "7.2.4", True),
+        ("7.3", "7.2.9", True),
         ("7.3", "7.3.1", False),
         ("7.3.1", "7.3", True),
         ("7.3-rc2", "7.3.0", True),
         ("7.3.0", "7.3-rc2", True),
-        ("7.2-rt", "7.2", True),
+        ("6.6-rt", "6.6", True),
         ("6.12", "6.12", True),
         ("6.11.99", "6.12", False),
-        ("7.2.4-1-cachyos", "7.2.4", True),
-        ("6.18.50", "6.18.51", False),
+        ("6.9.4-1-cachyos", "6.9.4", True),
+        ("5.15.10", "5.15.11", False),
     ],
 )
 def test_at_least_compares_like_the_owner(release, floor, expected):
@@ -379,7 +379,7 @@ def test_at_least_compares_like_the_owner(release, floor, expected):
 @pytest.mark.parametrize(
     ("release", "components"),
     [
-        ("7.2.4-1-cachyos", (7, 2, 4)),
+        ("6.9.4-1-cachyos", (6, 9, 4)),
         ("7.3-rc2", (7, 3)),
         ("7..3", (7,)),
         ("1.2.3.4.5.6.7.8.9", (1, 2, 3, 4, 5, 6, 7, 8)),
@@ -615,10 +615,10 @@ def test_an_architecture_this_forge_does_not_build_fails():
 
 
 def test_a_module_abi_fails_closed_before_a_kernel_is_built():
-    req = _requirement(KVM_MODULE, module_abi="7.2.4-1-cachyos")
-    verdict = vkr.decide(req, [_stream(req, "alpha", "7.2.4", True, x86_64=MET)])
+    req = _requirement(KVM_MODULE, module_abi="6.9.4-1-cachyos")
+    verdict = vkr.decide(req, [_stream(req, "alpha", "6.9.4", True, x86_64=MET)])
     assert (verdict.satisfied, verdict.held) == (False, ())
-    assert "module-abi 7.2.4-1-cachyos" in verdict.reasons[0] and "#18" in verdict.reasons[0]
+    assert "module-abi 6.9.4-1-cachyos" in verdict.reasons[0] and "#18" in verdict.reasons[0]
 
 
 def test_a_document_no_stream_is_bound_to_fails():

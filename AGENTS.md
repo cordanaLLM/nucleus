@@ -29,7 +29,7 @@ implemented; the compile step itself refuses.
 | :--- | :--- |
 | `versions.json` stream and architecture manifest | real |
 | `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp |
-| `verify-requirements.yml` | implemented, no green run yet: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to |
+| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to; first green run 36493866531 |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
 | `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
