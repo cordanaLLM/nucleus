@@ -6,6 +6,9 @@ repository:
     description: ""
     homepage: ""
     topics: []
+    # Declared so every checkout renders .github/rulesets/main.json for main, including
+    # a clone whose origin HEAD names another branch.
+    default_branch: main
 profiles:
     - os-image
 facets:
@@ -13,3 +16,12 @@ facets:
     - api:public-contract
     - docs:seo-portal
     - agent:sandboxed
+# Overrides only increase strictness, except review_mode: single_maintainer, which lets the
+# only maintainer merge while no second reviewer or review bot exists: the rendered ruleset
+# then requires no approving review and no code-owner review. The facets keep their
+# reviewer minimum of 2 declared, so restoring independent review restores that minimum.
+# Restore independent review when a second maintainer or a review bot exists (nucleus#26).
+# Owner-approved 2026-09-28.
+overrides:
+    branch_protection:
+        review_mode: single_maintainer

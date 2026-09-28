@@ -132,14 +132,33 @@ Output `.deb` packages, the kernel image and the resolved configuration are stag
 `output/<stream>-<arch>/`; the build record and log stay in `build/<stream>-<arch>/`
 ([`docs/packaging.md`](docs/packaging.md), section 2).
 
+### Governance Recipes
+
+The repository is governed by praetor, pinned as `PRAETOR_COMMIT` in `.github/workflows/ci.yml`
+([Repository Governance](docs/repository-governance.md)):
+
+```bash
+# Recompile CLAUDE.md and the other agent context files after editing AGENTS.md
+make context
+
+# Re-render the branch ruleset after changing a pull-request workflow job
+make ruleset
+
+# Run the praetor checks the CI job runs
+make governance-check PRAETOR_SRC=<praetor checkout at the pin>
+```
+
 ---
 
 ## 4. Repository Structure
 
 ```
 .
+├── .config/archetypes/         # praetor policy catalog, pinned by .standards.lock
+├── .github/rulesets/main.json  # Branch ruleset rendered by `make ruleset`
 ├── .github/workflows/          # Automated build & downstream synchronization workflows
-├── AGENTS.md                   # Authoritative AI agent directives and standards
+├── .standards.yaml             # praetor manifest: profile, facets, review mode
+├── AGENTS.md                   # Authoritative AI agent directives; source of CLAUDE.md and the other agent files
 ├── docs/                       # Architecture, onboarding, and stream documentation
 │   ├── onboarding.md           # Step-by-step onboarding guide for agents & contributors
 │   ├── principles.md           # Engineering principles & NASA/JPL Power of 10 adaptations

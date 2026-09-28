@@ -14,7 +14,12 @@ SOURCE_TREE ?=
 KERNEL ?=
 KERNELRELEASE ?=
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean
+# praetorctl built from the commit PRAETOR_COMMIT in .github/workflows/ci.yml names, and a
+# praetor checkout at that commit for the catalog check (docs/repository-governance.md).
+PRAETORCTL ?= praetorctl
+PRAETOR_SRC ?=
+
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean context ruleset governance-check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -99,6 +104,36 @@ docs-build: ## Build documentation portal strictly
 
 audit: ## Run 7-stage repository health quality gate audit
 	@./scripts/audit-repository-health.sh
+
+context: ## Recompile CLAUDE.md and the other agent context files from AGENTS.md
+	@$(PRAETORCTL) compile-context
+	@$(PRAETORCTL) compile-context --verify
+
+ruleset: ## Re-render .github/rulesets/main.json from .standards.yaml and the workflows (local only)
+	@had_labels=false; \
+	if [ -f .config/labels.yaml ]; then had_labels=true; fi; \
+	if [ -f .github/rulesets/main.json ]; then mv .github/rulesets/main.json .github/rulesets/main.json.bak; fi; \
+	status=0; \
+	$(PRAETORCTL) sync || status=$$?; \
+	if [ "$$had_labels" = false ]; then rm -f .config/labels.yaml; fi; \
+	if [ "$$status" -ne 0 ] && [ -f .github/rulesets/main.json.bak ]; then \
+		mv .github/rulesets/main.json.bak .github/rulesets/main.json; \
+	else \
+		rm -f .github/rulesets/main.json.bak; \
+	fi; \
+	if [ "$$status" -eq 0 ] && [ -n "$$(tail -c 1 .github/rulesets/main.json)" ]; then \
+		echo >> .github/rulesets/main.json; \
+	fi; \
+	exit "$$status"
+
+governance-check: ## Run the praetor checks CI runs (PRAETOR_SRC=<praetor checkout> adds the catalog check)
+	@if [ -n "$(PRAETOR_SRC)" ]; then \
+		$(PRAETORCTL) plan --catalog-root "$(PRAETOR_SRC)"; \
+	else \
+		echo "==> SKIP: PRAETOR_SRC unset; the catalog check against the praetor pin did not run."; \
+	fi
+	@$(PRAETORCTL) plan
+	@$(PRAETORCTL) compile-context --verify
 
 build-kernel: ## Compile a stream into gated Debian packages, or state the plan (STREAM=<stream> ARCH=<arch> DRY_RUN=true [SOURCE_TREE=<dir>])
 	@echo "==> Invoking kernel build for stream '$(STREAM)' [$(ARCH)]..."

@@ -60,6 +60,7 @@ nav:
   - Kernel Streams & Matrix: streams.md
   - Curated Patch Queues: patches.md
   - Packaging & Delivery: packaging.md
+  - Repository Governance: repository-governance.md
   - Hardware Acceleration:
       - Multi-Architecture Strategy: hardware/architectures.md
       - AMD ROCm 10 & Mesa RADV: hardware/amd-rocm.md
