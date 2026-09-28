@@ -93,3 +93,38 @@ jobs:
           (cd /tmp && grep " ${archive}$" gitleaks_checksums.txt | sha256sum -c -)
           tar -xzf "/tmp/${archive}" -C /tmp gitleaks
           /tmp/gitleaks git --redact --no-banner --exit-code 1 .
+
+  # One check that stands for every scan above. Semgrep and Trivy are skipped on pull
+  # requests that touch no code path, and GitHub reports a skipped job as successful, so
+  # neither can be a required check on its own. This job needs all of them, runs on every
+  # pull request (if: always()), and fails when any of them failed or was cancelled.
+  security-gate:
+    name: Security Scan Gate
+    needs: [changes, semgrep, trivy, gitleaks]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail when a security scan failed or was cancelled
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          TRIVY_RESULT: ${{ needs.trivy.result }}
+          GITLEAKS_RESULT: ${{ needs.gitleaks.result }}
+        run: |
+          set -euo pipefail
+          status=0
+          for entry in "changes=${CHANGES_RESULT}" "semgrep=${SEMGREP_RESULT}" \
+            "trivy=${TRIVY_RESULT}" "gitleaks=${GITLEAKS_RESULT}"; do
+            job="${entry%%=*}"
+            result="${entry#*=}"
+            echo "${job}: ${result}"
+            case "${result}" in
+              success | skipped) ;;
+              *)
+                echo "::error::security scan job '${job}' ended with result '${result}'"
+                status=1
+                ;;
+            esac
+          done
+          exit "${status}"
