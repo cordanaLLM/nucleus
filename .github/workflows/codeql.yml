@@ -25,8 +25,13 @@ jobs:
       security-events: write
     strategy:
       fail-fast: false
+      # Written as include legs, not as a language axis: both forms run the same two
+      # jobs, but praetorctl expands the job name into the ruleset's required checks
+      # only from strategy.matrix.include and refuses the axis form.
       matrix:
-        language: [python, actions]
+        include:
+          - language: python
+          - language: actions
 
     steps:
       - name: Checkout Repository
