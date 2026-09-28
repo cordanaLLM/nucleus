@@ -51,6 +51,8 @@ lint: lint-manifest lint-workflows ## Run ShellCheck, Yamllint, Actionlint, and 
 	@if command -v yamllint >/dev/null 2>&1; then \
 		echo "==> Running Yamllint..."; \
 		yamllint -c .yamllint.yml .github/; \
+	else \
+		echo "==> SKIP: yamllint not installed; YAML lint did not run."; \
 	fi
 	@echo "==> All lint checks passed successfully."
 
