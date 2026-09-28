@@ -38,3 +38,92 @@ jobs:
         run: |
           make lint
           make test
+
+      # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
+      # commit carries fails only at "Set up job" of the workflow that uses it.
+      - name: Verify Action Pins Upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make lint-pins
+
+  # The job above runs without ukify, so it can only prove refusals. This one builds a real
+  # UKI with package-uki.sh, which is the positive case of issue #21. No nucleus kernel exists
+  # until issue #18, so the input is Ubuntu's own kernel image; the result is never published.
+  uki-real-ukify:
+    name: UKI Real ukify Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install ukify, the systemd-stub and pytest
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            systemd-ukify systemd-boot-efi python3 python3-pytest ca-certificates git
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Fetch a stock Ubuntu kernel image
+        run: |
+          # awk reads to the end: exiting early could SIGPIPE apt-cache, which pipefail reports.
+          image_pkg="$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-/ && !n++ {print $2}')"
+          test -n "${image_pkg}"
+          mkdir -p "${RUNNER_TEMP}/kernel"
+          cd "${RUNNER_TEMP}/kernel"
+          apt-get download "${image_pkg}"
+          dpkg-deb -x "${image_pkg}"_*.deb root
+          vmlinuz="$(find "${PWD}/root/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"
+          test -s "${vmlinuz}"
+          echo "NUCLEUS_UKI_TEST_VMLINUZ=${vmlinuz}" >> "${GITHUB_ENV}"
+
+      - name: Install a hostile ukify.conf
+        run: |
+          # ukify reads the first ukify.conf it finds under /etc/systemd. This one asks for a
+          # microcode section; package-uki.sh must ignore it (--config=/dev/null), so the
+          # build and the tests below prove the image does not depend on the build host.
+          mkdir -p /etc/systemd
+          head -c 64 /dev/zero > "${RUNNER_TEMP}/hostile-microcode.img"
+          printf '[UKI]\nMicrocode=%s\n' "${RUNNER_TEMP}/hostile-microcode.img" > /etc/systemd/ukify.conf
+          # Control: without --config=/dev/null the config takes effect, so this step is not vacuous.
+          ukify build --linux="${NUCLEUS_UKI_TEST_VMLINUZ}" --output="${RUNNER_TEMP}/control.efi"
+          ukify inspect "${RUNNER_TEMP}/control.efi" | grep -F '.ucode'
+
+      - name: Build a UKI with package-uki.sh and inspect it
+        run: |
+          stream="$(python3 -c 'import json; print(next(iter(json.load(open("versions.json"))["streams"])))')"
+          # The architecture of this runner, which must be a target of versions.json; the stock
+          # kernel is built for it. The build is not a nucleus kernel (issue #18).
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64) arch=arm64 ;;
+            riscv64) arch=riscv64 ;;
+            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          python3 -c 'import json, sys; assert sys.argv[1] in json.load(open("versions.json"))["architectures"], sys.argv[1]' "${arch}"
+          out="${RUNNER_TEMP}/uki"
+          ./scripts/package-uki.sh --stream="${stream}" --arch="${arch}" \
+            --vmlinuz="${NUCLEUS_UKI_TEST_VMLINUZ}" --output-dir="${out}"
+          dir="${out}/${stream}-${arch}"
+          efi="$(find "${dir}" -maxdepth 1 -type f -name '*.EFI')"
+          test "$(printf '%s\n' "${efi}" | wc -l)" -eq 1
+          python3 scripts/check_uki.py --arch="${arch}" "${efi}"
+          ukify inspect "${efi}"
+          if ukify inspect "${efi}" | grep -F '.ucode'; then
+            echo "the hostile ukify.conf leaked into the image" >&2
+            exit 1
+          fi
+          (cd "${dir}" && sha256sum --check "$(basename "${efi}").sha256")
+
+      - name: Run the UKI tests with ukify installed
+        run: |
+          python3 -m pytest tests/test_package_uki.py -rs -p no:cacheprovider \
+            --junitxml="${RUNNER_TEMP}/uki-junit.xml"
+          # The real-ukify test skips without ukify or a kernel image; here that would be a
+          # silent pass, so every test in the file must have run.
+          grep -q 'skipped="0"' "${RUNNER_TEMP}/uki-junit.xml"

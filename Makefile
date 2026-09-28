@@ -4,8 +4,11 @@ SHELL := /usr/bin/env bash
 STREAM ?= mainstream
 ARCH ?= x86_64
 DRY_RUN ?= true
+# package-uki with DRY_RUN=false: the kernel image to wrap, and an optional initramfs.
+VMLINUZ ?=
+INITRD ?=
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -61,6 +64,9 @@ lint-manifest: ## Validate versions.json against versions.schema.json
 	@python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('versions.json')), json.load(open('versions.schema.json')))"
 	@echo "==> versions.json is valid."
 
+lint-pins: ## Verify every SHA-pinned action against its upstream tag (network; needs an authenticated gh)
+	@./scripts/check-action-pins.sh
+
 test: ## Run pytest automated test suite
 	@echo "==> Running pytest test suite..."
 	@pytest tests/ -v
@@ -108,12 +114,12 @@ package-deb: ## Package native Debian packages (STREAM=<stream> ARCH=<arch> DRY_
 		./scripts/package-deb.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
 	fi
 
-package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY_RUN=true)
+package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY_RUN=true; DRY_RUN=false needs VMLINUZ=<path>, optional INITRD=<path>)
 	@echo "==> Synthesizing UKI for stream '$(STREAM)' [$(ARCH)]..."
 	@if [ "$(DRY_RUN)" = "true" ]; then \
 		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)" --dry-run; \
 	else \
-		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
+		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)" --vmlinuz="$(VMLINUZ)" $(if $(INITRD),--initrd="$(INITRD)"); \
 	fi
 
 verify-reproducibility: ## Run reproducible build attestation driver (DRY_RUN=true)

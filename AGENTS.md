@@ -32,10 +32,11 @@ implemented; the compile step itself refuses.
 | `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to; first green run 36493866531 |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
-| `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
+| `scripts/package-deb.sh` | implemented, but never fed a real kernel |
+| `scripts/package-uki.sh` | real, unsigned: `ukify` build, then `package-uki.sh` deletes any output that `scripts/check_uki.py` refuses (not a PE with the UKI sections it wires) before it is checksummed; CI builds one from Ubuntu's kernel, never yet from a nucleus kernel; no release workflow publishes a UKI; **refuses** without a kernel or `ukify` (issue #21) |
 | `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
 | `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
-| downstream dispatch to `cordanaLLM/imago` | real: `kernel_release_published` carries stream, version and tag |
+| downstream dispatch to `cordanaLLM/imago` | wired, has never run: `publish-release.yml` has no runs yet. `kernel_release_published` carries stream, version and tag, and needs the `KERNEL_FORGE_TOKEN` secret, which is not configured; without it the run stops with an error naming the secret |
 
 The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
 reported success on all twelve legs in under three minutes, and `publish-release` would
@@ -48,10 +49,21 @@ Implementing the real build is issue #18. In short: fetch the pinned tarball fro
 kernel.org, verify its signature, merge the kconfig fragments, run `bindeb-pkg`, and
 cross-compile for `arm64` and `riscv64` with the matching toolchain.
 
-One placeholder of the same class survives: `scripts/package-uki.sh` falls back to
-`cat "${VMLINUZ_FILE}" > "${target_efi}"` when `ukify` is absent, which produces a file
-named `.efi` that is a bare kernel image. Filed as issue #21; refuse instead, or
-install `ukify` on the runner.
+`scripts/package-uki.sh` had two placeholders of the same class, both removed under
+issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
+through to its simulation branch whenever `--vmlinuz` was missing, even without
+`--dry-run`, writing an `MZ`-prefixed text file named `BOOTX64.EFI` plus a PCR 11
+measurement of it. Both now refuse. Simulation happens only on an explicit `--dry-run`,
+which writes `<stream>-<arch>-dry-run/<efi name>.simulated.txt`, never a `.efi` or a
+checksum, and its `pcr11-measurements.json` carries `"simulated": true`. A production run
+removes any image, checksum and measurement an earlier run left at its path. Its `ukify` call was also
+wrong: it embedded the cmdline file's path as the kernel command line, and passed an
+empty `--initrd=`, on which `ukify` crashes. Whatever `ukify` writes now goes through
+`scripts/check_uki.py` (PE headers, machine type, UKI sections, no section the script does
+not wire, the command line text) and is deleted by `package-uki.sh`, not checksummed, if
+refused. `ukify` runs with `--config=/dev/null`, so a host `ukify.conf` cannot change the
+image. The `UKI Real ukify Build` job in `ci.yml` builds a real UKI from Ubuntu's kernel
+image on every pull request.
 
 ### The contract with imago
 

@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+# Copyright 2026 The Lusoris Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# scripts/check-action-pins.sh — verify every SHA-pinned action against its upstream.
+#
+# Every `uses: owner/repo[/path]@<40-hex> # <tag>` in .github/workflows must name a
+# tag of owner/repo that points to exactly the pinned commit (annotated tags are
+# dereferenced). A tag that points elsewhere is reported with the commit it does
+# point to, and a pinned commit that does not exist upstream is reported as such.
+# A remote `uses:` without a full commit SHA and a `# <tag>` comment fails; local
+# actions (./...) are skipped. One line per pin; exit 1 when any pin fails.
+#
+# Needs the gh CLI with a token (GH_TOKEN) and network access, which is why it is
+# `make lint-pins` and not part of the offline `make lint`. When the API refuses a
+# query with HTTP 403 (an organization IP allow list does this even for public
+# repositories), the tag is resolved over anonymous HTTPS git instead.
+# Complies with NASA/JPL Power of 10: short functions (<= 60 lines), bounded loops.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKFLOWS_DIR="${ROOT_DIR}/.github/workflows"
+readonly MAX_USES=500
+readonly MAX_TAG_DEPTH=4
+readonly PIN_RE='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(/[^@[:space:]]+)?@([0-9a-f]{40})[[:space:]]+#[[:space:]]*([A-Za-z0-9._/+-]+)'
+
+declare -A PIN_SITES=()
+declare -a PIN_KEYS=()
+declare -a BAD_USES=()
+declare -a LOCAL_USES=()
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --workflows-dir=*)
+        WORKFLOWS_DIR="${1#*=}"
+        shift
+        ;;
+      -h | --help)
+        echo "Usage: $0 [--workflows-dir=<dir>]"
+        exit 0
+        ;;
+      *)
+        echo "Error: Unknown option $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+}
+
+require_environment() {
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "Error: the gh CLI is required to query GitHub; pins cannot be verified without it" >&2
+    exit 1
+  fi
+  if [[ ! -d "${WORKFLOWS_DIR}" ]]; then
+    echo "Error: workflow directory '${WORKFLOWS_DIR}' does not exist" >&2
+    exit 1
+  fi
+}
+
+# Records one `uses:` value found at <file>:<line>.
+record_use() {
+  local value="$1" site="$2" key
+  value="${value//\"/}"
+  value="${value//\'/}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  if [[ "${value}" == ./* ]]; then
+    LOCAL_USES+=("${value%%[[:space:]]*}  [${site}]")
+    return 0
+  fi
+  if [[ ! "${value}" =~ ${PIN_RE} ]]; then
+    BAD_USES+=("${value}  [${site}]")
+    return 0
+  fi
+  key="${BASH_REMATCH[1]} ${BASH_REMATCH[1]}${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]}"
+  if [[ -z "${PIN_SITES[${key}]+set}" ]]; then
+    PIN_KEYS+=("${key}")
+    PIN_SITES["${key}"]="${site}"
+  else
+    PIN_SITES["${key}"]+=" ${site}"
+  fi
+}
+
+collect_uses() {
+  local file line_no text matches rc count=0
+  local -a files=()
+  mapfile -t files < <(find "${WORKFLOWS_DIR}" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "Error: no workflow files in ${WORKFLOWS_DIR}" >&2
+    exit 1
+  fi
+  for file in "${files[@]}"; do
+    # grep exits 1 for "no match" and 2 for an unreadable file; only the first is benign.
+    rc=0
+    matches="$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' "${file}")" || rc=$?
+    if [[ ${rc} -gt 1 ]]; then
+      echo "Error: cannot read ${file}" >&2
+      exit 1
+    fi
+    if [[ -z "${matches}" ]]; then
+      continue
+    fi
+    while IFS=: read -r line_no text; do
+      count=$((count + 1))
+      if [[ ${count} -gt ${MAX_USES} ]]; then
+        echo "Error: more than ${MAX_USES} uses: lines; refusing to continue" >&2
+        exit 1
+      fi
+      record_use "${text#*uses:}" "$(basename "${file}"):${line_no}"
+    done <<<"${matches}"
+  done
+}
+
+# Runs `gh api <endpoint> --jq <expr>`; on failure prints a one-line reason and returns 1.
+gh_query() {
+  local endpoint="$1" expr="$2" out
+  local http_re='\(HTTP ([0-9]{3})\)'
+  if out="$(gh api "${endpoint}" --jq "${expr}" 2>&1)"; then
+    echo "${out}"
+    return 0
+  fi
+  if [[ "${out}" =~ ${http_re} ]]; then
+    echo "HTTP ${BASH_REMATCH[1]} from ${endpoint}"
+  else
+    echo "gh api ${endpoint} failed: ${out%%$'\n'*}"
+  fi
+  return 1
+}
+
+# Resolves tags/<tag> of a public <repo> over anonymous HTTPS git, peeling annotated tags.
+# An organization IP allow list refuses authenticated API calls from outside the list, even
+# for public repositories (aquasecurity does this to the Actions token); anonymous reads of
+# public repositories stay open. Prints "<commit> <note>".
+resolve_tag_anonymously() {
+  local repo="$1" tag="$2" api_error="$3" refs sha ref direct="" peeled=""
+  if ! refs="$(env -u GIT_ASKPASS -u SSH_ASKPASS GIT_TERMINAL_PROMPT=0 git -C / \
+    -c credential.helper= -c core.askPass= -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 \
+    ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>&1)"; then
+    echo "${api_error}; anonymous git: ${refs%%$'\n'*}"
+    return 1
+  fi
+  while read -r sha ref; do
+    if [[ "${ref}" == "refs/tags/${tag}" ]]; then
+      direct="${sha}"
+    elif [[ "${ref}" == "refs/tags/${tag}^{}" ]]; then
+      peeled="${sha}"
+    fi
+  done <<<"${refs}"
+  sha="${peeled:-${direct}}"
+  if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "${api_error}; anonymous git lists no tag ${tag}"
+    return 1
+  fi
+  echo "${sha} via anonymous git, the API answered ${api_error%% from *}"
+}
+
+# Prints the commit that tags/<tag> of <repo> points to, following annotated tags.
+resolve_tag() {
+  local repo="$1" tag="$2" object depth endpoint="repos/$1/git/ref/tags/$2"
+  local expr='.object.type + " " + .object.sha'
+  for ((depth = 0; depth <= MAX_TAG_DEPTH; depth++)); do
+    if ! object="$(gh_query "${endpoint}" "${expr}")"; then
+      if [[ "${object}" == "HTTP 403 "* ]]; then
+        resolve_tag_anonymously "${repo}" "${tag}" "${object}"
+        return
+      fi
+      echo "${object}"
+      return 1
+    fi
+    if [[ "${object}" != "tag "* ]]; then
+      break
+    fi
+    endpoint="repos/${repo}/git/tags/${object#tag }"
+  done
+  if [[ ! "${object}" =~ ^commit\ ([0-9a-f]{40})$ ]]; then
+    echo "does not resolve to a commit: ${object}"
+    return 1
+  fi
+  echo "${BASH_REMATCH[1]}"
+}
+
+# Says whether the pinned commit exists in <repo>, to explain a failed pin.
+describe_commit() {
+  local repo="$1" sha="$2" out
+  if out="$(gh_query "repos/${repo}/commits/${sha}" '.sha')" && [[ "${out}" == "${sha}" ]]; then
+    echo "the pinned commit exists upstream"
+  elif [[ "${out}" == "HTTP 404 "* || "${out}" == "HTTP 422 "* ]]; then
+    echo "the pinned commit does not exist upstream (${out})"
+  else
+    echo "the pinned commit could not be checked (${out})"
+  fi
+}
+
+# Verifies one pin and prints its line; returns 1 when the pin fails.
+check_pin() {
+  local key="$1" repo action sha tag sites resolved tag_sha note=""
+  read -r repo action sha tag <<<"${key}"
+  sites="${PIN_SITES[${key}]}"
+  # A tag of the upstream repository that points to the pinned commit proves the commit
+  # exists there, so the commit itself is only queried to explain a failure.
+  if resolved="$(resolve_tag "${repo}" "${tag}")"; then
+    read -r tag_sha note <<<"${resolved}"
+    if [[ "${tag_sha}" == "${sha}" ]]; then
+      echo "OK    ${action}@${sha} # ${tag}${note:+  (${note})}  [${sites}]"
+      return 0
+    fi
+    resolved="tag ${tag} points to ${tag_sha}${note:+ (${note})}, not to the pin"
+  else
+    resolved="tag ${tag} not resolved (${resolved})"
+  fi
+  echo "FAIL  ${action}@${sha} # ${tag}: ${resolved}; $(describe_commit "${repo}" "${sha}")  [${sites}]"
+  return 1
+}
+
+main() {
+  parse_args "$@"
+  require_environment
+  collect_uses
+  local key entry failures=0
+  echo "==> Verifying action pins in ${WORKFLOWS_DIR#"${ROOT_DIR}/"} against their upstream tags..."
+  for key in "${PIN_KEYS[@]}"; do
+    check_pin "${key}" || failures=$((failures + 1))
+  done
+  for entry in "${BAD_USES[@]}"; do
+    echo "FAIL  ${entry}: not pinned as owner/repo@<40-hex commit> # <tag>"
+    failures=$((failures + 1))
+  done
+  for entry in "${LOCAL_USES[@]}"; do
+    echo "SKIP  ${entry}: local action"
+  done
+  echo "==> ${#PIN_KEYS[@]} pin(s) checked, ${#BAD_USES[@]} unpinned use(s), ${failures} failure(s)"
+  if [[ ${failures} -gt 0 ]]; then
+    exit 1
+  fi
+}
+
+main "$@"

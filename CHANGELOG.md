@@ -27,8 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python test harness dependencies (`requirements-test.txt`) and unified pytest/coverage/ruff configurations in `pyproject.toml`.
 
 ### Changed
-- **Breaking**: the `kernel_release_published` dispatch payload sent to `cordanaLLM/imago` carries `tag` next to `stream` and `version`; imago downloads the release named by the tag, verifies the cosign bundle over `SHA256SUMS` and every manifest digest, and refuses a payload without all three. `scripts/notify_downstream.sh` sends the same `tag` (`RELEASE_TAG`, default `v<version>`).
-- `publish-release.yml` exports `RAW_TAG` to the stream resolver (it was read from the environment but never exported, so every release resolved to `mainstream`) and emits a `release_tag` output.
+- **Breaking**: the `kernel_release_published` dispatch payload sent to `cordanaLLM/imago` carries `tag` next to `stream` and `version`; imago downloads the release named by the tag, verifies the cosign bundle over `SHA256SUMS` and every manifest digest, and refuses a payload without all three. `scripts/notify_downstream.sh` sends the same `tag` (`RELEASE_TAG`, required; the script refuses a tag the resolver refuses, and exits 1 without a token instead of skipping the dispatch).
+- **Breaking**: a kernel release tag is `v<version>-<stream>-lusoris<N>`, where `<stream>` is a key of `versions.json` and `<version>` is that stream's version. `scripts/resolve_release_tag.py` replaces the inline resolver of `publish-release.yml`, which fell back to `mainstream` for any tag (the previous `RAW_TAG` export was never set, so every release resolved to `mainstream`). Only `N=1` is accepted until the kernel build reads the revision (issue #18). `publish-release.yml` also requires the run to start from that tag (`GITHUB_REF` must be `refs/tags/<tag>`) and names it as the release tag. A tag such as `v7.2.4-lusoris1` is refused.
+- **Breaking**: the repository's own releases are tagged `nucleus-v<X.Y.Z>` (`include-component-in-tag`) and never start `publish-release.yml`.
+- `publish-release.yml` requires `KERNEL_FORGE_TOKEN` as its first step and fails there with an error naming the secret; the downstream dispatch has no fallback to `GITHUB_TOKEN`. The dispatch action is pinned to `peter-evans/repository-dispatch` v3.0.0, since the previous pin did not exist upstream.
+- `make lint-pins` (`scripts/check-action-pins.sh`, also run by `ci.yml`) verifies that every action pin resolves upstream to the tag named in its comment.
 
 ## [0.1.0] - 2026-09-10
 

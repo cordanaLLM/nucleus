@@ -30,4 +30,4 @@
 ## 5. Downstream Dispatch Preparation
 - [ ] Target repository identified (`cordanaLLM/imago`).
 - [ ] Dispatch event validated: `kernel_release_published`.
-- [ ] Dry-run notification tested: `./scripts/notify_downstream.sh <stream> <version> true`.
+- [ ] Dry-run notification tested: `RELEASE_TAG=v<version>-<stream>-lusoris1 ./scripts/notify_downstream.sh <stream> <version>-lusoris1 true`.

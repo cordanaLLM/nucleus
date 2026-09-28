@@ -14,7 +14,7 @@
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, OpenZFS 2.3 kmod compatibility, and NVMe-oF TCP optimizations.
-4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `imago` via GitHub `repository_dispatch`.
+4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `imago` via GitHub `repository_dispatch`. A kernel release is tagged `v<version>-<stream>-lusoris<N>`; the repository's own releases are tagged `nucleus-v<X.Y.Z>` and never start one (section 5.4 of [`docs/packaging.md`](docs/packaging.md)).
 
 ```mermaid
 flowchart TD
@@ -99,7 +99,9 @@ make merge-config ARCH=x86_64 STREAM=realtime
 # Package native Debian packages (.deb) with headers
 make package-deb STREAM=mainstream ARCH=x86_64
 
-# Synthesize Unified Kernel Image (UKI) PE binary (.efi)
+# Simulate Unified Kernel Image (UKI) synthesis: DRY_RUN=true is the Makefile default. It writes a
+# marked text file under output/<stream>-<arch>-dry-run/, never a .efi.
+# A real UKI needs a built kernel and ukify (DRY_RUN=false VMLINUZ=<path>); see docs/packaging.md, section 3.
 make package-uki STREAM=mainstream ARCH=x86_64
 
 # Run reproducible build attestation
