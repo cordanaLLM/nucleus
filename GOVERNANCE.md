@@ -14,7 +14,7 @@
 
 To prevent architectural drift and preserve institutional knowledge across human engineers and autonomous AI coding agents:
 
-1. **Routine Changes**: Bug fixes, dependency updates, and minor kconfig adjustments are submitted as standard pull requests and require approval by at least one Maintainer. While the project has a single maintainer, branch protection requires no approving review, so the maintainer's own changes merge on green checks (`review_mode: single_maintainer`, see [Repository Governance](docs/repository-governance.md#3-review-mode)).
+1. **Routine Changes**: Bug fixes, dependency updates, and minor kconfig adjustments are submitted as standard pull requests and merged by a maintainer once the required checks pass. No approving review is required while `review_mode` is `single_maintainer`, which holds while the project has a single maintainer and no review bot (see [Repository Governance](docs/repository-governance.md#3-review-mode)).
 2. **Substantial Architectural Shifts**: Any of the following require a formal **Architecture Decision Record (ADR)** under `docs/adr/`:
    - Adding or deprecating a kernel release stream.
    - Introducing new CPU architecture cross-compilation targets.

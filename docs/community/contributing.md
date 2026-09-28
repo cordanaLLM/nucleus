@@ -38,7 +38,7 @@ sequenceDiagram
     Contributor->>Origin: git push -u origin feat/intel-xe2-bmg
     Contributor->>Origin: gh pr create --fill
     Origin->>CI: Trigger ci.yml & security-scans.yml
-    CI-->>Main: required-checks pass & maintainer approval
+    CI-->>Main: required checks pass, maintainer merges
     Main->>Main: Squash and merge to main
 ```
 
