@@ -3,43 +3,87 @@
   "metadata": {
     "repository": "nucleus",
     "upstream": "https://www.kernel.org",
-    "updated": "2026-09-10"
+    "updated": "2026-09-29"
   },
   "streams": {
     "bleeding": {
-      "version": "7.3-rc2",
-      "tag": "v7.3-rc2",
-      "tarball_url": "https://git.kernel.org/torvalds/t/linux-7.3-rc2.tar.gz",
+      "version": "7.3-rc5",
+      "tag": "v7.3-rc5",
       "status": "mainline",
-      "description": "Bleeding edge mainline kernel for next-gen hardware (Blackwell RTX 5090/B200, CXL 3.0, sched-ext)."
+      "description": "Bleeding edge mainline kernel for next-gen hardware (Blackwell RTX 5090/B200, CXL 3.0, sched-ext).",
+      "source": {
+        "kind": "git-tag",
+        "repository": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git",
+        "tag": "v7.3-rc5",
+        "commit": "72d3fcf802c45d00b300f25b848a93c3a2bd7c7e",
+        "signers": [
+          "ABAF11C65A2970B130ABE3C479BE3E4300411886"
+        ]
+      }
     },
     "mainstream": {
-      "version": "7.2.4",
-      "tag": "v7.2.4",
-      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.4.tar.xz",
+      "version": "7.2.8",
+      "tag": "v7.2.8",
       "status": "stable",
-      "description": "Production stable stream for Intel Battlemage Xe2, AMD ROCm 10, and NVIDIA 565/610."
+      "description": "Production stable stream for Intel Battlemage Xe2, AMD ROCm 10, and NVIDIA 565/610.",
+      "source": {
+        "kind": "tarball",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.sign",
+        "sha256": "12e8d5a973d1ad7c5a5c69882e4022b131ed715db7003fdcd760ddf8c3e51941",
+        "signers": [
+          "647F28654894E3BD457199BE38DBBDC86092693E"
+        ]
+      }
     },
     "lts": {
-      "version": "6.18.50",
-      "tag": "v6.18.50",
-      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.50.tar.xz",
+      "version": "6.18.54",
+      "tag": "v6.18.54",
       "status": "longterm",
-      "description": "Long-term support stream for enterprise Kubernetes nodes, OpenZFS 2.3, and CNPG."
+      "description": "Long-term support stream for enterprise Kubernetes nodes, OpenZFS 2.3, and CNPG.",
+      "source": {
+        "kind": "tarball",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.54.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.54.tar.sign",
+        "sha256": "9df30b02dd8102bbd0be52556288ef6889ddbe7f1ddb96fbf847d0becf3eacac",
+        "signers": [
+          "647F28654894E3BD457199BE38DBBDC86092693E"
+        ]
+      }
     },
     "realtime": {
-      "version": "7.2-rt",
-      "tag": "v7.2-rt",
-      "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/projects/rt/7.2/linux-7.2-rt.tar.xz",
+      "version": "7.2.8",
+      "tag": "v7.2.8",
       "status": "preempt_rt",
-      "description": "Full PREEMPT_RT deterministic low-latency stream for edge and real-time workloads."
+      "description": "Full PREEMPT_RT deterministic low-latency stream for edge and real-time workloads, built from the mainline stable release with the in-tree PREEMPT_RT option.",
+      "source": {
+        "kind": "tarball",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.8.tar.sign",
+        "sha256": "12e8d5a973d1ad7c5a5c69882e4022b131ed715db7003fdcd760ddf8c3e51941",
+        "signers": [
+          "647F28654894E3BD457199BE38DBBDC86092693E"
+        ]
+      }
     }
   },
-  "architectures": [
-    "x86_64",
-    "arm64",
-    "riscv64"
-  ],
+  "architectures": {
+    "x86_64": {
+      "kernel_arch": "x86_64",
+      "base_config": "x86_64_defconfig",
+      "cross_compile": "x86_64-linux-gnu-"
+    },
+    "arm64": {
+      "kernel_arch": "arm64",
+      "base_config": "defconfig",
+      "cross_compile": "aarch64-linux-gnu-"
+    },
+    "riscv64": {
+      "kernel_arch": "riscv",
+      "base_config": "defconfig",
+      "cross_compile": "riscv64-linux-gnu-"
+    }
+  },
   "downstream": {
     "repository": "cordanaLLM/imago",
     "sync_event": "kernel_release_published",
