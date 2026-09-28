@@ -809,3 +809,91 @@ def test_main_refuses_arguments_versions_json_does_not_back(args):
     with pytest.raises(SystemExit) as info:
         vkr.main([*ANCHORS, *args])
     assert info.value.code == 2
+
+
+# --- the resolved evidence level (docs/adr/0008) ----------------------------------------------
+# A resolved .config is what scripts/merge-config.sh --source-tree writes after olddefconfig.
+# Here it is the declared configuration, edited the way olddefconfig can edit it.
+
+
+def _aegis_outcome(resolved):
+    raw = (FIXTURES / "aegis-os.json").read_bytes()
+    row = ROWS["aegis-os"]
+    source = vkr.Source("aegis-os", row["repository"], row["path"], None, None)
+    return vkr.verify_document(source, raw, row["streams"], VERSIONS, KCONFIG, resolved=resolved)
+
+
+def _declared(stream: str, arch: str = "x86_64") -> dict:
+    return vkr.declared_config(KCONFIG, arch, stream)
+
+
+def test_a_bound_stream_is_judged_on_its_resolved_config_and_the_rest_on_declared():
+    outcome = _aegis_outcome({("realtime", "x86_64"): _declared("realtime")})
+    assert outcome.status == "PASS", outcome.verdict
+    levels = {result.stream: result.evidence for result in outcome.results}
+    assert levels.pop("realtime") == "resolved"
+    assert set(levels.values()) == {"declared"}
+
+
+def test_a_symbol_olddefconfig_dropped_fails_the_resolved_level():
+    resolved = _declared("realtime")
+    del resolved["CONFIG_PREEMPT_RT"]
+    outcome = _aegis_outcome({("realtime", "x86_64"): resolved})
+    assert outcome.status == "FAIL"
+    assert any(
+        "realtime x86_64: CONFIG_PREEMPT_RT" in reason and "observed unrecorded" in reason
+        for reason in outcome.verdict.reasons
+    ), outcome.verdict.reasons
+
+
+def test_a_bound_pair_without_a_resolved_config_is_an_error_not_a_verdict():
+    outcome = _aegis_outcome({("mainstream", "x86_64"): _declared("mainstream")})
+    assert (outcome.status, outcome.error_kind) == ("ERROR", "MissingEvidence")
+    assert outcome.error == "no resolved configuration for realtime:x86_64"
+
+
+def test_main_reports_the_resolved_level(tmp_path, capsys):
+    configs = []
+    for stream in VERSIONS["streams"]:
+        path = tmp_path / f"kernel-{stream}-x86_64.config"
+        body = "".join(f"{key}={value}\n" for key, value in _declared(stream).items())
+        path.write_text(body, encoding="utf-8")
+        configs.append(f"--resolved-config={stream}:x86_64={path}")
+    report = tmp_path / "report.json"
+    code = _cli(tmp_path, *configs, f"--report-json={report}")
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "evidence level: resolved" in out
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["evidence_level"] == "resolved"
+    imago = data["documents"][0]["streams"]
+    assert {stream["evidence"] for stream in imago} == {"resolved"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["realtime-x86_64=x.config", "nightly:x86_64=x.config", "realtime:mips=x.config"],
+)
+def test_main_refuses_a_resolved_config_versions_json_does_not_build(tmp_path, value):
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--resolved-config={value}")
+    assert info.value.code == 2
+
+
+def test_the_plan_is_every_bound_stream_on_every_listed_architecture(tmp_path, capsys):
+    plan = tmp_path / "plan.json"
+    assert _cli(tmp_path, f"--plan={plan}") == 0
+    bound = {stream for row in ROWS.values() for stream in row["streams"]}
+    expected = [
+        {"stream": stream, "arches": "x86_64"} for stream in VERSIONS["streams"] if stream in bound
+    ]
+    assert json.loads(plan.read_text(encoding="utf-8")) == {"include": expected}
+
+
+def test_a_refused_document_adds_nothing_to_the_plan(tmp_path, capsys):
+    plan = tmp_path / "plan.json"
+    imago = _altered("features", [], name="imago.json")
+    assert _cli(tmp_path, f"--plan={plan}", imago=imago) == 0
+    assert json.loads(plan.read_text(encoding="utf-8")) == {
+        "include": [{"stream": "realtime", "arches": "x86_64"}]
+    }
