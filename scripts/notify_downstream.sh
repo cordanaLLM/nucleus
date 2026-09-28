@@ -15,19 +15,46 @@
 
 set -euo pipefail
 
-STREAM="${1:-mainstream}"
-VERSION="${2:-7.2.4-lusoris1}"
+# Manual counterpart of the dispatch step in publish-release.yml. It sends the same payload
+# for a kernel release that already exists. Nothing is defaulted: the tag must be a kernel
+# release tag that scripts/resolve_release_tag.py accepts, and a live dispatch needs a token.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STREAM="${1:-}"
+VERSION="${2:-}"
 DRY_RUN="${3:-false}"
 # Release tag the downstream verifier downloads; imago refuses a payload without it.
-RELEASE_TAG="${RELEASE_TAG:-v${VERSION}}"
+RELEASE_TAG="${RELEASE_TAG:-}"
 TARGET_REPO="cordanaLLM/imago"
 EVENT_TYPE="kernel_release_published"
+RESOLVED=""
+
+usage() {
+  echo "Usage: RELEASE_TAG=v<version>-<stream>-lusoris<N> $0 <stream> <version>-lusoris<N> [true]" >&2
+  echo "       (a third argument of 'true' prints the dispatch without sending it)" >&2
+  exit 1
+}
+
+resolved_value() {
+  printf '%s\n' "${RESOLVED}" | sed -n "s/^$1=//p"
+}
+
+require_match() {
+  local label="$1" given="$2" key="$3" expected
+  expected="$(resolved_value "${key}")"
+  if [[ "${given}" != "${expected}" ]]; then
+    echo "Error: ${label} '${given}' does not match '${expected}', which RELEASE_TAG '${RELEASE_TAG}' resolves to." >&2
+    exit 1
+  fi
+}
 
 validate_parameters() {
   if [[ -z "${STREAM}" || -z "${VERSION}" || -z "${RELEASE_TAG}" ]]; then
-    echo "Usage: [RELEASE_TAG=vX.Y.Z] $0 <stream> <version> [dry-run]" >&2
-    exit 1
+    usage
   fi
+  # The resolver reports its own refusal on stderr.
+  RESOLVED="$(python3 "${SCRIPT_DIR}/resolve_release_tag.py" --tag "${RELEASE_TAG}")" || exit 1
+  require_match "Stream" "${STREAM}" "stream"
+  require_match "Version" "${VERSION}" "release_version"
 }
 
 send_dispatch() {
@@ -42,8 +69,9 @@ send_dispatch() {
   fi
 
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-    echo "Warning: GITHUB_TOKEN not set; skipping live dispatch."
-    return 0
+    echo "Error: GITHUB_TOKEN is not set; a live dispatch needs a token that may send" >&2
+    echo "       repository_dispatch events to ${TARGET_REPO}. Nothing was sent." >&2
+    exit 1
   fi
 
   gh api "repos/${TARGET_REPO}/dispatches" \

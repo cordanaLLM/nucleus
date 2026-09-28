@@ -95,7 +95,7 @@ record_use() {
 }
 
 collect_uses() {
-  local file line_no text count=0
+  local file line_no text matches rc count=0
   local -a files=()
   mapfile -t files < <(find "${WORKFLOWS_DIR}" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
   if [[ ${#files[@]} -eq 0 ]]; then
@@ -103,6 +103,16 @@ collect_uses() {
     exit 1
   fi
   for file in "${files[@]}"; do
+    # grep exits 1 for "no match" and 2 for an unreadable file; only the first is benign.
+    rc=0
+    matches="$(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' "${file}")" || rc=$?
+    if [[ ${rc} -gt 1 ]]; then
+      echo "Error: cannot read ${file}" >&2
+      exit 1
+    fi
+    if [[ -z "${matches}" ]]; then
+      continue
+    fi
     while IFS=: read -r line_no text; do
       count=$((count + 1))
       if [[ ${count} -gt ${MAX_USES} ]]; then
@@ -110,7 +120,7 @@ collect_uses() {
         exit 1
       fi
       record_use "${text#*uses:}" "$(basename "${file}"):${line_no}"
-    done < <(grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:' "${file}" || true)
+    done <<<"${matches}"
   done
 }
 

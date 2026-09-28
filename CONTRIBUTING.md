@@ -96,9 +96,11 @@ code gates (`ci`, `codeql`, `security-scans`) are never waived.
 Merging the release pull request tags the repository's release `nucleus-v<X.Y.Z>` and
 writes that version into `VERSION`. A kernel is released by a different tag,
 `v<version>-<stream>-lusoris<N>`, whose `<version>` must equal the stream's version in
-`versions.json`. Only the kernel tag starts `publish-release.yml`, and the downstream
-dispatch needs the `KERNEL_FORGE_TOKEN` secret. [`docs/packaging.md`](docs/packaging.md)
-sections 5.4 and 5.5 describe both.
+`versions.json`; only `N=1` is accepted until the kernel build reads the revision. Only
+the kernel tag starts `publish-release.yml`, a manual run must start from that tag
+(`--ref`), and the downstream dispatch needs the `KERNEL_FORGE_TOKEN` secret, checked
+before anything is built. [`docs/packaging.md`](docs/packaging.md) sections 5.4 and 5.5
+describe both.
 
 ---
 

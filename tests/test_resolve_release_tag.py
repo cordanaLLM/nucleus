@@ -72,10 +72,20 @@ def test_each_stream_tag_resolves_to_that_stream(stream):
     assert resolution.release_version == f"{version}-lusoris1"
 
 
-def test_revision_above_one_resolves():
-    resolution = resolver.resolve(_tag(STREAMS[FIRST], FIRST, 12), STREAMS)
-    assert resolution.rev == 12
-    assert resolution.release_version == f"{STREAMS[FIRST]}-lusoris12"
+@pytest.mark.parametrize("rev", [2, 3, 12])
+def test_revision_above_one_is_refused_until_the_build_reads_it(rev):
+    """package-deb.sh builds every kernel as -lusoris1; issue #18 threads the revision through."""
+    with pytest.raises(resolver.TagError, match=f"revision '{rev}'.*only revision 1"):
+        resolver.resolve(_tag(STREAMS[FIRST], FIRST, rev), STREAMS)
+
+
+def test_the_build_still_writes_revision_one():
+    """The resolver may accept a higher revision only once the packaging consumes it."""
+    packaging = (REPO_ROOT / "scripts" / "package-deb.sh").read_text(encoding="utf-8")
+    assert "-lusoris1" in packaging, (
+        "package-deb.sh reads the revision now: relax SUPPORTED_REVISION"
+    )
+    assert resolver.SUPPORTED_REVISION == "1"
 
 
 def test_streams_sharing_a_version_resolve_by_name():
@@ -92,6 +102,7 @@ NEGATIVE_TAGS = [
     pytest.param(f"v{STREAMS[FIRST]}-{FIRST}", id="missing-lusoris-revision"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, 0), id="revision-zero"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, "01"), id="revision-leading-zero"),
+    pytest.param(_tag(STREAMS[FIRST], FIRST, 2), id="revision-two"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, "1x"), id="revision-trailing-text"),
     pytest.param(f"v{STREAMS[FIRST]}-lusoris1", id="stream-omitted"),
     pytest.param(f"{STREAMS[FIRST]}-{FIRST}-lusoris1", id="missing-v-prefix"),
@@ -168,9 +179,9 @@ def test_cli_appends_outputs_to_github_output(tmp_path):
 
 
 def test_cli_prints_outputs_without_github_output():
-    result = _run_cli("--tag", _tag(STREAMS[FIRST], FIRST, 3))
+    result = _run_cli("--tag", _tag(STREAMS[FIRST], FIRST))
     assert result.returncode == 0, result.stderr
-    assert result.stdout == _expected_outputs(FIRST, 3)
+    assert result.stdout == _expected_outputs(FIRST)
 
 
 def test_cli_refusal_writes_no_output(tmp_path):
@@ -193,11 +204,44 @@ def test_cli_reads_the_versions_option(tmp_path):
     versions.write_text(
         json.dumps({"streams": {"canary": {"version": "9.9-rc9"}}}), encoding="utf-8"
     )
-    result = _run_cli("--tag", "v9.9-rc9-canary-lusoris2", "--versions", str(versions))
+    result = _run_cli("--tag", "v9.9-rc9-canary-lusoris1", "--versions", str(versions))
     assert result.returncode == 0, result.stderr
     assert (
-        "stream=canary\n" in result.stdout and "release_version=9.9-rc9-lusoris2\n" in result.stdout
+        "stream=canary\n" in result.stdout and "release_version=9.9-rc9-lusoris1\n" in result.stdout
     )
+
+
+def test_cli_accepts_the_run_started_from_the_tag(tmp_path):
+    tag = _tag(STREAMS[FIRST], FIRST)
+    output = tmp_path / "github_output"
+    result = _run_cli("--tag", tag, "--ref", f"refs/tags/{tag}", "--github-output", str(output))
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8") == _expected_outputs(FIRST)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        pytest.param("refs/heads/main", id="branch"),
+        pytest.param("refs/tags/v0.2.0", id="another-tag"),
+        pytest.param(f"refs/tags/{_tag(STREAMS[FIRST], FIRST)}x", id="longer-tag"),
+        pytest.param(_tag(STREAMS[FIRST], FIRST), id="short-name-not-a-ref"),
+        pytest.param("", id="empty"),
+    ],
+)
+def test_cli_refuses_a_run_started_from_another_ref(tmp_path, ref):
+    """A dispatch of tag X from ref Y would sign and release under Y, not under the tag X names."""
+    tag = _tag(STREAMS[FIRST], FIRST)
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    result = _run_cli("--tag", tag, "--ref", ref, "--github-output", str(output))
+    assert result.returncode == 1
+    assert f"refs/tags/{tag}" in result.stderr and f"--ref {tag}" in result.stderr
+    assert output.read_text(encoding="utf-8") == ""
+
+
+def test_cli_without_ref_skips_the_ref_check():
+    assert _run_cli("--tag", _tag(STREAMS[FIRST], FIRST)).returncode == 0
 
 
 def _release_please_package() -> dict:

@@ -22,23 +22,23 @@
 flowchart TD
     SRC["Upstream Kernel Source + Curated Patches"] --> KCONF["Merged Hardened KConfig (.config)"]
     KCONF --> BUILD["Hermetic LLVM/Clang Builder"]
-    
+
     BUILD -->|"make bindeb-pkg"| DEB_STAGE["Debian Packaging Pipeline"]
     DEB_STAGE --> DEB_IMG["linux-image-*.deb"]
     DEB_STAGE --> DEB_HDR["linux-headers-*.deb"]
     DEB_STAGE --> DEB_DEV["linux-libc-dev-*.deb"]
-    
+
     BUILD -->|"vmlinux / bzImage + modules"| UKI_STAGE["systemd-ukify Pipeline"]
     INITRD["Minimal Dracut Initramfs + CPU Microcode"] --> UKI_STAGE
     CMDLINE["Immutable Kernel Cmdline (console=ttyS0 quiet)"] --> UKI_STAGE
     CERT["UEFI Secure Boot Keys / Cosign OIDC"] --> UKI_STAGE
-    
+
     UKI_STAGE --> UKI_BIN["signed-kernel-*.efi (UKI)"]
-    
+
     DEB_IMG --> APT_REPO["APT Repository (apt.example.com)"]
     DEB_HDR --> APT_REPO
     DEB_DEV --> APT_REPO
-    
+
     UKI_BIN --> OCI_REG["OCI Registry (ghcr.io/cordanallm/nucleus/kernels)"]
 ```
 
@@ -179,7 +179,7 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
-`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `linux-<stream>-<version>-uki.efi`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`.
+`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`. No UKI (`.efi`) is uploaded yet: the workflow uploads no `.efi`, and `SHA256SUMS` covers `*.deb`, `*.json` and `*.config` only (issue #21 covers the UKI path).
 
 The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
 
@@ -217,9 +217,9 @@ To release a kernel, push a tag in the first form. `scripts/resolve_release_tag.
 
 - `<stream>` is a key of `streams`. It is spelled out because two streams may carry the same upstream version.
 - `<version>` equals that stream's `version` exactly. `v7.2.40-mainstream-lusoris1` does not match a stream at `7.2.4`.
-- `<N>` is the forge revision, an integer of at least 1 without leading zeros. Raise it to release the same upstream version again.
+- `<N>` is the forge revision. Only `1` is accepted for now, so `v7.2.4-mainstream-lusoris2` is refused. Nothing consumes the revision yet: `scripts/package-deb.sh` writes `-lusoris1` into the kernel release and the package version, and a higher `<N>` would put a version in the manifest and the downstream payload that the forge did not build. Issue #18, which implements the kernel build, threads the revision into `LOCALVERSION` and `KDEB_PKGVERSION`; the resolver then accepts integers of at least 1 without leading zeros, and a revision above 1 releases the same upstream version again.
 
-Any other tag is refused with an error naming the mismatch, and nothing is built, signed, published or dispatched; there is no default stream. The resolver prints what a tag resolves to, so a tag can be checked before it is pushed:
+Any other tag is refused with an error naming the mismatch, and nothing is built, signed, published or dispatched; there is no default stream. The run must also have started from that tag: the workflow passes `GITHUB_REF` to the resolver, which refuses unless it is `refs/tags/<tag>`. Checkout, the signer identity in the manifest and the GitHub Release all follow the ref, so re-running a release by hand means `gh workflow run publish-release.yml --ref <tag> -f tag=<tag>`; starting it from a branch, or from another tag, is refused before anything is built. The resolver prints what a tag resolves to, so a tag can be checked before it is pushed:
 
 ```bash
 python3 scripts/resolve_release_tag.py --tag v7.2.4-mainstream-lusoris1
@@ -233,6 +233,12 @@ The repository's own releases never start a kernel release. `release-please-conf
 
 `publish-release.yml` sends `kernel_release_published` to `cordanaLLM/imago` with the repository secret `KERNEL_FORGE_TOKEN`. It must be a token that may create repository dispatch events in `cordanaLLM/imago`: a fine-grained personal access token with **Contents: write** on that repository, or a classic token with the `repo` scope ([permissions for fine-grained tokens](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)).
 
-There is no fallback to `GITHUB_TOKEN`, which is scoped to this repository and cannot dispatch to another one. When the secret is empty, the step `Require KERNEL_FORGE_TOKEN for the Downstream Dispatch` fails with an error that names the secret. That step runs after the release has been published, so configure the secret before pushing the first kernel release tag. ADR-0005 names this credential `DISPATCH_ACCESS_TOKEN`; the workflows use `KERNEL_FORGE_TOKEN`.
+There is no fallback to `GITHUB_TOKEN`, which is scoped to this repository and cannot dispatch to another one. When the secret is empty, the step `Require KERNEL_FORGE_TOKEN for the Downstream Dispatch` fails with an error that names the secret. That step is the first step of the job, so a missing secret stops the run before anything is built, signed or published, and no release exists that imago was never told about. The step receives only whether the secret is set (`secrets.KERNEL_FORGE_TOKEN != ''`), never its value; the dispatch step is the only one that reads the token, as ADR-0005 requires.
+
+The manual counterpart is `scripts/notify_downstream.sh`. It requires `RELEASE_TAG` (checked by `scripts/resolve_release_tag.py`, with the stream and version arguments checked against it) and, unless it is a dry run, a `GITHUB_TOKEN` that may dispatch to `cordanaLLM/imago`; it exits 1 when either is missing instead of skipping the dispatch:
+
+```bash
+RELEASE_TAG=v7.2.4-mainstream-lusoris1 ./scripts/notify_downstream.sh mainstream 7.2.4-lusoris1 true
+``` ADR-0005 names this credential `DISPATCH_ACCESS_TOKEN`; the workflows use `KERNEL_FORGE_TOKEN`.
 
 Every third-party action in `.github/workflows/` is pinned to a commit SHA with its release tag as a comment. `make lint-pins` (`scripts/check-action-pins.sh`, also run by `ci.yml`) verifies that each tag points to the pinned commit, since a SHA that no upstream commit carries fails only when a job using it starts. When the API refuses a query with HTTP 403, as an organization IP allow list does for the Actions token even on public repositories (`aquasecurity` is one), the script resolves that tag over anonymous `git ls-remote` instead and says so on the pin's line.

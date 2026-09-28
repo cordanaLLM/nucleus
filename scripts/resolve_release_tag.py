@@ -18,12 +18,22 @@ A kernel release tag has the form ``v<version>-<stream>-lusoris<N>``:
 
 - ``<stream>`` is a key of ``streams`` in versions.json;
 - ``<version>`` equals that stream's ``version`` exactly;
-- ``<N>`` is the forge revision, a decimal integer of at least 1 without
-  leading zeros.
+- ``<N>`` is the forge revision. Only ``1`` is accepted for now: the package
+  build writes ``-lusoris1`` into the kernel release and the package version
+  and does not read the revision yet, so a higher one would put a version in
+  the manifest that the forge never built. Issue #18 threads the revision
+  through the build; this check relaxes to integers of at least 1 (without
+  leading zeros) with it.
 
 The stream is spelled out because two streams may carry the same upstream
 version. There is no fallback: a tag that does not name exactly one stream at
 exactly its version is refused, and the release workflow stops there.
+
+With ``--ref`` the resolver also refuses a run whose git ref is not
+``refs/tags/<tag>``. A manually dispatched workflow checks out, signs and
+publishes for the ref it was started from, so a tag typed into the dispatch
+form must be the ref the run started from, or the release would be attached to
+another tag than the manifest names.
 
 On success the resolver writes ``stream``, ``version``, ``rev``,
 ``release_tag`` and ``release_version`` (``<version>-lusoris<N>``, the version
@@ -49,7 +59,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VERSIONS = REPO_ROOT / "versions.json"
 GRAMMAR = "v<version>-<stream>-lusoris<N>"
 TAG_SHAPE = re.compile(r"v(?P<body>.+)-lusoris(?P<rev>[0-9]+)")
-REVISION_VALUE = re.compile(r"[1-9][0-9]*")
+SUPPORTED_REVISION = "1"
 STREAM_TOKEN = re.compile(r"[a-z][a-z0-9-]*")
 VERSION_TOKEN = re.compile(r"[0-9][A-Za-z0-9._+-]*")
 MAX_TAG_LENGTH = 128
@@ -117,10 +127,10 @@ def split_revision(tag: str) -> tuple[str, int]:
             f"tag {tag!r} does not end in -lusoris<N>; a kernel release tag is {GRAMMAR}"
         )
     rev = shape.group("rev")
-    if not REVISION_VALUE.fullmatch(rev):
+    if rev != SUPPORTED_REVISION:
         raise TagError(
-            f"tag {tag!r} carries revision {rev!r}; the revision is an integer of at least 1 "
-            "without leading zeros"
+            f"tag {tag!r} carries revision {rev!r}; only revision {SUPPORTED_REVISION} is "
+            "released until the package build reads the revision (issue #18)"
         )
     return shape.group("body"), int(rev)
 
@@ -150,6 +160,18 @@ def resolve(tag: str, streams: dict[str, str]) -> Resolution:
     body, rev = split_revision(tag)
     stream, version = match_stream(body, streams, tag)
     return Resolution(stream=stream, version=version, rev=rev, release_tag=tag)
+
+
+def check_ref(tag: str, ref: str | None) -> None:
+    """Refuse a run whose git ref is not the tag it releases; None skips the check."""
+    if ref is None:
+        return
+    if ref != f"refs/tags/{tag}":
+        raise TagError(
+            f"the run started from ref {ref!r}, not from refs/tags/{tag}; checkout, signer "
+            f"identity and release all follow the ref, so start it from the tag "
+            f"(gh workflow run --ref {tag})"
+        )
 
 
 def emit(text: str, github_output: str | None) -> None:
@@ -182,6 +204,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="path to versions.json (default: the repository's versions.json)",
     )
     parser.add_argument(
+        "--ref",
+        default=None,
+        help="git ref of the run (in Actions: $GITHUB_REF); refuse unless it is refs/tags/<tag>",
+    )
+    parser.add_argument(
         "--github-output",
         default=None,
         help="append key=value outputs to this file (in Actions: $GITHUB_OUTPUT)",
@@ -194,6 +221,7 @@ def run(argv: list[str]) -> int:
     args = parse_args(argv)
     try:
         resolution = resolve(args.tag, load_streams(args.versions))
+        check_ref(args.tag, args.ref)
     except TagError as exc:
         report(str(exc))
         return 1

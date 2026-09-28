@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Kernel release tag v<version>-<stream>-lusoris<N>; <version> must equal the stream's version in versions.json"
+        description: "Kernel release tag v<version>-<stream>-lusoris1 (<version> = the stream's version in versions.json); start the run from this tag (--ref)"
         required: true
 
 permissions:
@@ -21,6 +21,22 @@ jobs:
       contents: write
       id-token: write
     steps:
+      # GITHUB_TOKEN is scoped to this repository and cannot dispatch to cordanaLLM/imago, so
+      # there is no fallback to it: without KERNEL_FORGE_TOKEN the run stops here, before
+      # anything is built, signed or published, and says so. The step sees only whether the
+      # secret is set, never its value; the dispatch step below is the one place that reads it.
+      - name: Require KERNEL_FORGE_TOKEN for the Downstream Dispatch
+        env:
+          KERNEL_FORGE_TOKEN_SET: ${{ secrets.KERNEL_FORGE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${KERNEL_FORGE_TOKEN_SET}" != "true" ]]; then
+            message="KERNEL_FORGE_TOKEN is not set. The downstream dispatch needs a token that may send"
+            message+=" repository_dispatch events to the downstream repository; GITHUB_TOKEN cannot reach it."
+            echo "::error title=Missing secret KERNEL_FORGE_TOKEN::${message}" >&2
+            exit 1
+          fi
+
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -38,6 +54,9 @@ jobs:
       # A kernel release tag is v<version>-<stream>-lusoris<N> and must name exactly one
       # versions.json stream at exactly its version. Anything else, including the
       # repository's own nucleus-v<X.Y.Z> tags, is refused here and nothing is published.
+      # The run must also have started from that tag (--ref): checkout, the signer identity
+      # and the release all follow GITHUB_REF, so a manual dispatch of tag X from another ref
+      # would otherwise release the assets under the wrong tag.
       # Outputs: stream, version, rev, release_tag, release_version (<version>-lusoris<N>).
       - name: Resolve Stream and Version
         id: meta
@@ -45,7 +64,7 @@ jobs:
           TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --github-output "${GITHUB_OUTPUT}"
+          python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --ref "${GITHUB_REF}" --github-output "${GITHUB_OUTPUT}"
 
       - name: Package Signed Deb and UKI Binaries
         env:
@@ -135,6 +154,7 @@ jobs:
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
           files: |
             output/*.deb
             output/*.config
@@ -142,20 +162,6 @@ jobs:
             output/*.spdx.json
             output/*.manifest.json
             output/SHA256SUMS*
-
-      # GITHUB_TOKEN is scoped to this repository and cannot dispatch to cordanaLLM/imago, so
-      # there is no fallback to it: without KERNEL_FORGE_TOKEN the run stops here and says so.
-      - name: Require KERNEL_FORGE_TOKEN for the Downstream Dispatch
-        env:
-          KERNEL_FORGE_TOKEN: ${{ secrets.KERNEL_FORGE_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${KERNEL_FORGE_TOKEN}" ]]; then
-            message="KERNEL_FORGE_TOKEN is not set. The downstream dispatch needs a token that may send"
-            message+=" repository_dispatch events to the downstream repository; GITHUB_TOKEN cannot reach it."
-            echo "::error title=Missing secret KERNEL_FORGE_TOKEN::${message}" >&2
-            exit 1
-          fi
 
       - name: Dispatch Downstream Notification to imago
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0

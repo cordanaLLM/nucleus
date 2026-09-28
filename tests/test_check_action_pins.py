@@ -140,6 +140,35 @@ def test_pin_matching_its_lightweight_tag_passes(tmp_path, github):
     assert github.calls() == ["repos/o/r/git/ref/tags/v1.0.0"]
 
 
+def test_workflow_without_uses_lines_is_not_an_error(tmp_path, github):
+    github.answer("repos/o/r/git/ref/tags/v1.0.0", f"commit {PINNED}")
+    workflows = _workflows(tmp_path, ci=f"o/r@{PINNED} # v1.0.0")
+    (workflows / "scripted.yml").write_text(
+        "---\nname: scripted\non: push\njobs:\n  job:\n    runs-on: ubuntu-latest\n"
+        "    steps:\n      - run: echo nothing to pin\n",
+        encoding="utf-8",
+    )
+    result = _run(github, workflows)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 pin(s) checked" in result.stdout
+
+
+def test_unreadable_workflow_is_an_error_not_a_skipped_file(tmp_path, github):
+    """grep exits 2 for a file it cannot read; that must not pass as 'no pins'."""
+    workflows = _workflows(tmp_path, ci=f"o/r@{PINNED} # v1.0.0")
+    locked = workflows / "ci.yml"
+    locked.chmod(0o000)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("file permissions are not enforced for this user")
+        result = _run(github, workflows)
+    finally:
+        locked.chmod(0o644)
+    assert result.returncode == 1
+    assert "cannot read" in result.stderr and "ci.yml" in result.stderr
+    assert "0 failure(s)" not in result.stdout
+
+
 def test_annotated_tag_is_dereferenced(tmp_path, github):
     github.answer("repos/o/r/git/ref/tags/v1.0.0", f"tag {TAG_OBJECT}")
     github.answer(f"repos/o/r/git/tags/{TAG_OBJECT}", f"commit {PINNED}")
