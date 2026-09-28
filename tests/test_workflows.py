@@ -1,6 +1,7 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import pytest
@@ -54,6 +55,29 @@ def test_publish_release_ships_kernel_artifact_manifest():
     payload = dispatch["with"]["client-payload"]
     for key in ("stream", "version", "tag"):
         assert f'"{key}"' in payload, f"downstream payload must carry {key}"
+
+
+def test_no_run_block_interpolates_event_data():
+    """Event data reaches a script through env:, never through ${{ }} inside a run: block."""
+    event_data = re.compile(r"\$\{\{[^}]*github\.(event|head_ref)[^}]*\}\}")
+    for wf in WORKFLOWS_DIR.glob("*.yml"):
+        parsed = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        for job in parsed["jobs"].values():
+            for step in job.get("steps", []):
+                assert not event_data.search(step.get("run", "")), f"{wf.name}: {step.get('name')}"
+
+
+def test_verify_requirements_fetches_pinned_documents_and_keeps_the_report():
+    """The dispatch payload goes to the fetch script through env; the report is kept."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
+    steps = {step.get("name", ""): step for step in parsed["jobs"]["verify"]["steps"]}
+    fetch = steps["Fetch Requirement Documents"]
+    assert "scripts/fetch-kernel-requirements.sh" in fetch["run"]
+    for key in ("PAYLOAD_SOURCE", "PAYLOAD_REF", "PAYLOAD_SHA256", "PAYLOAD_CORRELATION_ID"):
+        assert key in fetch["env"], key
+    verify = steps["Verify Requirements Against the Declared KConfig"]["run"]
+    assert "--report-json=" in verify and "--nucleus-revision=" in verify
+    assert steps["Upload Verification Report"]["if"] == "always()"
 
 
 def test_required_aggregator_contract():

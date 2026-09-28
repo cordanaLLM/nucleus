@@ -52,7 +52,7 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 - **Single Source of Truth (SSOT)**: Kernel versions, upstream archives, patch queues, and architecture targets are strictly declared in [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) and validated by JSON Schema.
 - **NASA / JPL Power of 10 Compliance**: All automation and build scripts enforce `set -euo pipefail`, short functions ($\le 60$ lines), localized variables, bounded control loops, and zero ShellCheck warnings.
-- **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (`base/`, `security/`, `drivers/`, `streams/`), merged deterministically with `merge_config.sh`.
+- **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (the security baseline, one per architecture, and `kconfig/streams/<stream>.config`), merged deterministically by `scripts/merge-config.sh`.
 - **Zero-Leak Invariant**: Codebase is protected against private network leaks (zero RFC 1918 addresses) and local workstation paths (zero `/home/...` or `/Users/...` references).
 - **Dual Packaging Engine**: Standard Debian packages (`.deb`) for apt-based distributions and systemd Unified Kernel Images (`.efi`) for authenticated secure boot and bare-metal streaming.
 

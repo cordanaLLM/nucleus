@@ -33,6 +33,9 @@ The following table indexes all architectural decision records governing `cordan
 | [**ADR-0003**](0003-sched-ext-and-realtime-scheduler-coexistence.md) | sched-ext & Realtime (PREEMPT_RT) Coexistence & Containment | `Accepted` | 2026-09-10 | CPU Scheduling & eBPF Security |
 | [**ADR-0004**](0004-native-debian-and-uki-dual-packaging.md) | Native Debian (`bindeb-pkg`) & UKI (`systemd-ukify`) Dual Packaging | `Accepted` | 2026-09-10 | Packaging & Release Distribution |
 | [**ADR-0005**](0005-bidirectional-image-forge-synchronization.md) | Bidirectional Downstream Image Forge Synchronization | `Accepted` | 2026-09-10 | Cross-Repo CI/CD Automation |
+| [**ADR-0006**](0006-document-driven-kernel-requirements.md) | Document-Driven Kernel Requirement Verification with Per-Consumer Stream Binding | `Proposed` | 2026-09-29 | Cross-Repo Requirement Contract |
+
+Once accepted, ADR-0006 supersedes section 2 of ADR-0005 (upstream requirement verification); the rest of ADR-0005 stands.
 
 ---
 

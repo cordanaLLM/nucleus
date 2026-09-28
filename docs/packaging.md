@@ -179,7 +179,7 @@ oras push ghcr.io/lusoris/kernels/mainstream-x86_64:7.2.4-lusoris1 \
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
-`publish-release.yml` publishes one GitHub Release per stream tag with `*.deb`, `linux-<stream>-<version>-uki.efi`, `kernel-<stream>.config` (the merged kconfig written by `scripts/merge-config.sh`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`.
+`publish-release.yml` publishes one GitHub Release per stream tag with `*.deb`, `linux-<stream>-<version>-uki.efi`, `kernel-<stream>.config` (the stream-layered merge `scripts/merge-config.sh --stream=<stream>` writes: the security baseline, the architecture fragment, then `kconfig/streams/<stream>.config`, sorted by symbol and without a timestamp, so its digest is reproducible; until issue #18 builds kernels it is the declared merge, not the `olddefconfig`-resolved `.config`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`.
 
 The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
 

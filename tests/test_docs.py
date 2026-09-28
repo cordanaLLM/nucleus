@@ -58,15 +58,17 @@ def test_mkdocs_nav_files_exist():
 
 
 def test_adr_files_complete():
-    """Ensure all 5 core ADRs exist and carry proper sections."""
+    """Ensure every ADR carries the proper sections and is indexed and in the navigation."""
     adr_dir = REPO_ROOT / "docs" / "adr"
-    assert (adr_dir / "README.md").exists()
-    for i in range(1, 6):
-        pattern = f"000{i}-*.md"
-        matches = list(adr_dir.glob(pattern))
-        assert len(matches) == 1, f"ADR 000{i} must exist"
-        content = matches[0].read_text(encoding="utf-8")
-        assert "## Status" in content
-        assert "## Context" in content
-        assert "## Decision" in content
-        assert "## Consequences" in content
+    index = (adr_dir / "README.md").read_text(encoding="utf-8")
+    nav_paths = _extract_nav_paths(_load_mkdocs_config().get("nav", []))
+    adrs = sorted(adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md"))
+    assert len(adrs) >= 6, "ADR 0001 to 0006 must exist"
+    numbers = [adr.name[:4] for adr in adrs]
+    assert len(numbers) == len(set(numbers)), "ADR numbers must be unique"
+    for adr in adrs:
+        content = adr.read_text(encoding="utf-8")
+        for section in ("## Status", "## Context", "## Decision", "## Consequences"):
+            assert section in content, f"{adr.name} lacks {section}"
+        assert f"({adr.name})" in index, f"{adr.name} is missing from docs/adr/README.md"
+        assert f"adr/{adr.name}" in nav_paths, f"{adr.name} is missing from mkdocs.yml nav"

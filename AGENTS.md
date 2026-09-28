@@ -28,7 +28,8 @@ implemented; the compile step itself refuses.
 | Stage | State |
 | :--- | :--- |
 | `versions.json` stream and architecture manifest | real |
-| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges architecture fragments with `security-hardened.config` |
+| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp |
+| `verify-requirements.yml` | implemented, no green run yet: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
 | `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
@@ -56,7 +57,25 @@ install `ukify` on the runner.
 
 `cordanaLLM/imago` consumes what this forge publishes, and verifies it:
 
-- **Inbound**: `kernel/requirement.json` in imago, shape `aegis.p01-nucleus.kernel-requirement.v1`, listing the kernel symbols its flavors need.
+- **Inbound**: requirement documents of shape `aegis.p01-nucleus.kernel-requirement.v1`, declared in
+  `versions.json` under `downstream.requirements`, each bound to the streams its consumer uses:
+  imago's `kernel/requirement.json` to all four, Aegis-OS's `build/kernel-requirement.json` to
+  `realtime`. The policy is [ADR-0006](docs/adr/0006-document-driven-kernel-requirements.md).
+  - `scripts/fetch-kernel-requirements.sh` reads each document at one commit. A
+    `kernel_requirements_updated` dispatch pins its own row to the dispatched commit, and the
+    verifier proves the dispatched SHA-256 and correlation id before reading it; the other rows are
+    read at the commit their default branch resolves to. imago's dispatch workflow has not completed
+    a run yet (its only run, 35072144482, failed at job setup), so the weekly schedule and the pull
+    request and push triggers are what exercise this gate today.
+  - `scripts/verify_kernel_requirement.py` decodes a document the way its owner does (the Rust crate
+    `crates/aegis-fabrica-defs` in Aegis-OS), with one named divergence on `required-by`. Every
+    bound stream must meet `abi.minimum-release` and every feature's exact state on every listed
+    architecture; a failure names the correlation id, stream, architecture, symbol, `required-by`,
+    required state and observed value. Unbound streams are reported, never gating.
+  - It proves the fragments *declare* a symbol (evidence level `declared`). `make olddefconfig` can
+    still drop one whose Kconfig dependencies are unmet, which only the real build (#18) can show.
+    The fragments declare the chains the requirement symbols need, such as `EXPERT` for
+    `PREEMPT_RT` and `DEBUG_KERNEL` with `DEBUG_INFO_DWARF5` for `DEBUG_INFO_BTF`, and say why.
 - **Outbound**: `kernel-<stream>.manifest.json`, shape `imago.nucleus.kernel-artifact.v1`, carrying the stream, version, kernel release, config digest, per-artifact digests and sizes, the checksum file, and provenance (tag, revision, cosign bundle, signer identity).
 - Imago verifies the cosign bundle over `SHA256SUMS`, then the checksum file digest, then every per-artifact digest, before an image build consumes anything.
 

@@ -16,7 +16,7 @@
 
 ```mermaid
 graph TD
-    SRC["Unified Upstream Source (versions.json)"] --> KCONF_MERGE["merge_config.sh Engine"]
+    SRC["Unified Upstream Source (versions.json)"] --> KCONF_MERGE["scripts/merge-config.sh"]
     
     KCONF_MERGE --> X86_CONF["x86_64 Hardened Config"]
     KCONF_MERGE --> ARM_CONF["arm64 Hardened Config"]
@@ -55,7 +55,8 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
 - **Architecture Level**: Built with `CONFIG_GENERIC_CPU=y` with microarchitecture level `v3` baseline (`AVX2`, `BMI1`, `BMI2`, `FMA`).
 - **Memory Management**: 5-level paging enabled (`CONFIG_X86_5LEVEL=y`) supporting up to 4 PB physical memory and 128 PB virtual address space.
 - **Microcode Loader**: Early microcode updating (`CONFIG_MICROCODE=y`) built-in for early speculative execution mitigation (Spectre v2, Retbleed, Downfall, SRSO).
-- **Virtualization Acceleration**: `CONFIG_KVM_INTEL=y` and `CONFIG_KVM_AMD=y` with nested virtualization support for cloud hypervisor instances.
+- **Virtualization Acceleration**: the host hypervisor `CONFIG_KVM=m` with both vendor backends, `CONFIG_KVM_INTEL=m` and `CONFIG_KVM_AMD=m` (imago `FLAVOR-BASE`, Aegis-OS `REQ-BOOT-01`), and device passthrough through `CONFIG_VFIO=m` and `CONFIG_VFIO_PCI=m` behind the Intel and AMD IOMMU drivers.
+- **Requirement Prerequisites** (`kconfig/x86_64.config`): `CONFIG_IKCONFIG_PROC` for the `/proc/config.gz` probe; `CONFIG_DEBUG_KERNEL` and `CONFIG_DEBUG_INFO_DWARF5` so that `CONFIG_DEBUG_INFO_BTF` survives `olddefconfig` (the build host needs pahole 1.22 or newer); `CONFIG_BPF_LSM`; `CONFIG_POWERCAP` with `CONFIG_INTEL_RAPL=m`. The requirement documents and their bindings are in [Kernel Streams](../streams.md#4-consumer-bindings).
 
 ### 3.2 `arm64` (AArch64)
 - **Architecture Level**: Enforces ARMv8.2-A with Crypto Extensions (`CONFIG_ARM64_CRYPTO=y`, AES/SHA2/SHA3 accelerated via NEON/SVE).
@@ -66,6 +67,7 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
   - Standard clouds (Proxmox, KVM, Docker): 4 KB page size (`CONFIG_ARM64_4K_PAGES=y`) for compatibility with commercial container images.
   - High-Performance Database / HPC: Optional 64 KB page configuration (`CONFIG_ARM64_64K_PAGES=y`) to minimize TLB miss penalties on multi-terabyte memory nodes.
 - **ACPI & DeviceTree Dual Boot**: Supports both ACPI enterprise boot (Neoverse servers, Ampere Altra) and Flattened Device Tree (FDT) for edge boards.
+- **BTF for sched-ext**: `CONFIG_SCHED_CLASS_EXT` depends on `CONFIG_DEBUG_INFO_BTF`, so `kconfig/arm64.config` declares its chain: `CONFIG_DEBUG_KERNEL`, `CONFIG_DEBUG_INFO_DWARF5`, and `# CONFIG_DEBUG_INFO_REDUCED is not set`, which the arm64 defconfig would otherwise set.
 
 ### 3.3 `riscv64` (RISC-V 64-bit)
 - **Profile Alignment**: RVA22 / RVA23 profiles with standard extensions: `rv64imafdc_zicsr_zifencei_zba_zbb_zbs_zicboz_zicbom`.
@@ -100,13 +102,9 @@ KERNEL_OUT="/opt/lusoris/build/mainstream-${TARGET_ARCH}"
 
 mkdir -p "${KERNEL_OUT}"
 
-# Merge common and architecture-specific fragments
-./scripts/merge_config.sh \
-  -m -O "${KERNEL_OUT}" \
-  kconfig/base.config \
-  kconfig/security-hardened.config \
-  kconfig/architectures/arm64.config \
-  kconfig/streams/mainstream.config
+# Merge the security baseline, the arm64 fragment and the stream layer
+./scripts/merge-config.sh --arch="${TARGET_ARCH}" --stream=mainstream \
+  --output="${KERNEL_OUT}/.config"
 
 # Generate resolved configuration
 make -C /usr/src/linux O="${KERNEL_OUT}" ARCH="${TARGET_ARCH}" olddefconfig

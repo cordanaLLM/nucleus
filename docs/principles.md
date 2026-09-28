@@ -32,4 +32,4 @@
    - `linux-libc-dev-<version>-<stream>-<arch>.deb`
 2. **Package Versioning**: Packages carry a reproducible localversion suffix, e.g. `-lusoris1`.
 3. **Reproducible Checksums**: Upstream source archives must match cryptographically verified SHA-256 digests.
-4. **Modular KConfig**: Avoid monolith `.config` files. Configuration is partitioned into composable fragments merged via `scripts/kconfig/merge_config.sh`.
+4. **Modular KConfig**: Avoid monolith `.config` files. Configuration is partitioned into composable fragments that `scripts/merge-config.sh` merges in a fixed order: `kconfig/security-hardened.config`, `kconfig/<arch>.config`, then `kconfig/streams/<stream>.config` when the stream has one. The last line for a symbol wins, `# CONFIG_X is not set` included, and the output carries no timestamp.
