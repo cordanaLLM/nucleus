@@ -34,7 +34,7 @@ implemented; the compile step itself refuses.
 | `scripts/package-deb.sh`, `scripts/package-uki.sh` | implemented, but never fed a real kernel |
 | `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
 | `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
-| downstream dispatch to `cordanaLLM/imago` | real: `kernel_release_published` carries stream, version and tag |
+| downstream dispatch to `cordanaLLM/imago` | wired, has never run: `publish-release.yml` has no runs yet. `kernel_release_published` carries stream, version and tag, and needs the `KERNEL_FORGE_TOKEN` secret, which is not configured; without it the run stops with an error naming the secret |
 
 The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
 reported success on all twelve legs in under three minutes, and `publish-release` would

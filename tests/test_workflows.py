@@ -56,6 +56,38 @@ def test_publish_release_ships_kernel_artifact_manifest():
         assert f'"{key}"' in payload, f"downstream payload must carry {key}"
 
 
+def _publish_release_steps():
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["publish"]["steps"]
+    return steps, [step.get("name", "") for step in steps]
+
+
+def test_publish_release_resolves_tags_without_fallback():
+    """A kernel tag must resolve to exactly one versions.json stream; there is no default."""
+    steps, names = _publish_release_steps()
+    resolve = steps[names.index("Resolve Stream and Version")]
+    assert resolve["id"] == "meta"
+    assert "scripts/resolve_release_tag.py" in resolve["run"]
+    assert '--github-output "${GITHUB_OUTPUT}"' in resolve["run"]
+    assert "python3 -c" not in resolve["run"], "the tag grammar lives in scripts/resolve_release_tag.py"
+    assert "${{" not in resolve["run"], "the tag reaches the resolver through env, never inline"
+
+
+def test_publish_release_dispatch_requires_kernel_forge_token():
+    """GITHUB_TOKEN cannot dispatch to another repository, so nothing falls back to it."""
+    steps, names = _publish_release_steps()
+    index = names.index("Dispatch Downstream Notification to imago")
+    dispatch, guard = steps[index], steps[index - 1]
+    assert dispatch["with"]["token"] == "${{ secrets.KERNEL_FORGE_TOKEN }}"
+    assert guard["env"]["KERNEL_FORGE_TOKEN"] == "${{ secrets.KERNEL_FORGE_TOKEN }}"
+    assert "::error" in guard["run"] and "KERNEL_FORGE_TOKEN" in guard["run"]
+    assert "exit 1" in guard["run"]
+    assert "${{" not in guard["run"], "the secret reaches the guard through env, never inline"
+    payload = dispatch["with"]["client-payload"]
+    assert "steps.meta.outputs.release_version" in payload
+    assert "steps.meta.outputs.release_tag" in payload
+
+
 def test_required_aggregator_contract():
     """Ensure required-aggregator.yml defines the required-checks job."""
     aggregator = WORKFLOWS_DIR / "required-aggregator.yml"

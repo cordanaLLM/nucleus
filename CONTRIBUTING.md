@@ -56,6 +56,9 @@ sequenceDiagram
    make lint
    make test
    ```
+   When you add or bump an action pin under `.github/workflows/`, also run `make lint-pins`.
+   It asks GitHub whether each `# <tag>` comment points to the pinned commit, so it needs
+   network access and an authenticated `gh`; `ci.yml` runs it on every pull request.
 4. **Commit with Conventional Commits**:
    ```bash
    git commit -m "feat(kconfig): enable BBRv3 congestion control on mainstream"
@@ -87,6 +90,15 @@ issue, and it applies only the `autorelease: pending` label — so the metadata 
 waived for it, and only for it. Both the author and the branch prefix must match; a label
 alone does not waive anything, since a contributor can label their own pull request. The
 code gates (`ci`, `codeql`, `security-scans`) are never waived.
+
+### Release Tags
+
+Merging the release pull request tags the repository's release `nucleus-v<X.Y.Z>` and
+writes that version into `VERSION`. A kernel is released by a different tag,
+`v<version>-<stream>-lusoris<N>`, whose `<version>` must equal the stream's version in
+`versions.json`. Only the kernel tag starts `publish-release.yml`, and the downstream
+dispatch needs the `KERNEL_FORGE_TOKEN` secret. [`docs/packaging.md`](docs/packaging.md)
+sections 5.4 and 5.5 describe both.
 
 ---
 

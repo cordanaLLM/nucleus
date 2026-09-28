@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v7.2.4-lusoris1)"
+        description: "Kernel release tag v<version>-<stream>-lusoris<N>; <version> must equal the stream's version in versions.json"
         required: true
 
 permissions:
@@ -35,41 +35,22 @@ jobs:
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
 
+      # A kernel release tag is v<version>-<stream>-lusoris<N> and must name exactly one
+      # versions.json stream at exactly its version. Anything else, including the
+      # repository's own nucleus-v<X.Y.Z> tags, is refused here and nothing is published.
+      # Outputs: stream, version, rev, release_tag, release_version (<version>-lusoris<N>).
       - name: Resolve Stream and Version
         id: meta
         env:
           TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          RAW_TAG="${TAG_INPUT#v}"
-          export RAW_TAG
-          {
-            echo "tag=${RAW_TAG}"
-            echo "release_tag=v${RAW_TAG}"
-          } >> "$GITHUB_OUTPUT"
-
-          # Extract stream and version from versions.json
-          python3 -c "
-          import json, os
-          tag = os.environ.get('RAW_TAG', '')
-          with open('versions.json', 'r') as f:
-              data = json.load(f)
-          matched_stream = 'mainstream'
-          matched_version = data['streams']['mainstream']['version']
-          for s_name, s_data in data['streams'].items():
-              if s_name in tag or s_data['version'] in tag:
-                  matched_stream = s_name
-                  matched_version = s_data['version']
-                  break
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              out.write(f'stream={matched_stream}\n')
-              out.write(f'version={matched_version}-lusoris1\n')
-          "
+          python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --github-output "${GITHUB_OUTPUT}"
 
       - name: Package Signed Deb and UKI Binaries
         env:
           STREAM: ${{ steps.meta.outputs.stream }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION: ${{ steps.meta.outputs.release_version }}
         run: |
           set -euo pipefail
           mkdir -p output
@@ -100,7 +81,7 @@ jobs:
       - name: Generate Kernel Artifact Manifest
         env:
           STREAM: ${{ steps.meta.outputs.stream }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION: ${{ steps.meta.outputs.release_version }}
           RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
           SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish-release.yml@${{ github.ref }}
         run: |
@@ -162,10 +143,24 @@ jobs:
             output/*.manifest.json
             output/SHA256SUMS*
 
+      # GITHUB_TOKEN is scoped to this repository and cannot dispatch to cordanaLLM/imago, so
+      # there is no fallback to it: without KERNEL_FORGE_TOKEN the run stops here and says so.
+      - name: Require KERNEL_FORGE_TOKEN for the Downstream Dispatch
+        env:
+          KERNEL_FORGE_TOKEN: ${{ secrets.KERNEL_FORGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KERNEL_FORGE_TOKEN}" ]]; then
+            message="KERNEL_FORGE_TOKEN is not set. The downstream dispatch needs a token that may send"
+            message+=" repository_dispatch events to the downstream repository; GITHUB_TOKEN cannot reach it."
+            echo "::error title=Missing secret KERNEL_FORGE_TOKEN::${message}" >&2
+            exit 1
+          fi
+
       - name: Dispatch Downstream Notification to imago
-        uses: peter-evans/repository-dispatch@26b39f2445243964d4c7385747e4b2144255d441 # v3.0.0
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         with:
-          token: ${{ secrets.KERNEL_FORGE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.KERNEL_FORGE_TOKEN }}
           repository: cordanaLLM/imago
           event-type: kernel_release_published
-          client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.version }}", "tag": "${{ steps.meta.outputs.release_tag }}"}'
+          client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.release_version }}", "tag": "${{ steps.meta.outputs.release_tag }}"}'
