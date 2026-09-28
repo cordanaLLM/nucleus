@@ -77,6 +77,7 @@ nav:
       - ADR-0004 Native Debian & UKI Dual Packaging: adr/0004-native-debian-and-uki-dual-packaging.md
       - ADR-0005 Bidirectional Downstream Sync: adr/0005-bidirectional-image-forge-synchronization.md
       - ADR-0006 OCI Registry Namespace: adr/0006-oci-registry-namespace.md
+      - ADR-0007 Document-Driven Kernel Requirements: adr/0007-document-driven-kernel-requirements.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

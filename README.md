@@ -57,6 +57,25 @@ flowchart TD
 | **`lts`** | **Linux 6.18.50** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
 | **`realtime`** | **Linux 7.2-rt** | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
 
+### Downstream Kernel Requirements
+
+Consumers publish what they need from a kernel as an `aegis.p01-nucleus.kernel-requirement.v1` document, and `versions.json` `downstream.requirements` binds each one to the streams it consumes:
+
+| Consumer | Document | Bound streams |
+| :--- | :--- | :--- |
+| `imago` | `cordanaLLM/imago` `kernel/requirement.json` | `bleeding`, `mainstream`, `lts`, `realtime` |
+| `aegis-os` | `cordanaLLM/Aegis-OS` `build/kernel-requirement.json` | `realtime` |
+
+`verify-requirements.yml` reads each document at a pinned commit and fails when a bound stream does not declare every required symbol in its exact state. To check the copies under `tests/fixtures/`:
+
+```bash
+python3 scripts/verify_kernel_requirement.py \
+  --requirement imago=tests/fixtures/kernel-requirement/imago.json \
+  --requirement aegis-os=tests/fixtures/kernel-requirement/aegis-os.json
+```
+
+The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); the stream fragments and bindings are in [docs/streams.md](docs/streams.md).
+
 ---
 
 ## 3. Quickstart & Local Building
@@ -74,8 +93,8 @@ flowchart TD
 # Display all ergonomic developer targets
 make help
 
-# Merge KConfig fragments for target architecture
-make merge-config ARCH=x86_64
+# Merge the security baseline, architecture and stream fragments (STREAM defaults to mainstream)
+make merge-config ARCH=x86_64 STREAM=realtime
 
 # Package native Debian packages (.deb) with headers
 make package-deb STREAM=mainstream ARCH=x86_64
@@ -114,6 +133,7 @@ Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>
 │   ├── x86_64.config           # AMD64 virtualization & bare-metal baseline
 │   ├── arm64.config            # AArch64 Neoverse & Apple Silicon baseline
 │   ├── riscv64.config          # RISC-V 64-bit baseline
+│   ├── streams/realtime.config # PREEMPT_RT stream layer
 │   └── security-hardened.config# Kernel Self-Protection Project (KSPP) baseline
 ├── patches/                    # Curated patch queues partitioned by stream
 ├── scripts/                    # Verified build and notification automation

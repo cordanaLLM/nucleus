@@ -57,7 +57,7 @@ graph TD
 | **3.4.3** | Disable RDS protocol | `CONFIG_RDS=n` | **Enforced (Compile-time)** |
 | **3.4.4** | Disable TIPC protocol | `CONFIG_TIPC=n` | **Enforced (Compile-time)** |
 | **4.1.1** | Ensure audit subsystem is active | `CONFIG_AUDIT=y`, `CONFIG_AUDITSYSCALL=y` | **Enforced (Compile-time)** |
-| **5.2.1** | Ensure AppArmor / LSM stack configured | `CONFIG_LSM="landlock,lockdown,yama,apparmor,bpf"` | **Enforced (Compile-time)** |
+| **5.2.1** | Ensure AppArmor / LSM stack configured | `CONFIG_LSM="landlock,lockdown,yama,apparmor,bpf"`, set in `kconfig/security-hardened.config` for every architecture | **Enforced (Compile-time)** |
 
 ---
 
@@ -107,6 +107,15 @@ CONFIG_BPF_LSM=y
 CONFIG_DEFAULT_SECURITY_APPARMOR=y
 CONFIG_LSM="landlock,lockdown,yama,apparmor,bpf"
 ```
+
+Of this block, the fragments in `kconfig/` declare the LSM symbols today:
+`kconfig/security-hardened.config` sets `CONFIG_LSM`, `CONFIG_SECURITY_LOCKDOWN_LSM` and
+`CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE`; every architecture fragment sets `CONFIG_SECURITY`,
+`CONFIG_SECURITY_APPARMOR` and `CONFIG_DEFAULT_SECURITY_APPARMOR`; `kconfig/x86_64.config`
+sets `CONFIG_BPF_LSM`. `CONFIG_LSM` is set explicitly because it is a string: once a base
+`.config` records one, `make olddefconfig` keeps it, so an arm64 or riscv64 defconfig base would
+leave AppArmor built but off the list and inactive. An LSM the list names but the kernel does
+not build, such as `landlock` or `yama` today, is skipped at boot.
 
 ---
 

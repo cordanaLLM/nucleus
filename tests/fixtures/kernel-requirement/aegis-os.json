@@ -1,0 +1,91 @@
+{
+  "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+  "correlation-id": "aegis-m18-kernel-requirement-0001",
+  "architectures": [
+    "x86-64"
+  ],
+  "abi": {
+    "minimum-release": "6.12",
+    "target-release": "7.3"
+  },
+  "features": [
+    {
+      "symbol": "CONFIG_PREEMPT_RT",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P07-01"
+    },
+    {
+      "symbol": "CONFIG_HZ_1000",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P07-01"
+    },
+    {
+      "symbol": "CONFIG_SCHED_CLASS_EXT",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P07-06"
+    },
+    {
+      "symbol": "CONFIG_BPF_LSM",
+      "state": "built-in",
+      "probe": "lsm-list",
+      "required-by": "REQ-P06-05"
+    },
+    {
+      "symbol": "CONFIG_BPF_SYSCALL",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P06-05"
+    },
+    {
+      "symbol": "CONFIG_DEBUG_INFO_BTF",
+      "state": "built-in",
+      "probe": "btf-vmlinux",
+      "required-by": "REQ-P06-05"
+    },
+    {
+      "symbol": "CONFIG_CGROUP_BPF",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P13-02"
+    },
+    {
+      "symbol": "CONFIG_POWERCAP",
+      "state": "built-in",
+      "probe": "powercap",
+      "required-by": "REQ-P13-02"
+    },
+    {
+      "symbol": "CONFIG_INTEL_RAPL",
+      "state": "module",
+      "probe": "powercap",
+      "required-by": "REQ-P13-02"
+    },
+    {
+      "symbol": "CONFIG_IOMMU_API",
+      "state": "built-in",
+      "probe": "iommu-groups",
+      "required-by": "REQ-P03-06"
+    },
+    {
+      "symbol": "CONFIG_VFIO",
+      "state": "module",
+      "probe": "iommu-groups",
+      "required-by": "REQ-P03-06"
+    },
+    {
+      "symbol": "CONFIG_VFIO_PCI",
+      "state": "module",
+      "probe": "iommu-groups",
+      "required-by": "REQ-P03-06"
+    },
+    {
+      "symbol": "CONFIG_KVM",
+      "state": "module",
+      "probe": "kernel-config",
+      "required-by": "REQ-BOOT-01"
+    }
+  ]
+}

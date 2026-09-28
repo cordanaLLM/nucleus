@@ -40,10 +40,37 @@
     },
     "downstream": {
       "type": "object",
-      "required": ["repository", "sync_event"],
+      "required": ["repository", "sync_event", "requirements"],
       "properties": {
         "repository": {"type": "string"},
-        "sync_event": {"type": "string"}
+        "sync_event": {"type": "string"},
+        "requirements": {
+          "description": "Kernel requirement documents (aegis.p01-nucleus.kernel-requirement.v1) checked by verify-requirements.yml. A dispatched source's dispatch carries a ref and sha256 that are proven before the document is used; the others are read at the resolved commit of their default branch. Labels are unique and every bound stream is a key of streams (tests/test_verify_kernel_requirement.py).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["label", "repository", "path", "dispatched", "streams"],
+            "additionalProperties": false,
+            "properties": {
+              "label": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+              "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+              "path": {
+                "description": "Repository-relative path; every segment starts with a character other than a dot, so '.', '..' and an absolute path are refused.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*[.]json$"
+              },
+              "dispatched": {"type": "boolean"},
+              "streams": {
+                "description": "The streams this consumer is bound to. Every bound stream must satisfy the document; the other streams are reported as information only.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+              }
+            }
+          }
+        }
       }
     }
   }

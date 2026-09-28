@@ -42,6 +42,29 @@
   ],
   "downstream": {
     "repository": "cordanaLLM/imago",
-    "sync_event": "kernel_release_published"
+    "sync_event": "kernel_release_published",
+    "requirements": [
+      {
+        "label": "imago",
+        "repository": "cordanaLLM/imago",
+        "path": "kernel/requirement.json",
+        "dispatched": true,
+        "streams": [
+          "bleeding",
+          "mainstream",
+          "lts",
+          "realtime"
+        ]
+      },
+      {
+        "label": "aegis-os",
+        "repository": "cordanaLLM/Aegis-OS",
+        "path": "build/kernel-requirement.json",
+        "dispatched": false,
+        "streams": [
+          "realtime"
+        ]
+      }
+    ]
   }
 }

@@ -44,7 +44,7 @@ lint: lint-manifest lint-workflows ## Run ShellCheck, Yamllint, Actionlint, and 
 	@shellcheck -s bash scripts/*.sh
 	@if command -v yamllint >/dev/null 2>&1; then \
 		echo "==> Running Yamllint..."; \
-		yamllint -c .yamllint.yml .github/ 2>/dev/null || true; \
+		yamllint -c .yamllint.yml .github/; \
 	fi
 	@echo "==> All lint checks passed successfully."
 
@@ -98,12 +98,12 @@ build-kernel: ## Compile kernel or run dry-run build (STREAM=<stream> ARCH=<arch
 		./scripts/build_kernel.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
 	fi
 
-merge-config: ## Merge kconfig fragments for target architecture (ARCH=<arch> DRY_RUN=true)
-	@echo "==> Merging KConfig fragments for '$(ARCH)'..."
+merge-config: ## Merge the security, architecture and stream kconfig fragments (ARCH=<arch> STREAM=<stream> DRY_RUN=true)
+	@echo "==> Merging KConfig fragments for '$(ARCH)', stream '$(STREAM)'..."
 	@if [ "$(DRY_RUN)" = "true" ]; then \
-		./scripts/merge-config.sh --arch="$(ARCH)" --dry-run; \
+		./scripts/merge-config.sh --arch="$(ARCH)" --stream="$(STREAM)" --dry-run; \
 	else \
-		./scripts/merge-config.sh --arch="$(ARCH)"; \
+		./scripts/merge-config.sh --arch="$(ARCH)" --stream="$(STREAM)"; \
 	fi
 
 package-deb: ## Package native Debian packages (STREAM=<stream> ARCH=<arch> DRY_RUN=true)

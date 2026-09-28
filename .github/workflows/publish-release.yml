@@ -79,7 +79,7 @@ jobs:
 
 
           # Ship the merged kconfig the build used; imago pins its digest as kernel.config_digest
-          ./scripts/merge-config.sh --arch=x86_64 --output="output/kernel-${STREAM}.config"
+          ./scripts/merge-config.sh --arch=x86_64 --stream="${STREAM}" --output="output/kernel-${STREAM}.config"
 
           # Generate SBOMs
           syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"

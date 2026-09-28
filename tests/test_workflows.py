@@ -59,6 +59,45 @@ def test_publish_release_ships_kernel_artifact_manifest():
         assert f'"{key}"' in payload, f"downstream payload must carry {key}"
 
 
+def test_no_run_block_interpolates_event_data():
+    """Event data reaches a script through env:, never through ${{ }} inside a run: block."""
+    event_data = re.compile(r"\$\{\{[^}]*github\.(event|head_ref)[^}]*\}\}")
+    for wf in WORKFLOWS_DIR.glob("*.yml"):
+        parsed = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        for job in parsed["jobs"].values():
+            for step in job.get("steps", []):
+                assert not event_data.search(step.get("run", "")), f"{wf.name}: {step.get('name')}"
+
+
+def test_verify_requirements_fetches_pinned_documents_and_keeps_the_report():
+    """The dispatch payload goes to the fetch script through env; the report is kept."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
+    steps = {step.get("name", ""): step for step in parsed["jobs"]["verify"]["steps"]}
+    fetch = steps["Fetch Requirement Documents"]
+    assert "scripts/fetch-kernel-requirements.sh" in fetch["run"]
+    for key in ("PAYLOAD_SOURCE", "PAYLOAD_REF", "PAYLOAD_SHA256", "PAYLOAD_CORRELATION_ID"):
+        assert key in fetch["env"], key
+    verify_step = steps["Verify Requirements Against the Declared KConfig"]
+    verify = verify_step["run"]
+    assert "--report-json=" in verify and "--nucleus-revision=" in verify
+    assert steps["Upload Verification Report"]["if"] == "always()"
+    # The verifier is piped through tee: without pipefail its exit status is lost and the gate
+    # reports green. An explicit bash runs with -eo pipefail; the step also sets it itself.
+    assert parsed["jobs"]["verify"]["defaults"]["run"]["shell"] == "bash"
+    assert verify_step.get("shell", "bash") == "bash"
+    assert "| tee" in verify and "set -euo pipefail" in verify
+
+
+def test_verify_requirements_never_cancels_a_pending_dispatch():
+    """A group holds one pending run; each dispatch gets its own, so none replaces another."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
+    concurrency = parsed["concurrency"]
+    group = " ".join(concurrency["group"].split())
+    assert "github.event_name == 'repository_dispatch'" in group
+    assert "github.run_id" in group
+    assert concurrency["cancel-in-progress"] is False
+
+
 def _publish_release_steps():
     parsed = yaml.safe_load((WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8"))
     steps = parsed["jobs"]["publish"]["steps"]

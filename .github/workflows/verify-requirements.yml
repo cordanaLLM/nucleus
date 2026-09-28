@@ -1,15 +1,57 @@
 ---
+# Verifies the kernel requirement documents downstream consumers publish against the kconfig
+# this forge declares for the streams each consumer is bound to. Sources and bindings are
+# declared in versions.json downstream.requirements; the policy is docs/adr/0007.
+#
+# repository_dispatch  a consumer sends kernel_requirements_updated with the commit, sha256
+#                      and correlation id of the document it validated; that exact document
+#                      is fetched, and its digest and correlation id proven before use.
+# schedule             documents that are not dispatched are re-read weekly.
+# pull_request / push  a change to the fragments, the scripts or the bindings is checked
+#                      before it can drift.
 name: verify-requirements
 on:
   repository_dispatch:
     types: [kernel_requirements_updated]
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    paths:
+      - "kconfig/**"
+      - "scripts/merge-config.sh"
+      - "scripts/fetch-kernel-requirements.sh"
+      - "scripts/verify_kernel_requirement.py"
+      - "tests/test_verify_kernel_requirement.py"
+      - "tests/test_fetch_kernel_requirements.py"
+      - "tests/fixtures/kernel-requirement/**"
+      - "versions.json"
+      - "versions.schema.json"
+      - ".github/workflows/verify-requirements.yml"
+  push:
+    branches: [main]
+    paths:
+      - "kconfig/**"
+      - "scripts/merge-config.sh"
+      - "scripts/fetch-kernel-requirements.sh"
+      - "scripts/verify_kernel_requirement.py"
+      - "tests/test_verify_kernel_requirement.py"
+      - "tests/test_fetch_kernel_requirements.py"
+      - "tests/fixtures/kernel-requirement/**"
+      - "versions.json"
+      - "versions.schema.json"
+      - ".github/workflows/verify-requirements.yml"
 
 permissions:
   contents: read
 
+# A concurrency group holds at most one pending run, and a newer one cancels it. Each
+# repository_dispatch run verifies one pinned commit, so it gets a group of its own and is
+# never cancelled by a later dispatch or by a push or schedule run on the same ref.
 concurrency:
-  group: verify-requirements-${{ github.ref }}
+  group: >-
+    verify-requirements-${{ github.event_name == 'repository_dispatch'
+    && format('dispatch-{0}', github.run_id) || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -17,6 +59,11 @@ jobs:
     name: Verify Downstream Kernel Requirements
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # An explicit bash runs as bash --noprofile --norc -eo pipefail, so a failing verifier
+    # fails its step even though its output is piped through tee.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -26,54 +73,64 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Quality Gate Dependencies
-        run: pip install --no-cache-dir jsonschema pytest
-
-      - name: Verify Downstream Kconfig Symbols
+      - name: Install Test Dependencies
         run: |
           set -euo pipefail
-          echo "==> Verifying kernel configuration symbols requested by downstream imago..."
+          pip install --no-cache-dir jsonschema pytest
 
-          python3 -c "
-          from pathlib import Path
-          kconfig_dir = Path('kconfig')
-          x86_config = (kconfig_dir / 'x86_64.config').read_text(encoding='utf-8')
-          sec_config = (kconfig_dir / 'security-hardened.config').read_text(encoding='utf-8')
-          combined = x86_config + '\n' + sec_config
+      # The verifier's own tests, including parity with scripts/merge-config.sh, run before
+      # its verdict is trusted. The full suite runs in ci.yml on every pull request.
+      - name: Test the Verifier
+        run: |
+          set -euo pipefail
+          pytest tests/test_verify_kernel_requirement.py tests/test_fetch_kernel_requirements.py -v
 
-          required_symbols = [
-              # Virtualization & VirtIO
-              'CONFIG_VIRTIO=y',
-              'CONFIG_VIRTIO_PCI=y',
-              'CONFIG_VIRTIO_BALLOON=y',
-              'CONFIG_VIRTIO_BLK=y',
-              'CONFIG_VIRTIO_NET=y',
-              'CONFIG_VIRTIO_CONSOLE=y',
-              'CONFIG_VIRTIO_FS=y',
-              # Scheduling & Performance
-              'CONFIG_MQ_IOSCHED_DEADLINE=y',
-              'CONFIG_TCP_CONG_BBR=y',
-              'CONFIG_NET_SCH_FQ=y',
-              'CONFIG_SCHED_CLASS_EXT=y',
-              # Security & Hardening
-              'CONFIG_STACKPROTECTOR_STRONG=y',
-              'CONFIG_STRICT_KERNEL_RWX=y',
-              'CONFIG_RANDOMIZE_BASE=y',
-              'CONFIG_SECCOMP=y',
-              'CONFIG_SECCOMP_FILTER=y',
-              # Containers & eBPF
-              'CONFIG_CGROUPS=y',
-              'CONFIG_MEMCG=y',
-              'CONFIG_BPF_SYSCALL=y',
-          ]
+      # Every client_payload field arrives from another repository, so each is passed through
+      # env and validated by the script; none is interpolated into a run: block.
+      - name: Fetch Requirement Documents
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PAYLOAD_SOURCE: ${{ github.event.client_payload.source }}
+          PAYLOAD_SCHEMA: ${{ github.event.client_payload.schema }}
+          PAYLOAD_PATH: ${{ github.event.client_payload.requirement.path }}
+          PAYLOAD_REF: ${{ github.event.client_payload.requirement.ref }}
+          PAYLOAD_SHA256: ${{ github.event.client_payload.requirement.sha256 }}
+          PAYLOAD_CORRELATION_ID: ${{ github.event.client_payload.correlation_id }}
+        run: |
+          set -euo pipefail
+          ./scripts/fetch-kernel-requirements.sh --out=requirements
 
-          missing = [s for s in required_symbols if s not in combined]
-          if missing:
-              print(f'ERROR: Missing mandatory Kconfig symbols: {missing}')
-              exit(1)
+      - name: Verify Requirements Against the Declared KConfig
+        env:
+          NUCLEUS_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t args < requirements/args
+          python3 scripts/verify_kernel_requirement.py "${args[@]}" \
+            --nucleus-revision="${NUCLEUS_REVISION}" \
+            --report-json=requirements/report.json | tee requirements/report.txt
 
-          print(f'SUCCESS: All {len(required_symbols)} mandatory Kconfig symbols verified.')
-          "
+      - name: Publish Verification Report
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f requirements/report.txt ]]; then
+            {
+              echo '### Downstream kernel requirements'
+              echo '```'
+              cat requirements/report.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
-      - name: Execute Full Test Suite
-        run: pytest tests/ -v
+      - name: Upload Verification Report
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: kernel-requirement-report
+          path: |
+            requirements/report.json
+            requirements/report.txt
+          if-no-files-found: ignore
+          retention-days: 30
