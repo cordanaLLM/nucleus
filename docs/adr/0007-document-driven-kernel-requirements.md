@@ -7,8 +7,16 @@ Date: 2026-09-29
 Proposed
 
 Once accepted, this ADR supersedes section 2, "Upstream Requirement Verification", of
-[ADR-0005](0005-bidirectional-image-forge-synchronization.md). Sections 1 and 3 of ADR-0005
-stand.
+[ADR-0005](0005-bidirectional-image-forge-synchronization.md), and Channel 2 of its decision
+diagram. That channel ends with "Post pass/fail status to commit check run" in the consumer.
+Nothing is posted back to a consumer, and this forge holds no token that could post it: the
+result of a run is the nucleus run summary and its `kernel-requirement-report` artifact
+(section 5). Section 1, section 3 and Channel 1 of ADR-0005 stand.
+
+It merges as Proposed, as ADR-0006 did, because two of its questions belong to the contract
+owner, Aegis-OS: the `required-by` grammar and the array form (section 2), and whether a listed
+architecture is a promise or an option (section 3). The owner of this repository moves it to
+Accepted, or to Rejected.
 
 ---
 
@@ -79,13 +87,13 @@ through the environment and are never interpolated into a script.
 `scripts/verify_kernel_requirement.py` proves a dispatched digest and correlation id before the
 document is used, decodes it the way the owner does, evaluates every stream and decides.
 
-### 2. Decoding follows the owner, with one divergence
+### 2. Decoding follows the owner, with two divergences
 
 | Rule | Owner (`aegis-fabrica-defs`) | This forge |
 | :--- | :--- | :--- |
 | Byte bound | 16384, checked before parsing | same |
 | Unknown field, any level | refused (`deny_unknown_fields`) | same; a duplicate JSON key too |
-| Another `schema` | `UnknownVersion`, distinct from `Malformed` | same |
+| Another `schema` | `UnknownVersion`, distinct from `Malformed`; a lenient peek reads `schema` and skips every other field, repeats included | same |
 | `correlation-id` | 1 to 128 bytes of `[A-Za-z0-9._:-]` | same |
 | `architectures` | 1 to 4 of `x86-64`, `arm64`; a repeat is accepted | same; evaluated once, `x86-64` builds `x86_64` |
 | `features` | 1 to 64; empty is `NoFeatures`; a repeated symbol is `DuplicateSymbol` | same |
@@ -94,13 +102,22 @@ document is used, decodes it the way the owner does, evaluates every stream and 
 | Releases | start with a digit, `[0-9A-Za-z._+-]`, at most 64 bytes | same |
 | `target-release` older than `minimum-release` | `InvertedRelease` | same |
 | `artifact` | optional: `digest` (64 lower-case hex), optional `signature` (even-length hex, at most 256) | accepted and echoed in the report, marked not verified |
-| `required-by` | `REQ-` prefix, `[A-Z0-9-]`, at most 128 bytes | **`[A-Z][A-Z0-9-]*`, at most 128 bytes** |
+| `required-by` | `REQ-` prefix, `[A-Z0-9-]`, at most 128 bytes; the bare `REQ-` is refused | **`[A-Z][A-Z0-9-]*`, at most 128 bytes, for every source**; the bare `REQ-` is refused |
+| Array form | a JSON array of the fields in declaration order decodes (serde's derived `visit_seq`); an array whose first element is another version is `UnknownVersion` | **refused as `Malformed`** |
 
-The divergence exists because imago's live document names its flavors (`FLAVOR-BASE`,
-`FLAVOR-K8S-NODE`), which the owner's `RequirementId` refuses. It is an open question to
-Aegis-OS: either the owner widens `required-by`, or imago moves to `REQ-` identifiers and this
-forge narrows back. `tests/test_verify_kernel_requirement.py` ports the owner's vectors from
-`tests/kernel_requirement.rs` where they apply.
+The `required-by` divergence exists because imago's live document names its flavors
+(`FLAVOR-BASE`, `FLAVOR-K8S-NODE`), which the owner's `RequirementId` refuses. It applies to
+every source, Aegis-OS's own document included; every identifier the owner accepts is still
+accepted. It is an open question to Aegis-OS: either the owner widens `required-by`, or imago
+moves to `REQ-` identifiers and this forge narrows back.
+
+The array form is refused here. `deny_unknown_fields` does not apply to a JSON array, so the
+owner's derived decoder accepts a document written as an array of its values, in field order.
+No publisher writes that form, and it is most likely a decoder bug; it is an open question to
+Aegis-OS. Refusing it only narrows what this gate accepts.
+
+`tests/test_verify_kernel_requirement.py` ports the owner's vectors from
+`tests/kernel_requirement.rs` where they apply, and pins both divergences.
 
 ### 3. Every bound stream must hold the document
 
@@ -168,8 +185,8 @@ the `imago.nucleus.kernel-artifact.v1` manifest `publish-release.yml` emits (Aeg
   `required-by`; nothing is copied by hand.
 - A regression in the stream a consumer is bound to fails the gate, even while another
   stream would satisfy the document.
-- A document the owner accepts is accepted here, except for the `required-by` divergence,
-  which is named.
+- A document the owner accepts in object form is accepted here. The two exceptions,
+  `required-by` and the array form, are named in section 2.
 
 ### Negative
 
@@ -195,12 +212,17 @@ the `imago.nucleus.kernel-artifact.v1` manifest `publish-release.yml` emits (Aeg
    state semantics, the policy (mixed streams, a bound stream below the floor, a release exactly
    at the floor, `7.3-rc2` against `7.3.0`, `target-release` never filtering, `m` against
    `built-in`, `n` against `module`, `absent`), parity between the verifier and
-   `scripts/merge-config.sh`, the binding invariants of `versions.json`, and the command line.
+   `scripts/merge-config.sh`, the binding invariants of `versions.json`, and the command line,
+   including a dispatch whose digest and correlation id match.
 2. **`tests/test_fetch_kernel_requirements.py`**: which row a dispatch pins, which rows are read
-   at their default branch, and which payloads are refused, against a stub `gh`.
+   at their default branch, and which payloads are refused, against a stub `gh`; and the fetched
+   arguments driving the verifier end to end.
 3. **`tests/test_kconfig.py`**: the dependency chains the fragments declare.
 4. **`.github/workflows/verify-requirements.yml`**: runs on dispatch, weekly, and on every pull
    request and push that touches the fragments, the scripts, `versions.json` or the workflow.
+   Each dispatch run has a concurrency group of its own, so a later run never cancels a pending
+   pinned verification, and the job runs `bash` with `pipefail`, so the verifier's exit status
+   survives `tee`. `tests/test_workflows.py` pins both.
 
 ---
 

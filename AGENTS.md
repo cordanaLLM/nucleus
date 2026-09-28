@@ -63,15 +63,17 @@ install `ukify` on the runner.
   `realtime`. The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md).
   - `scripts/fetch-kernel-requirements.sh` reads each document at one commit. A
     `kernel_requirements_updated` dispatch pins its own row to the dispatched commit, and the
-    verifier proves the dispatched SHA-256 and correlation id before reading it; the other rows are
-    read at the commit their default branch resolves to. imago's dispatch workflow has not completed
-    a run yet (its only run, 35072144482, failed at job setup), so the weekly schedule and the pull
-    request and push triggers are what exercise this gate today.
+    verifier proves the dispatched SHA-256 before parsing and the correlation id before the
+    document is used; the other rows are read at the commit their default branch resolves to.
+    imago's dispatch workflow has not completed a run yet (its only run, 35072144482, failed at
+    job setup), so the weekly schedule and the pull request and push triggers are what exercise
+    this gate today.
   - `scripts/verify_kernel_requirement.py` decodes a document the way its owner does (the Rust crate
-    `crates/aegis-fabrica-defs` in Aegis-OS), with one named divergence on `required-by`. Every
-    bound stream must meet `abi.minimum-release` and every feature's exact state on every listed
-    architecture; a failure names the correlation id, stream, architecture, symbol, `required-by`,
-    required state and observed value. Unbound streams are reported, never gating.
+    `crates/aegis-fabrica-defs` in Aegis-OS), with two named divergences: a wider `required-by`
+    and a refused array form. Every bound stream must meet `abi.minimum-release` and every
+    feature's exact state on every listed architecture; a failure names the correlation id,
+    stream, architecture, symbol, `required-by`, required state and observed value. Unbound
+    streams are reported, never gating.
   - It proves the fragments *declare* a symbol (evidence level `declared`). `make olddefconfig` can
     still drop one whose Kconfig dependencies are unmet, which only the real build (#18) can show.
     The fragments declare the chains the requirement symbols need, such as `EXPERT` for
