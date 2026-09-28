@@ -175,7 +175,7 @@ def test_required_by_accepts_imago_flavor_ids_the_one_divergence():
     doc = _fixture()
     doc["features"] = [_row("CONFIG_A", required_by="FLAVOR-BASE"), _row("CONFIG_B")]
     assert vkr.parse_requirement(_raw(doc)).features[0].required_by == "FLAVOR-BASE"
-    for refused in ("flavor-base", "-REQ", "REQ_P07", "R" * 129):
+    for refused in ("flavor-base", "-REQ", "REQ_P07", "REQ-", "R" * 129):
         doc["features"] = [_row("CONFIG_A", required_by=refused)]
         assert _refusal(_raw(doc)).kind == "Malformed", refused
 
@@ -223,6 +223,36 @@ def test_a_missing_or_unreadable_schema_is_malformed_not_an_unknown_version():
     assert _refusal(_raw(doc)).kind == "Malformed"
     assert _refusal(_altered("schema", 1)).kind == "Malformed"
     assert _refusal(b"[]").kind == "Malformed"
+
+
+def _repeated(field: str, schema: str) -> bytes:
+    """The fixture under ``schema``, with ``field`` of the top-level object written twice."""
+    doc = _fixture()
+    doc["schema"] = schema
+    text = json.dumps(doc)
+    head, sep, tail = text.partition(f'"{field}": ')
+    assert sep, field
+    return f'{head}"{field}": {json.dumps(doc[field])}, {sep}{tail}'.encode()
+
+
+def test_another_version_with_a_repeated_field_is_still_an_unknown_version():
+    """payload.rs declared_schema: the lenient peek skips every field but schema, repeats too."""
+    foreign = "aegis.p01-nucleus.kernel-requirement.v2"
+    for field in ("correlation-id", "abi"):
+        assert _refusal(_repeated(field, foreign)).kind == "UnknownVersion", field
+        assert _refusal(_repeated(field, vkr.SCHEMA)).kind == "Malformed", field
+    nested = _fixture()
+    nested["schema"] = foreign
+    raw = json.dumps(nested).replace('"abi": {', '"abi": {"target-release": "7.3", ', 1)
+    assert _refusal(raw.encode()).kind == "UnknownVersion"
+    # A repeated schema claims no version: the owner's peek refuses it as malformed.
+    assert _refusal(_repeated("schema", foreign)).kind == "Malformed"
+
+
+def test_the_array_form_is_refused_where_the_owner_decodes_it():
+    """A known divergence, refused here: serde's derived visit_seq takes the fields in order."""
+    assert _refusal(_raw(list(_fixture().values()))).kind == "Malformed"
+    assert _refusal(b'["aegis.p01-nucleus.kernel-requirement.v2"]').kind == "Malformed"
 
 
 def test_a_signature_without_a_digest_is_refused():
@@ -725,6 +755,25 @@ def test_main_proves_the_dispatched_digest_and_correlation_id(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 1
     assert "REJECTED (DigestMismatch)" in out and "REJECTED (CorrelationMismatch)" in out
+
+
+def test_main_passes_a_dispatch_that_names_the_document_it_sent(tmp_path, capsys):
+    """The success path of a dispatch: the digest and the correlation id both match."""
+    raw = (FIXTURES / "imago.json").read_bytes()
+    correlation_id = json.loads(raw)["correlation-id"]
+    report = tmp_path / "report.json"
+    code = _cli(
+        tmp_path,
+        f"--sha256=imago={hashlib.sha256(raw).hexdigest()}",
+        f"--correlation-id=imago={correlation_id}",
+        f"--report-json={report}",
+    )
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert f"requirement {correlation_id}:" in out
+    assert "REJECTED" not in out and out.count("PASS: held by") == 2
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert [doc["status"] for doc in data["documents"]] == ["PASS", "PASS"]
 
 
 def test_main_reports_an_unreadable_document_and_continues(tmp_path, capsys):

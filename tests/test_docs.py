@@ -63,7 +63,7 @@ def test_adr_files_complete():
     index = (adr_dir / "README.md").read_text(encoding="utf-8")
     nav_paths = _extract_nav_paths(_load_mkdocs_config().get("nav", []))
     adrs = sorted(adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md"))
-    assert len(adrs) >= 6, "ADR 0001 to 0006 must exist"
+    assert len(adrs) >= 7, "ADR 0001 to 0007 must exist"
     numbers = [adr.name[:4] for adr in adrs]
     assert len(numbers) == len(set(numbers)), "ADR numbers must be unique"
     for adr in adrs:

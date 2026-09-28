@@ -75,9 +75,25 @@ def test_verify_requirements_fetches_pinned_documents_and_keeps_the_report():
     assert "scripts/fetch-kernel-requirements.sh" in fetch["run"]
     for key in ("PAYLOAD_SOURCE", "PAYLOAD_REF", "PAYLOAD_SHA256", "PAYLOAD_CORRELATION_ID"):
         assert key in fetch["env"], key
-    verify = steps["Verify Requirements Against the Declared KConfig"]["run"]
+    verify_step = steps["Verify Requirements Against the Declared KConfig"]
+    verify = verify_step["run"]
     assert "--report-json=" in verify and "--nucleus-revision=" in verify
     assert steps["Upload Verification Report"]["if"] == "always()"
+    # The verifier is piped through tee: without pipefail its exit status is lost and the gate
+    # reports green. An explicit bash runs with -eo pipefail; the step also sets it itself.
+    assert parsed["jobs"]["verify"]["defaults"]["run"]["shell"] == "bash"
+    assert verify_step.get("shell", "bash") == "bash"
+    assert "| tee" in verify and "set -euo pipefail" in verify
+
+
+def test_verify_requirements_never_cancels_a_pending_dispatch():
+    """A group holds one pending run; each dispatch gets its own, so none replaces another."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
+    concurrency = parsed["concurrency"]
+    group = " ".join(concurrency["group"].split())
+    assert "github.event_name == 'repository_dispatch'" in group
+    assert "github.run_id" in group
+    assert concurrency["cancel-in-progress"] is False
 
 
 def test_required_aggregator_contract():

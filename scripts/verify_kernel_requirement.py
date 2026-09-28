@@ -17,7 +17,8 @@
 A requirement is an ``aegis.p01-nucleus.kernel-requirement.v1`` document. cordanaLLM/Aegis-OS
 owns that contract: its normative definition is the Rust crate ``crates/aegis-fabrica-defs``
 (``src/kernel.rs``, ``src/field.rs``, ``src/payload.rs``), and this parser follows it field
-for field, with one deliberate divergence on ``required-by`` (see ``_REQUIRED_BY``).
+for field, with two deliberate divergences: a wider ``required-by`` (see ``_REQUIRED_BY``),
+and a document written as a JSON array is refused, where serde's derived decoder accepts it.
 versions.json ``downstream.requirements`` declares where each document lives and which
 streams its consumer is bound to.
 
@@ -84,8 +85,9 @@ _SIGNATURE = re.compile(r"(?:[0-9a-f]{2})+")
 _REVISION = re.compile(r"[0-9a-f]{40}")
 # The one deliberate divergence from field.rs RequirementId, an open question to Aegis-OS
 # (docs/adr/0007): Aegis demands a REQ- prefix, and imago's live document names its flavors
-# (FLAVOR-BASE, FLAVOR-K8S-NODE). Accepted here: an upper-case identifier of [A-Z0-9-].
-_REQUIRED_BY = re.compile(r"[A-Z][A-Z0-9-]*")
+# (FLAVOR-BASE, FLAVOR-K8S-NODE). Accepted here, for every source: an upper-case identifier
+# of [A-Z0-9-]. The bare prefix REQ- is refused, as the owner refuses it.
+_REQUIRED_BY = re.compile(r"(?!REQ-$)[A-Z][A-Z0-9-]*")
 
 _DOCUMENT_KEYS = frozenset(
     {"schema", "correlation-id", "architectures", "abi", "features", "artifact"}
@@ -250,11 +252,43 @@ def _no_constant(name: str) -> object:
     raise RequirementError("Malformed", f"{name} is not a JSON value")
 
 
+class _Pairs(list):
+    """An object's key/value pairs as read, every repeat kept, for the lenient version peek."""
+
+
+def _declared_schema(text: str) -> str | None:
+    """payload.rs declared_schema: the ``schema`` a top-level object claims, nothing else.
+
+    Every other field is skipped, repeats included, so a document that is refused for
+    something else still reports the version it claims. A repeated, null or non-string
+    ``schema`` claims none, as the owner's lenient ``PeekSchema`` reads it.
+    """
+    try:
+        top = json.loads(text, object_pairs_hook=_Pairs, parse_constant=_no_constant)
+    except (RequirementError, ValueError, RecursionError):
+        return None
+    if not isinstance(top, _Pairs):
+        return None
+    claims = [value for key, value in top if key == "schema"]
+    if len(claims) != 1 or not isinstance(claims[0], str):
+        return None
+    return claims[0]
+
+
 def _decode_json(raw: bytes) -> object:
     try:
         text = raw.decode("utf-8")
+    except ValueError as exc:
+        raise RequirementError("Malformed", f"not a UTF-8 document: {exc}") from exc
+    try:
         return json.loads(text, object_pairs_hook=_unique_object, parse_constant=_no_constant)
     except RequirementError:
+        # kernel.rs decode: a document refused for another contract version is UnknownVersion.
+        declared = _declared_schema(text)
+        if declared is not None and declared != SCHEMA:
+            raise RequirementError(
+                "UnknownVersion", f"the document claims {_shown(declared)}, not {SCHEMA!r}"
+            ) from None
         raise
     except (ValueError, RecursionError) as exc:
         raise RequirementError("Malformed", f"not a JSON document: {exc}") from exc

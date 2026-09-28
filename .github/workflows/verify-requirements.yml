@@ -45,8 +45,13 @@ on:
 permissions:
   contents: read
 
+# A concurrency group holds at most one pending run, and a newer one cancels it. Each
+# repository_dispatch run verifies one pinned commit, so it gets a group of its own and is
+# never cancelled by a later dispatch or by a push or schedule run on the same ref.
 concurrency:
-  group: verify-requirements-${{ github.ref }}
+  group: >-
+    verify-requirements-${{ github.event_name == 'repository_dispatch'
+    && format('dispatch-{0}', github.run_id) || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -54,6 +59,11 @@ jobs:
     name: Verify Downstream Kernel Requirements
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # An explicit bash runs as bash --noprofile --norc -eo pipefail, so a failing verifier
+    # fails its step even though its output is piped through tee.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

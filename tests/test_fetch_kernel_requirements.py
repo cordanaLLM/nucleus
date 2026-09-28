@@ -6,10 +6,12 @@ is tested without the network: which row a dispatch pins, which rows are read at
 default branch, and which payloads are refused.
 """
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -17,6 +19,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "kernel-requirement"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import verify_kernel_requirement as vkr  # noqa: E402
+
 SCHEMA = "aegis.p01-nucleus.kernel-requirement.v1"
 HEADS = {"cordanaLLM/imago": "1" * 40, "cordanaLLM/Aegis-OS": "2" * 40}
 DISPATCH_REF = "3" * 40
@@ -174,3 +180,36 @@ def test_a_document_that_cannot_be_fetched_stops_the_run(tmp_path):
     result = _run(tmp_path, EVENT_NAME="schedule", GH_STUB_HEADS=json.dumps(heads))
     assert result.returncode == 1
     assert "could not fetch cordanaLLM/Aegis-OS/build/kernel-requirement.json" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("digest", "correlation_id", "expected"),
+    [
+        (None, None, "PASS"),
+        ("0" * 64, None, "REJECTED (DigestMismatch)"),
+        (None, "imago-kernel-requirement-0002", "REJECTED (CorrelationMismatch)"),
+    ],
+    ids=["matches", "other-digest", "other-correlation-id"],
+)
+def test_a_dispatch_is_fetched_and_verified_end_to_end(
+    tmp_path, capsys, digest, correlation_id, expected
+):
+    """The fetch arguments drive the verifier: a dispatch naming the document it sent passes."""
+    raw = (FIXTURES / "imago.json").read_bytes()
+    payload = _dispatch(
+        PAYLOAD_SHA256=digest or hashlib.sha256(raw).hexdigest(),
+        PAYLOAD_CORRELATION_ID=correlation_id or json.loads(raw)["correlation-id"],
+    )
+    result = _run(tmp_path, **payload)
+    assert result.returncode == 0, result.stderr
+    anchors = [
+        f"--versions={REPO_ROOT / 'versions.json'}",
+        f"--kconfig-dir={REPO_ROOT / 'kconfig'}",
+    ]
+    code = vkr.main([*_args(tmp_path), *anchors])
+    out = capsys.readouterr().out
+    assert code == (0 if expected == "PASS" else 1), out
+    imago = out.split("== imago ==", 1)[1].split("== aegis-os ==", 1)[0]
+    assert f"at {DISPATCH_REF}" in imago
+    assert (f"{expected}: held by" if expected == "PASS" else expected) in imago
+    assert "PASS: held by realtime" in out.split("== aegis-os ==", 1)[1]
