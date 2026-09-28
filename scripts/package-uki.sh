@@ -36,7 +36,8 @@ Options:
   --initrd=<file>         Path to initrd / initramfs archive [optional; no .initrd without it]
   --cmdline=<string>      Kernel commandline parameters
   --output-dir=<dir>      Target directory for UKI output [default: output]
-  --dry-run               Simulate UKI synthesis and PCR measurements
+  --dry-run               Write a marked simulation to <output-dir>/<stream>-<arch>-dry-run/;
+                          never a .efi, never a checksum
   -h, --help              Show this help message
 EOF
 }
@@ -93,6 +94,18 @@ resolve_efi_name() {
   esac
 }
 
+# ukify picks the systemd-stub by EFI architecture (linux<efi-arch>.efi.stub), and without
+# --efi-arch it uses the build host's, which wraps an arm64 kernel in an x64 stub on an x86_64
+# runner. Passing it makes a missing stub fail the build with an error naming the stub.
+resolve_efi_arch() {
+  case "${ARCH}" in
+    x86_64)  echo "x64" ;;
+    arm64)   echo "aa64" ;;
+    riscv64) echo "riscv64" ;;
+    *)       return 1 ;;
+  esac
+}
+
 generate_uki_metadata() {
   local staging_dir="${1}"
   local version="${2}"
@@ -119,40 +132,53 @@ EOF
   echo -n "${CMDLINE_ARG}" > "${staging_dir}/cmdline"
 }
 
-# A simulated UKI is a text file with an MZ prefix, not a Unified Kernel Image.
-# It exists so --dry-run can exercise the pipeline, and it is now only reachable
-# when --dry-run was asked for explicitly. A production run must never land here:
-# the artifact is checksummed and covered by the release cosign signature, so a
-# simulated one would arrive at a consumer as a signed, verified UKI that is a stub.
+# A dry run writes a marked text file, not an image, so it can exercise the pipeline
+# without producing anything shaped like a UKI (issue #21: a stand-in must not use the
+# .efi name). It lands in <output-dir>/<stream>-<arch>-dry-run/ as <efi name>.simulated.txt,
+# with no checksum, so it can neither be taken for a UKI nor overwrite a real one.
 simulate_uki_binary() {
   local version="${1}"
   local efi_name="${2}"
   local target_dir="${3}"
   local staging_dir="${4}"
-  local target_efi="${target_dir}/${efi_name}"
+  local simulated="${efi_name}.simulated.txt"
 
-  echo "==> [SIMULATION] Synthesizing UKI ${efi_name} for ${version} (${ARCH})..."
-  printf "MZ\x90\x00Lusoris Unified Kernel Image %s (%s %s)\n" "${version}" "${STREAM}" "${ARCH}" > "${target_efi}"
-  cat "${staging_dir}/cmdline" >> "${target_efi}"
-  echo "" >> "${target_efi}"
+  echo "==> [SIMULATION] Standing in for UKI ${efi_name} for ${version} (${ARCH})..."
+  {
+    printf 'SIMULATED, not a Unified Kernel Image: stands in for %s\n' "${efi_name}"
+    printf 'Lusoris Unified Kernel Image %s (%s %s)\n' "${version}" "${STREAM}" "${ARCH}"
+    cat "${staging_dir}/cmdline"
+    echo ""
+  } > "${target_dir}/${simulated}"
 
   # Calculate simulated TPM 2.0 PCR 11 measurement
   local pcr11_digest
   # Hash stdin: with a filename argument, sha256sum prefixes the digest with "\"
   # whenever the path contains a backslash, which corrupts the JSON below.
-  pcr11_digest="$(sha256sum < "${target_efi}" | awk '{print $1}')"
+  pcr11_digest="$(sha256sum < "${target_dir}/${simulated}" | awk '{print $1}')"
   cat <<EOF > "${target_dir}/pcr11-measurements.json"
 {
   "stream": "${STREAM}",
   "version": "${version}",
   "arch": "${ARCH}",
-  "binary": "${efi_name}",
+  "binary": "${simulated}",
   "simulated": true,
   "pcr11_sha256": "${pcr11_digest}"
 }
 EOF
-  (cd "${target_dir}" && sha256sum "${efi_name}" > "${efi_name}.sha256")
-  echo "    ✓ Simulated UKI and PCR 11 measurement staged in ${target_dir}/"
+  echo "    ✓ Simulation and simulated PCR 11 measurement staged in ${target_dir}/"
+}
+
+# Remove what an earlier run left at the target path: the image, its checksum and a PCR 11
+# measurement. A production run does this before anything else, so a refused run leaves no
+# earlier UKI or checksum behind to be taken for its result, and again if ukify or the
+# checker fails.
+discard_uki_outputs() {
+  local target_dir="${1}"
+  local efi_name="${2}"
+
+  rm -f -- "${target_dir}/${efi_name}" "${target_dir}/${efi_name}.sha256" \
+    "${target_dir}/pcr11-measurements.json"
 }
 
 # Refuse rather than fabricate. Every missing input is a build environment
@@ -185,39 +211,47 @@ require_uki_inputs() {
 # ukify reads --cmdline as literal text unless it starts with "@", so the
 # cmdline file is passed as "@<file>"; without the "@" the UKI would boot with
 # the staging path as its command line. --initrd is passed only when one was
-# given: ukify fails on an empty --initrd=. Whatever ukify writes is then
-# checked by check_uki.py (PE headers, machine type, UKI sections) before it is
-# checksummed, and deleted if the check refuses it.
+# given: ukify fails on an empty --initrd=. --config=/dev/null stops ukify from
+# reading the first ukify.conf it finds in /etc/systemd, /run/systemd,
+# /usr/local/lib/systemd or /usr/lib/systemd, which could add sections or sign
+# the image. Whatever ukify writes is then checked by check_uki.py (PE headers,
+# machine types, UKI sections, the command line text) before it is checksummed,
+# and deleted here if the check refuses it.
 build_uki_binary() {
   local version="${1}"
   local efi_name="${2}"
   local target_dir="${3}"
   local staging_dir="${4}"
   local target_efi="${target_dir}/${efi_name}"
+  local efi_arch
+  efi_arch="$(resolve_efi_arch)"
   local -a ukify_args=(
+    --config=/dev/null
+    --efi-arch="${efi_arch}"
     --linux="${VMLINUZ_FILE}"
     --cmdline="@${staging_dir}/cmdline"
     --os-release="@${staging_dir}/os-release"
     --sbat="@${staging_dir}/sbat.csv"
     --output="${target_efi}"
   )
-  local -a check_args=(--arch="${ARCH}")
+  local -a check_args=(--arch="${ARCH}" --expect-cmdline="@${staging_dir}/cmdline")
 
+  discard_uki_outputs "${target_dir}" "${efi_name}"
   require_uki_inputs "${efi_name}"
   if [[ -n "${INITRD_FILE}" ]]; then
     ukify_args+=(--initrd="${INITRD_FILE}")
     check_args+=(--expect-initrd)
   fi
 
-  echo "==> Invoking ukify synthesis engine for ${version}..."
+  echo "==> Invoking ukify synthesis engine for ${version} (EFI architecture ${efi_arch})..."
   if ! ukify build "${ukify_args[@]}"; then
-    rm -f "${target_efi}"
+    discard_uki_outputs "${target_dir}" "${efi_name}"
     echo "Error: ukify build failed; no UKI was written." >&2
     return 1
   fi
 
   if ! python3 "${SCRIPT_DIR}/check_uki.py" "${check_args[@]}" "${target_efi}"; then
-    rm -f "${target_efi}"
+    discard_uki_outputs "${target_dir}" "${efi_name}"
     echo "Error: ${target_efi} is not a Unified Kernel Image; deleted, not checksummed." >&2
     return 1
   fi
@@ -229,15 +263,20 @@ build_uki_binary() {
 # The helpers are called directly, not as `helper || status=$?`: bash disables
 # errexit for the whole body of a function invoked in a `||` context, so a
 # failing ukify would carry on and checksum whatever it left behind. Cleanup
-# of the staging directory is an EXIT trap so it runs on refusal too.
+# of the staging directory is an EXIT trap so it runs on refusal too; printf %q
+# quotes its path for the trap, so a quote in TMPDIR cannot break the cleanup.
+# A dry run writes to a directory of its own, never next to a real UKI.
 synthesize_uki_binary() {
   local version="${1}"
   local efi_name="${2}"
   local target_dir="${OUTPUT_DIR}/${STREAM}-${ARCH}"
   local staging_dir
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    target_dir="${target_dir}-dry-run"
+  fi
   staging_dir="$(mktemp -d --tmpdir "lusoris-uki-${STREAM}-${ARCH}.XXXXXX")"
   # shellcheck disable=SC2064 # expand now: staging_dir is local and out of scope at EXIT
-  trap "rm -rf '${staging_dir}'" EXIT
+  trap "rm -rf -- $(printf '%q' "${staging_dir}")" EXIT
   mkdir -p "${target_dir}"
 
   generate_uki_metadata "${staging_dir}" "${version}"

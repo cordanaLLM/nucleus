@@ -15,8 +15,11 @@
 
 A UKI that is not a UKI is checksummed and covered by the release cosign signature, so it
 reaches a consumer as a signed, verified artifact (issue #21). These tests pin the refusals:
-no kernel, no ukify, a failing ukify, and any output that is empty, not a PE, or a PE
-without the UKI sections, which is deleted before a checksum is computed.
+no kernel, no ukify, a failing ukify, and any output that is empty, not a PE, a PE without
+the UKI sections, a PE with sections package-uki.sh does not wire, a kernel for another
+machine, or a command line other than the requested one. Refused output is deleted before a
+checksum is computed, and a refused run leaves nothing an earlier run wrote at that path.
+A dry run writes a marked text file in a directory of its own, never a .efi.
 
 The package-uki.sh tests are hermetic. PATH holds only symlinks to the tools the script
 needs, plus a stand-in ukify when a test installs one, so whether the host has ukify
@@ -33,6 +36,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shlex
 import shutil
 import struct
@@ -60,6 +64,25 @@ needs_bash = pytest.mark.skipif(BASH is None, reason="bash is required to run pa
 # PE machine types from the Microsoft PE format specification, stated here independently of
 # the checker so a wrong constant there fails a test.
 PE_MACHINE = {"x86_64": 0x8664, "arm64": 0xAA64, "riscv64": 0x5064}
+# UEFI removable-media boot file name and ukify --efi-arch per architecture, stated here
+# independently of package-uki.sh so a wrong mapping there fails a test.
+EFI_TARGET = {
+    "x86_64": ("BOOTX64.EFI", "x64"),
+    "arm64": ("BOOTAA64.EFI", "aa64"),
+    "riscv64": ("BOOTRISCV64.EFI", "riscv64"),
+}
+# Sections of the UAPI Group UKI specification that package-uki.sh does not pass to ukify.
+UNWIRED_SECTIONS = (
+    ".ucode",
+    ".splash",
+    ".dtb",
+    ".dtbauto",
+    ".efifw",
+    ".hwids",
+    ".pcrsig",
+    ".pcrpkey",
+    ".profile",
+)
 E_LFANEW = 0x40
 COFF_OFFSET = E_LFANEW + 4
 OPTIONAL_OFFSET = COFF_OFFSET + 20
@@ -77,6 +100,10 @@ UKI_SECTIONS = {
     ".sbat": b"sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md\n",
     ".linux": b"\x00" * 64,
 }
+# package-uki.sh runs are given this command line, so the stand-in images match it.
+UKI_CMDLINE = UKI_SECTIONS[".cmdline"].decode("ascii")
+# What ukify embeds when --cmdline lacks the "@": the path of the file, as text.
+CMDLINE_PATH_AS_TEXT = b"/staging/lusoris-uki/cmdline"
 
 
 def _load_checker():
@@ -130,6 +157,16 @@ def _without(name: str) -> dict[str, bytes]:
     return {key: value for key, value in UKI_SECTIONS.items() if key != name}
 
 
+def _with(name: str, payload: bytes) -> bytes:
+    """The stand-in UKI with one section replaced or added."""
+    return build_pe({**UKI_SECTIONS, name: payload})
+
+
+def _kernel_pe(machine: int) -> bytes:
+    """A .linux payload with an EFI stub header, as a real kernel image has, for machine."""
+    return build_pe({".text": b"\xcc" * 16}, machine=machine)
+
+
 def _patch(image: bytes, offset: int, fmt: str, value) -> bytes:
     patched = bytearray(image)
     struct.pack_into(fmt, patched, offset, value)
@@ -150,7 +187,7 @@ def test_checker_accepts_a_minimal_uki():
 
 
 def test_checker_accepts_an_initrd_only_when_one_was_passed():
-    image = build_pe({**UKI_SECTIONS, ".initrd": b"initrd"})
+    image = _with(".initrd", b"initrd")
     assert CHECK_UKI.check_uki(image, ARCH, expect_initrd=True)
     with pytest.raises(CHECK_UKI.NotAUki, match="no initrd was passed"):
         CHECK_UKI.check_uki(image, ARCH, expect_initrd=False)
@@ -163,13 +200,33 @@ def test_checker_knows_the_pe_machine_of_every_architecture_in_versions_json(arc
     assert arch in PE_MACHINE, (
         f"add the PE machine type for {arch} to this test and to check_uki.py"
     )
-    assert CHECK_UKI.check_uki(build_pe(UKI_SECTIONS, machine=PE_MACHINE[arch]), arch)
+    image = build_pe({**UKI_SECTIONS, ".linux": _kernel_pe(PE_MACHINE[arch])}, machine=PE_MACHINE[arch])
+    assert CHECK_UKI.check_uki(image, arch)
+
+
+def test_checker_accepts_a_kernel_built_for_the_target_machine():
+    assert CHECK_UKI.check_uki(_with(".linux", _kernel_pe(PE_MACHINE[ARCH])), ARCH)
+
+
+def test_checker_compares_the_command_line_when_asked():
+    requested = UKI_SECTIONS[".cmdline"]
+    assert CHECK_UKI.check_uki(VALID_UKI, ARCH, expect_cmdline=requested)
+    with pytest.raises(CHECK_UKI.NotAUki, match="not the requested command line"):
+        CHECK_UKI.check_uki(VALID_UKI, ARCH, expect_cmdline=requested + b" quiet")
+    with pytest.raises(CHECK_UKI.NotAUki, match="not the requested command line"):
+        CHECK_UKI.check_uki(_with(".cmdline", CMDLINE_PATH_AS_TEXT), ARCH, expect_cmdline=requested)
 
 
 @pytest.mark.parametrize("name", [".linux", ".osrel", ".cmdline", ".uname", ".sbat", ".sdmagic"])
 def test_checker_refuses_a_pe_missing_a_uki_section(name):
     with pytest.raises(CHECK_UKI.NotAUki, match=f"missing section {name}"):
         CHECK_UKI.check_uki(build_pe(_without(name)), ARCH)
+
+
+@pytest.mark.parametrize("name", UNWIRED_SECTIONS)
+def test_checker_refuses_a_section_package_uki_does_not_wire(name):
+    with pytest.raises(CHECK_UKI.NotAUki, match=re.escape(f"carries a {name} section")):
+        CHECK_UKI.check_uki(_with(name, b"payload"), ARCH)
 
 
 @pytest.mark.parametrize(
@@ -212,20 +269,23 @@ def test_checker_refuses_a_pe_missing_a_uki_section(name):
             id="truncated-section-table",
         ),
         pytest.param(VALID_UKI[:-0x100], "section .linux data", id="section-data-past-EOF"),
-        pytest.param(
-            build_pe({**UKI_SECTIONS, ".cmdline": b""}),
-            "section .cmdline is empty",
-            id="empty-cmdline",
-        ),
+        pytest.param(_with(".cmdline", b""), "section .cmdline is empty", id="empty-cmdline"),
         pytest.param(
             build_pe([*UKI_SECTIONS.items(), (".linux", b"\x01" * 8)]),
             "appears 2 times",
             id="duplicate-linux",
         ),
+        pytest.param(_with(".sdmagic", b"not a stub"), "systemd-stub marker", id="foreign-sdmagic"),
+        # An x64 stub around an arm64 kernel: the image's own machine type is the stub's.
         pytest.param(
-            build_pe({**UKI_SECTIONS, ".sdmagic": b"not a stub"}),
-            "systemd-stub marker",
-            id="foreign-sdmagic",
+            _with(".linux", _kernel_pe(PE_MACHINE["arm64"])),
+            "the .linux kernel: machine type 0xaa64 is not x86_64",
+            id="kernel-for-another-machine",
+        ),
+        pytest.param(
+            _with(".linux", b"MZ" + bytes(0x100)),
+            "the .linux kernel: e_lfanew 0x0 points into the DOS header",
+            id="kernel-MZ-without-PE",
         ),
     ],
 )
@@ -238,19 +298,26 @@ def test_checker_command_line_exit_status(tmp_path):
     valid, bogus = tmp_path / "valid.efi", tmp_path / "bogus.efi"
     valid.write_bytes(VALID_UKI)
     bogus.write_bytes(b"MZ-uki")
+    cmdline = tmp_path / "cmdline"
+    cmdline.write_bytes(UKI_SECTIONS[".cmdline"])
 
     def check(*args: str) -> subprocess.CompletedProcess:
-        cmd = [sys.executable, str(CHECKER), *args]
+        cmd = [sys.executable, str(CHECKER), f"--arch={ARCH}", *args]
         return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-    accepted = check(f"--arch={ARCH}", str(valid))
+    accepted = check(str(valid))
     assert accepted.returncode == 0, accepted.stderr
     assert "check_uki: OK" in accepted.stdout
-    refused = check(f"--arch={ARCH}", str(bogus))
+    refused = check(str(bogus))
     assert refused.returncode == 1
     assert "check_uki: REFUSED" in refused.stderr
-    assert check(f"--arch={ARCH}", str(tmp_path / "absent.efi")).returncode == 1
-    assert check("--arch=not-an-arch", str(valid)).returncode == 2
+    assert check(str(tmp_path / "absent.efi")).returncode == 1
+    assert check(f"--expect-cmdline=@{cmdline}", str(valid)).returncode == 0
+    assert check(f"--expect-cmdline={UKI_CMDLINE}", str(valid)).returncode == 0
+    assert check("--expect-cmdline=console=tty0", str(valid)).returncode == 1
+    assert check(f"--expect-cmdline=@{tmp_path / 'absent'}", str(valid)).returncode == 2
+    usage = [sys.executable, str(CHECKER), "--arch=not-an-arch", str(valid)]
+    assert subprocess.run(usage, capture_output=True, check=False).returncode == 2
 
 
 # --- scripts/package-uki.sh ----------------------------------------------------------------
@@ -308,22 +375,30 @@ def _fake_kernel(tmp_path: Path) -> Path:
     return kernel
 
 
-def _run(tmp_path: Path, bin_dir: Path, *args: str) -> subprocess.CompletedProcess:
-    (tmp_path / "tmp").mkdir(exist_ok=True)
-    env = {"PATH": str(bin_dir), "TMPDIR": str(tmp_path / "tmp"), "LC_ALL": "C"}
+def _run(
+    tmp_path: Path,
+    bin_dir: Path,
+    *args: str,
+    arch: str = ARCH,
+    cmdline: str = UKI_CMDLINE,
+    tmp_name: str = "tmp",
+) -> subprocess.CompletedProcess:
+    (tmp_path / tmp_name).mkdir(exist_ok=True)
+    env = {"PATH": str(bin_dir), "TMPDIR": str(tmp_path / tmp_name), "LC_ALL": "C"}
     cmd = [
         BASH,
         str(SCRIPT),
         f"--stream={STREAM}",
-        f"--arch={ARCH}",
+        f"--arch={arch}",
         f"--output-dir={tmp_path / 'out'}",
+        f"--cmdline={cmdline}",
         *args,
     ]
     return subprocess.run(cmd, cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False)
 
 
-def _target(tmp_path: Path) -> Path:
-    return tmp_path / "out" / f"{STREAM}-{ARCH}"
+def _target(tmp_path: Path, arch: str = ARCH) -> Path:
+    return tmp_path / "out" / f"{STREAM}-{arch}"
 
 
 def _assert_nothing_published(tmp_path: Path) -> None:
@@ -334,13 +409,19 @@ def _assert_nothing_published(tmp_path: Path) -> None:
 
 
 @needs_bash
-def test_dry_run_simulates_and_says_so(tmp_path):
+def test_dry_run_writes_a_marked_simulation_and_nothing_named_like_a_uki(tmp_path):
     result = _run(tmp_path, _isolated_bin(tmp_path), "--dry-run")
     assert result.returncode == 0, result.stderr
-    target = _target(tmp_path)
-    assert (target / EFI_NAME).is_file()
-    measurement = json.loads((target / "pcr11-measurements.json").read_text(encoding="utf-8"))
+    dry_run = tmp_path / "out" / f"{STREAM}-{ARCH}-dry-run"
+    simulated = dry_run / f"{EFI_NAME}.simulated.txt"
+    text = simulated.read_text(encoding="utf-8")
+    assert text.startswith("SIMULATED, not a Unified Kernel Image"), text
+    measurement = json.loads((dry_run / "pcr11-measurements.json").read_text(encoding="utf-8"))
     assert measurement["simulated"] is True, "a simulated measurement must be marked as one"
+    assert measurement["binary"] == simulated.name
+    written = [path.name for path in (tmp_path / "out").rglob("*")]
+    assert not [name for name in written if name.lower().endswith((".efi", ".sha256"))], written
+    assert not _target(tmp_path).exists(), "a dry run must not write where a real UKI goes"
 
 
 @needs_bash
@@ -355,11 +436,55 @@ def test_production_without_a_kernel_refuses_and_writes_nothing(tmp_path):
 
 
 @needs_bash
+def test_a_refused_run_after_a_dry_run_leaves_no_uki(tmp_path):
+    bin_dir = _isolated_bin(tmp_path)
+    assert _run(tmp_path, bin_dir, "--dry-run").returncode == 0
+    result = _run(tmp_path, bin_dir)
+    assert result.returncode == 1, result.stderr
+    _assert_nothing_published(tmp_path)
+
+
+@needs_bash
+@pytest.mark.parametrize(
+    ("output", "exit_code", "kernel", "reason"),
+    [
+        pytest.param(VALID_UKI, 0, "absent", "no kernel image to package", id="no-kernel"),
+        pytest.param(None, 1, "vmlinuz", "ukify build failed", id="ukify-fails"),
+        pytest.param(
+            build_pe(_without(".linux")), 0, "vmlinuz", "missing section .linux", id="refused"
+        ),
+    ],
+)
+def test_a_refused_run_removes_what_an_earlier_run_left(tmp_path, output, exit_code, kernel, reason):
+    bin_dir = _isolated_bin(tmp_path)
+    _install_ukify_stub(bin_dir, VALID_UKI)
+    assert _run(tmp_path, bin_dir, f"--vmlinuz={_fake_kernel(tmp_path)}").returncode == 0
+    assert (_target(tmp_path) / f"{EFI_NAME}.sha256").is_file()
+    (_target(tmp_path) / "pcr11-measurements.json").write_text("{}", encoding="utf-8")
+    _install_ukify_stub(bin_dir, output, exit_code)
+    result = _run(tmp_path, bin_dir, f"--vmlinuz={tmp_path / kernel}")
+    assert result.returncode == 1, result.stderr
+    assert reason in result.stderr
+    _assert_nothing_published(tmp_path)
+    assert not (_target(tmp_path) / "pcr11-measurements.json").exists(), "nor its measurement"
+
+
+@needs_bash
 def test_production_without_ukify_refuses_and_writes_nothing(tmp_path):
     result = _run(tmp_path, _isolated_bin(tmp_path), f"--vmlinuz={_fake_kernel(tmp_path)}")
     assert result.returncode == 1, result.stderr
     assert "ukify is not installed" in result.stderr
     _assert_nothing_published(tmp_path)
+
+
+@needs_bash
+def test_a_quote_in_tmpdir_does_not_break_the_cleanup(tmp_path):
+    bin_dir = _isolated_bin(tmp_path)
+    simulated = _run(tmp_path, bin_dir, "--dry-run", tmp_name="it's tmp")
+    assert simulated.returncode == 0, simulated.stderr
+    refused = _run(tmp_path, bin_dir, tmp_name="it's tmp")
+    assert refused.returncode == 1, refused.stderr
+    assert not list((tmp_path / "it's tmp").iterdir()), "the staging directory must be removed"
 
 
 @needs_bash
@@ -377,9 +502,9 @@ def test_an_initrd_that_is_not_a_file_is_refused(tmp_path):
 @needs_bash
 def test_ukify_reads_the_cmdline_file_and_gets_no_empty_initrd(tmp_path):
     bin_dir = _isolated_bin(tmp_path)
-    log = _install_ukify_stub(bin_dir, VALID_UKI)
+    log = _install_ukify_stub(bin_dir, _with(".cmdline", b"console=ttyS0 quiet"))
     kernel = _fake_kernel(tmp_path)
-    result = _run(tmp_path, bin_dir, f"--vmlinuz={kernel}", "--cmdline=console=ttyS0 quiet")
+    result = _run(tmp_path, bin_dir, f"--vmlinuz={kernel}", cmdline="console=ttyS0 quiet")
     assert result.returncode == 0, result.stderr
     args = log.read_text(encoding="utf-8").splitlines()
     assert f"--linux={kernel}" in args
@@ -392,11 +517,26 @@ def test_ukify_reads_the_cmdline_file_and_gets_no_empty_initrd(tmp_path):
 
 
 @needs_bash
+@pytest.mark.parametrize("arch", VERSIONS["architectures"])
+def test_ukify_gets_the_stub_for_the_target_arch_and_no_host_config(tmp_path, arch):
+    assert arch in EFI_TARGET, f"add the boot file name and EFI architecture for {arch}"
+    efi_name, efi_arch = EFI_TARGET[arch]
+    bin_dir = _isolated_bin(tmp_path)
+    log = _install_ukify_stub(bin_dir, build_pe(UKI_SECTIONS, machine=PE_MACHINE[arch]))
+    result = _run(tmp_path, bin_dir, f"--vmlinuz={_fake_kernel(tmp_path)}", arch=arch)
+    assert result.returncode == 0, result.stderr
+    args = log.read_text(encoding="utf-8").splitlines()
+    assert f"--efi-arch={efi_arch}" in args, f"ukify would pick the build host's stub: {args}"
+    assert "--config=/dev/null" in args, f"a host ukify.conf could add sections or sign: {args}"
+    assert (_target(tmp_path, arch) / f"{efi_name}.sha256").is_file()
+
+
+@needs_bash
 def test_an_initrd_is_passed_to_ukify_and_required_in_the_image(tmp_path):
     bin_dir = _isolated_bin(tmp_path)
     initrd = tmp_path / "initrd.img"
     initrd.write_bytes(b"initrd")
-    log = _install_ukify_stub(bin_dir, build_pe({**UKI_SECTIONS, ".initrd": b"initrd"}))
+    log = _install_ukify_stub(bin_dir, _with(".initrd", b"initrd"))
     result = _run(tmp_path, bin_dir, f"--vmlinuz={_fake_kernel(tmp_path)}", f"--initrd={initrd}")
     assert result.returncode == 0, result.stderr
     assert f"--initrd={initrd}" in log.read_text(encoding="utf-8").splitlines()
@@ -428,10 +568,22 @@ def test_an_initrd_missing_from_the_image_is_refused(tmp_path):
             build_pe(_without(".linux")), 0, "missing section .linux", id="PE-without-linux"
         ),
         pytest.param(
-            build_pe({**UKI_SECTIONS, ".initrd": b"x"}),
+            _with(".initrd", b"x"), 0, "no initrd was passed", id="unrequested-initrd"
+        ),
+        pytest.param(
+            _with(".cmdline", CMDLINE_PATH_AS_TEXT),
             0,
-            "no initrd was passed",
-            id="unrequested-initrd",
+            "not the requested command line",
+            id="cmdline-is-a-file-path",
+        ),
+        pytest.param(
+            _with(".ucode", b"microcode"), 0, "carries a .ucode section", id="host-config-microcode"
+        ),
+        pytest.param(
+            _with(".linux", _kernel_pe(PE_MACHINE["arm64"])),
+            0,
+            "the .linux kernel",
+            id="kernel-for-another-machine",
         ),
     ],
 )
@@ -487,7 +639,9 @@ def test_real_ukify_builds_a_uki_the_checker_accepts(tmp_path, with_initrd):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     image = (_target(tmp_path) / EFI_NAME).read_bytes()
-    sections = CHECK_UKI.check_uki(image, ARCH, expect_initrd=with_initrd)
+    sections = CHECK_UKI.check_uki(
+        image, ARCH, expect_initrd=with_initrd, expect_cmdline=cmdline.encode()
+    )
     content = {section.name: CHECK_UKI.section_data(image, section) for section in sections}
     assert content[".cmdline"] == cmdline.encode(), (
         "the cmdline text, not the path of the file holding it"
@@ -497,5 +651,6 @@ def test_real_ukify_builds_a_uki_the_checker_accepts(tmp_path, with_initrd):
     assert content[".uname"].strip()
     assert content[".linux"] == Path(REAL_KERNEL).read_bytes()
     assert (initrd in content[".initrd"]) if with_initrd else ".initrd" not in content
+    assert not set(content) & set(UNWIRED_SECTIONS), f"unwired sections: {sorted(content)}"
     checksum = (_target(tmp_path) / f"{EFI_NAME}.sha256").read_text(encoding="utf-8").split()
     assert checksum == [hashlib.sha256(image).hexdigest(), EFI_NAME]

@@ -50,7 +50,7 @@ jobs:
   # UKI with package-uki.sh, which is the positive case of issue #21. No nucleus kernel exists
   # until issue #18, so the input is Ubuntu's own kernel image; the result is never published.
   uki-real-ukify:
-    name: UKI built with real ukify (ubuntu:26.04)
+    name: UKI Real ukify Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -82,17 +82,43 @@ jobs:
           test -s "${vmlinuz}"
           echo "NUCLEUS_UKI_TEST_VMLINUZ=${vmlinuz}" >> "${GITHUB_ENV}"
 
+      - name: Install a hostile ukify.conf
+        run: |
+          # ukify reads the first ukify.conf it finds under /etc/systemd. This one asks for a
+          # microcode section; package-uki.sh must ignore it (--config=/dev/null), so the
+          # build and the tests below prove the image does not depend on the build host.
+          mkdir -p /etc/systemd
+          head -c 64 /dev/zero > "${RUNNER_TEMP}/hostile-microcode.img"
+          printf '[UKI]\nMicrocode=%s\n' "${RUNNER_TEMP}/hostile-microcode.img" > /etc/systemd/ukify.conf
+          # Control: without --config=/dev/null the config takes effect, so this step is not vacuous.
+          ukify build --linux="${NUCLEUS_UKI_TEST_VMLINUZ}" --output="${RUNNER_TEMP}/control.efi"
+          ukify inspect "${RUNNER_TEMP}/control.efi" | grep -F '.ucode'
+
       - name: Build a UKI with package-uki.sh and inspect it
         run: |
           stream="$(python3 -c 'import json; print(next(iter(json.load(open("versions.json"))["streams"])))')"
+          # The architecture of this runner, which must be a target of versions.json; the stock
+          # kernel is built for it. The build is not a nucleus kernel (issue #18).
+          case "$(uname -m)" in
+            x86_64) arch=x86_64 ;;
+            aarch64) arch=arm64 ;;
+            riscv64) arch=riscv64 ;;
+            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          python3 -c 'import json, sys; assert sys.argv[1] in json.load(open("versions.json"))["architectures"], sys.argv[1]' "${arch}"
           out="${RUNNER_TEMP}/uki"
-          # x86_64 is the architecture of this runner and of the stock kernel, not a build target.
-          ./scripts/package-uki.sh --stream="${stream}" --arch=x86_64 \
+          ./scripts/package-uki.sh --stream="${stream}" --arch="${arch}" \
             --vmlinuz="${NUCLEUS_UKI_TEST_VMLINUZ}" --output-dir="${out}"
-          efi="${out}/${stream}-x86_64/BOOTX64.EFI"
-          python3 scripts/check_uki.py --arch=x86_64 "${efi}"
+          dir="${out}/${stream}-${arch}"
+          efi="$(find "${dir}" -maxdepth 1 -type f -name '*.EFI')"
+          test "$(printf '%s\n' "${efi}" | wc -l)" -eq 1
+          python3 scripts/check_uki.py --arch="${arch}" "${efi}"
           ukify inspect "${efi}"
-          (cd "$(dirname "${efi}")" && sha256sum --check BOOTX64.EFI.sha256)
+          if ukify inspect "${efi}" | grep -F '.ucode'; then
+            echo "the hostile ukify.conf leaked into the image" >&2
+            exit 1
+          fi
+          (cd "${dir}" && sha256sum --check "$(basename "${efi}").sha256")
 
       - name: Run the UKI tests with ukify installed
         run: |

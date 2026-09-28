@@ -14,8 +14,9 @@
 # limitations under the License.
 """Refuse a Unified Kernel Image (UKI) that is not one.
 
-scripts/package-uki.sh runs this after ukify and before the image is checksummed. An image
-this refuses is deleted, so it never reaches SHA256SUMS or the release signature.
+scripts/package-uki.sh runs this after ukify and before the image is checksummed, and deletes
+an image this refuses, so it never reaches a checksum or the release signature. This script
+only reads the image; it deletes nothing.
 
 The checks are structural and use the standard library only:
 
@@ -26,7 +27,13 @@ The checks are structural and use the standard library only:
 5. the section table and every section's raw data lie inside the file;
 6. .linux, .osrel, .cmdline, .uname and .sbat are each present once and not empty;
 7. .sdmagic carries the systemd-stub marker, so the image was built on systemd-stub;
-8. .initrd is present if and only if --expect-initrd is given.
+8. .initrd is present if and only if --expect-initrd is given;
+9. no UKI section that package-uki.sh does not wire yet is present (UNWIRED_SECTIONS), so a
+   host ukify.conf or a ukify default cannot add microcode, a device tree, a splash image,
+   firmware, HWIDs, PCR signatures or profiles;
+10. a .linux kernel that starts with MZ is a PE for the --arch machine type, so an x64 stub
+    around a kernel for another architecture is refused;
+11. with --expect-cmdline, .cmdline holds exactly the requested command line.
 
 Header layout: Microsoft PE format specification. Section names: UAPI Group UKI specification.
 This proves shape, not bootability or provenance: a deliberately crafted file with these
@@ -57,7 +64,22 @@ SUBSYSTEM_EFI_APPLICATION = 10
 # PE machine type per architecture name in versions.json ("architectures").
 MACHINE_BY_ARCH = {"x86_64": 0x8664, "arm64": 0xAA64, "riscv64": 0x5064}
 REQUIRED_SECTIONS = (".linux", ".osrel", ".cmdline", ".uname", ".sbat", ".sdmagic")
+# UKI sections package-uki.sh does not pass to ukify. Each stays refused until it is wired on
+# purpose, so the image does not depend on what the build host has installed or configured.
+UNWIRED_SECTIONS = (
+    ".ucode",
+    ".splash",
+    ".dtb",
+    ".dtbauto",
+    ".efifw",
+    ".hwids",
+    ".pcrsig",
+    ".pcrpkey",
+    ".profile",
+)
 SDMAGIC_PREFIX = b"#### LoaderInfo: systemd-stub "
+# How much of a mismatched command line a refusal quotes.
+QUOTE_LIMIT = 200
 
 
 class NotAUki(Exception):
@@ -73,6 +95,15 @@ class Section(NamedTuple):
     raw_offset: int
 
 
+class PeHeader(NamedTuple):
+    """What the COFF header says, and where the optional header lies."""
+
+    machine: int
+    section_count: int
+    optional_offset: int
+    optional_size: int
+
+
 def _unpack(fmt: str, data: bytes, offset: int, what: str) -> tuple:
     """struct.unpack_from, refusing any read that would leave the file."""
     end = offset + struct.calcsize(fmt)
@@ -83,11 +114,8 @@ def _unpack(fmt: str, data: bytes, offset: int, what: str) -> tuple:
     return struct.unpack_from(fmt, data, offset)
 
 
-def read_coff_header(data: bytes, arch: str) -> tuple[int, int, int]:
-    """Check the DOS stub, PE signature and COFF header.
-
-    Returns the optional header offset, its size, and the number of sections.
-    """
+def read_pe_header(data: bytes) -> PeHeader:
+    """Check the MZ DOS header and the PE signature, and read the COFF header."""
     if not data:
         raise NotAUki("the file is empty")
     if len(data) < DOS_HEADER_SIZE or data[:2] != b"MZ":
@@ -99,13 +127,23 @@ def read_coff_header(data: bytes, arch: str) -> tuple[int, int, int]:
     if signature != PE_SIGNATURE:
         raise NotAUki(f"no PE signature at e_lfanew {e_lfanew:#x}")
     coff = _unpack("<HHIIIHH", data, e_lfanew + 4, "COFF header")
-    machine, count, opt_size = coff[0], coff[1], coff[5]
+    return PeHeader(coff[0], coff[1], e_lfanew + 4 + COFF_HEADER_SIZE, coff[5])
+
+
+def check_machine(machine: int, arch: str) -> None:
+    """Require the PE machine type that belongs to arch."""
     expected = MACHINE_BY_ARCH[arch]
     if machine != expected:
         raise NotAUki(f"machine type {machine:#06x} is not {arch} ({expected:#06x})")
-    if not 0 < count <= MAX_SECTIONS:
-        raise NotAUki(f"{count} sections; expected 1 to {MAX_SECTIONS}")
-    return e_lfanew + 4 + COFF_HEADER_SIZE, opt_size, count
+
+
+def read_coff_header(data: bytes, arch: str) -> PeHeader:
+    """Check the image's own PE headers: the machine type for arch and a sane section count."""
+    header = read_pe_header(data)
+    check_machine(header.machine, arch)
+    if not 0 < header.section_count <= MAX_SECTIONS:
+        raise NotAUki(f"{header.section_count} sections; expected 1 to {MAX_SECTIONS}")
+    return header
 
 
 def check_optional_header(data: bytes, offset: int, size: int) -> None:
@@ -148,8 +186,16 @@ def section_data(data: bytes, section: Section) -> bytes:
     ]
 
 
+def named_data(data: bytes, sections: list[Section], name: str) -> bytes:
+    """The bytes of the first section called name; check_uki_sections requires it once."""
+    return section_data(data, next(section for section in sections if section.name == name))
+
+
 def check_uki_sections(data: bytes, sections: list[Section], expect_initrd: bool) -> None:
-    """Require the UKI sections once each and non-empty, and .initrd exactly when expected."""
+    """Require the UKI sections once each and non-empty, and .initrd exactly when expected.
+
+    Refuse every section package-uki.sh does not wire yet.
+    """
     names = [section.name for section in sections]
     required = REQUIRED_SECTIONS + ((".initrd",) if expect_initrd else ())
     for name in required:
@@ -161,17 +207,61 @@ def check_uki_sections(data: bytes, sections: list[Section], expect_initrd: bool
             raise NotAUki(f"section {name} is empty")
     if not expect_initrd and ".initrd" in names:
         raise NotAUki("carries an .initrd section although no initrd was passed")
-    if not section_data(data, sections[names.index(".sdmagic")]).startswith(SDMAGIC_PREFIX):
+    for name in UNWIRED_SECTIONS:
+        if name in names:
+            raise NotAUki(f"carries a {name} section, which package-uki.sh does not wire yet")
+    if not named_data(data, sections, ".sdmagic").startswith(SDMAGIC_PREFIX):
         raise NotAUki(".sdmagic does not carry the systemd-stub marker")
 
 
-def check_uki(data: bytes, arch: str, expect_initrd: bool = False) -> list[Section]:
+def check_kernel_machine(data: bytes, sections: list[Section], arch: str) -> None:
+    """A .linux kernel with an EFI stub (it starts with MZ) must be built for arch.
+
+    The image's own machine type is the systemd-stub's. Without this check an x64 stub
+    wrapped around a kernel for another architecture passes every other check.
+    """
+    kernel = named_data(data, sections, ".linux")
+    if kernel[:2] != b"MZ":
+        return
+    try:
+        check_machine(read_pe_header(kernel).machine, arch)
+    except NotAUki as err:
+        raise NotAUki(f"the .linux kernel: {err}") from err
+
+
+def check_cmdline(data: bytes, sections: list[Section], expected: bytes) -> None:
+    """Require .cmdline to hold exactly the requested command line, not, say, a file path."""
+    actual = named_data(data, sections, ".cmdline")
+    if actual != expected:
+        raise NotAUki(
+            f".cmdline holds {actual[:QUOTE_LIMIT]!r}, not the requested command line "
+            f"{expected[:QUOTE_LIMIT]!r}"
+        )
+
+
+def check_uki(
+    data: bytes, arch: str, expect_initrd: bool = False, expect_cmdline: bytes | None = None
+) -> list[Section]:
     """Run every check on an image held in memory; raise NotAUki on the first failure."""
-    opt_offset, opt_size, count = read_coff_header(data, arch)
-    check_optional_header(data, opt_offset, opt_size)
-    sections = read_sections(data, opt_offset + opt_size, count)
+    header = read_coff_header(data, arch)
+    check_optional_header(data, header.optional_offset, header.optional_size)
+    table = header.optional_offset + header.optional_size
+    sections = read_sections(data, table, header.section_count)
     check_uki_sections(data, sections, expect_initrd)
+    check_kernel_machine(data, sections, arch)
+    if expect_cmdline is not None:
+        check_cmdline(data, sections, expect_cmdline)
     return sections
+
+
+def text_or_file(value: str) -> bytes:
+    """--expect-cmdline: literal text, or "@<file>" for the file's bytes, as ukify reads it."""
+    if not value.startswith("@"):
+        return value.encode("utf-8")
+    try:
+        return Path(value[1:]).read_bytes()
+    except OSError as err:
+        raise argparse.ArgumentTypeError(f"cannot read {value[1:]}: {err.strerror}") from err
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -184,6 +274,12 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="an initrd was passed to ukify: require .initrd (without this flag, .initrd is refused)",
     )
+    parser.add_argument(
+        "--expect-cmdline",
+        type=text_or_file,
+        metavar="TEXT|@FILE",
+        help="require .cmdline to hold exactly TEXT, or the bytes of FILE",
+    )
     parser.add_argument("image", type=Path, help="the .efi file to check")
     return parser.parse_args(argv)
 
@@ -192,7 +288,8 @@ def run(argv: list[str]) -> int:
     """Check one image and report; returns the exit status."""
     args = parse_arguments(argv)
     try:
-        sections = check_uki(args.image.read_bytes(), args.arch, args.expect_initrd)
+        image = args.image.read_bytes()
+        sections = check_uki(image, args.arch, args.expect_initrd, args.expect_cmdline)
     except (NotAUki, OSError) as err:
         print(f"check_uki: REFUSED {args.image}: {err}", file=sys.stderr)
         return 1

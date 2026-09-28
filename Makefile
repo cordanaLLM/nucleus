@@ -4,6 +4,9 @@ SHELL := /usr/bin/env bash
 STREAM ?= mainstream
 ARCH ?= x86_64
 DRY_RUN ?= true
+# package-uki with DRY_RUN=false: the kernel image to wrap, and an optional initramfs.
+VMLINUZ ?=
+INITRD ?=
 
 .PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
 
@@ -111,12 +114,12 @@ package-deb: ## Package native Debian packages (STREAM=<stream> ARCH=<arch> DRY_
 		./scripts/package-deb.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
 	fi
 
-package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY_RUN=true)
+package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY_RUN=true; DRY_RUN=false needs VMLINUZ=<path>, optional INITRD=<path>)
 	@echo "==> Synthesizing UKI for stream '$(STREAM)' [$(ARCH)]..."
 	@if [ "$(DRY_RUN)" = "true" ]; then \
 		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)" --dry-run; \
 	else \
-		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
+		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)" --vmlinuz="$(VMLINUZ)" $(if $(INITRD),--initrd="$(INITRD)"); \
 	fi
 
 verify-reproducibility: ## Run reproducible build attestation driver (DRY_RUN=true)
