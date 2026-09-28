@@ -21,7 +21,7 @@ LABEL org.opencontainers.image.title="lusoris-kernel-builder" \
       org.opencontainers.image.description="Hermetic multi-architecture Linux kernel compiler and UKI synthesis engine" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/lusoris/lusoris-kernel-forge"
+      org.opencontainers.image.source="https://github.com/cordanaLLM/nucleus"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \

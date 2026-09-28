@@ -1,4 +1,4 @@
-# Test and documentation dependencies for lusoris-kernel-forge verification suite
+# Test and documentation dependencies for the cordanaLLM/nucleus verification suite
 jsonschema>=4.20.0
 pytest>=7.4.0
 pytest-cov>=4.1.0
