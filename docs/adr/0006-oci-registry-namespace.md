@@ -22,7 +22,7 @@ Issue #28 lists this path together with the other identities left over from befo
 ADR-0004 is Accepted, and an Accepted record is immutable ([ADR index](README.md)): a changed decision is recorded by a new ADR that supersedes it. The replacement is also a choice rather than a mechanical rename, because more than one path under the organization is valid:
 
 - OCI repository names are lowercase (the `<name>` grammar of the [OCI Distribution Specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)), so the organization appears in every registry path as `cordanallm`.
-- A repository name may have several path segments below the owner; the existing layout `<registry path>/<stream>-<arch>` already relies on that.
+- A repository name may have several path segments below the owner; the existing layout `<registry path>/<stream>-<arch>` already relies on that. GHCR holds repositories three segments below the owner, the depth the decision below needs: `ghcr.io/homebrew/core/openssl/3` lists its tags to an anonymous client.
 - The sibling repository `cordanaLLM/praetor` names its image repository after its repository identity in lowercase, `ghcr.io/cordanallm/praetor` (decision 5 of its ADR-0013).
 
 No workflow pushes to a registry today. `publish-release.yml` publishes GitHub Release assets, and `oras push` appears only as an example in [Packaging](../packaging.md), section 5.2. The path is decided now so that the first workflow that pushes has a path to use.
@@ -33,7 +33,7 @@ No workflow pushes to a registry today. `publish-release.yml` publishes GitHub R
 
 UKI OCI artifacts are published under `ghcr.io/cordanallm/nucleus/kernels`, one OCI repository per stream and architecture, tagged with the package version: `ghcr.io/cordanallm/nucleus/kernels/<stream>-<arch>:<version>`, for example `ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1`.
 
-1. **Prefix**: `ghcr.io/cordanallm/nucleus` is the repository identity `cordanaLLM/nucleus` in lowercase. A consumer derives it from the identity it already verifies, the cosign signer and the manifest's `provenance.repository`, without a lookup table. `cordanaLLM/praetor` follows the same rule.
+1. **Prefix**: `ghcr.io/cordanallm/nucleus` is the repository identity `cordanaLLM/nucleus` in lowercase. A consumer derives it from the identity it already verifies, the cosign signer and the manifest's `provenance.repository`, without a lookup table. Praetor's container image follows the same rule; its Helm chart goes to the organization-wide `ghcr.io/cordanallm/charts` (decision 3 of its ADR-0013).
 2. **Layout below the prefix**: the `kernels` segment and the `<stream>-<arch>:<version>` layout are kept from ADR-0004 and [Packaging](../packaging.md), so only the prefix changes.
 3. **Other OCI outputs**: anything else this repository pushes to a registry, such as the builder container defined in `docker/Dockerfile.builder`, goes under the same prefix. That container's `org.opencontainers.image.source` label names `https://github.com/cordanaLLM/nucleus`, the label GHCR reads to connect a package to its repository.
 
@@ -55,6 +55,7 @@ UKI OCI artifacts are published under `ghcr.io/cordanallm/nucleus/kernels`, one 
 
 - References are one segment longer than with `ghcr.io/cordanallm/kernels`.
 - The repository name is part of every artifact reference: renaming the repository again changes the registry path, and consumers have to follow it.
+- Nothing has been pushed under `ghcr.io/cordanallm/nucleus` yet. The anonymous listing in Context shows that GHCR holds names at this depth, not that a workflow in this repository may create packages under the organization; the first workflow that pushes has to show that.
 
 ---
 
