@@ -44,7 +44,8 @@ WORKSTATION_PATH_PATTERNS = [
 
 # Bounds of the payload walk. A tool-call payload nests a few levels deep and holds a
 # few dozen values, far below both. A payload beyond either bound is refused, never
-# passed with values left unscanned.
+# passed with values left unscanned. So is a payload nested so deeply that the JSON
+# decoder gives up (RecursionError); main() refuses that one.
 MAX_SCAN_DEPTH = 64
 MAX_SCAN_VALUES = 100_000
 
@@ -112,8 +113,15 @@ def main() -> int:
         if not raw.strip():
             return 0
         data = json.loads(raw)
-    except Exception:
-        # If payload is empty or not JSON, allow through
+    except RecursionError:
+        # The decoder gave up: the payload is JSON, and nothing in it was scanned.
+        sys.stderr.write(
+            "SECURITY VIOLATION: Payload nests too deeply to decode; "
+            "refusing to pass values that were not scanned\n"
+        )
+        return 1
+    except (ValueError, UnicodeDecodeError):
+        # If payload is empty or not JSON (JSONDecodeError is a ValueError), allow through
         return 0
 
     args = data.get("arguments", {})

@@ -138,6 +138,16 @@ def test_guard_refuses_payload_nested_beyond_the_depth_bound() -> None:
     assert "nests deeper than 64 levels" in result.stderr
 
 
+@pytest.mark.parametrize("leaf", [IP_192, "ok"], ids=["private address", "clean value"])
+def test_guard_refuses_payload_too_deep_for_the_json_decoder(leaf: str) -> None:
+    """json.loads raises RecursionError at this depth; the payload must not pass unscanned."""
+    depth = 100_000
+    payload = '{"arguments": ' + "[" * depth + json.dumps(leaf) + "]" * depth + "}"
+    result = _run(payload)
+    assert result.returncode == 1
+    assert "nests too deeply to decode" in result.stderr
+
+
 def test_scanner_returns_the_violation_instead_of_exiting() -> None:
     guard = _load_guard()
     assert guard.inspect_text("clean") is None
