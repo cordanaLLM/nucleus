@@ -23,7 +23,9 @@
 # actions (./...) are skipped. One line per pin; exit 1 when any pin fails.
 #
 # Needs the gh CLI with a token (GH_TOKEN) and network access, which is why it is
-# `make lint-pins` and not part of the offline `make lint`.
+# `make lint-pins` and not part of the offline `make lint`. When the API refuses a
+# query with HTTP 403 (an organization IP allow list does this even for public
+# repositories), the tag is resolved over anonymous HTTPS git instead.
 # Complies with NASA/JPL Power of 10: short functions (<= 60 lines), bounded loops.
 
 set -euo pipefail
@@ -128,22 +130,50 @@ gh_query() {
   return 1
 }
 
-# Prints the commit that tags/<tag> of <repo> points to, following annotated tags.
-resolve_tag() {
-  local repo="$1" tag="$2" object depth
-  local expr='.object.type + " " + .object.sha'
-  if ! object="$(gh_query "repos/${repo}/git/ref/tags/${tag}" "${expr}")"; then
-    echo "${object}"
+# Resolves tags/<tag> of a public <repo> over anonymous HTTPS git, peeling annotated tags.
+# An organization IP allow list refuses authenticated API calls from outside the list, even
+# for public repositories (aquasecurity does this to the Actions token); anonymous reads of
+# public repositories stay open. Prints "<commit> <note>".
+resolve_tag_anonymously() {
+  local repo="$1" tag="$2" api_error="$3" refs sha ref direct="" peeled=""
+  if ! refs="$(env -u GIT_ASKPASS -u SSH_ASKPASS GIT_TERMINAL_PROMPT=0 git -C / \
+    -c credential.helper= -c core.askPass= -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 \
+    ls-remote "https://github.com/${repo}.git" "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>&1)"; then
+    echo "${api_error}; anonymous git: ${refs%%$'\n'*}"
     return 1
   fi
-  for ((depth = 0; depth < MAX_TAG_DEPTH; depth++)); do
-    if [[ "${object}" != "tag "* ]]; then
-      break
+  while read -r sha ref; do
+    if [[ "${ref}" == "refs/tags/${tag}" ]]; then
+      direct="${sha}"
+    elif [[ "${ref}" == "refs/tags/${tag}^{}" ]]; then
+      peeled="${sha}"
     fi
-    if ! object="$(gh_query "repos/${repo}/git/tags/${object#tag }" "${expr}")"; then
+  done <<<"${refs}"
+  sha="${peeled:-${direct}}"
+  if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "${api_error}; anonymous git lists no tag ${tag}"
+    return 1
+  fi
+  echo "${sha} via anonymous git, the API answered ${api_error%% from *}"
+}
+
+# Prints the commit that tags/<tag> of <repo> points to, following annotated tags.
+resolve_tag() {
+  local repo="$1" tag="$2" object depth endpoint="repos/$1/git/ref/tags/$2"
+  local expr='.object.type + " " + .object.sha'
+  for ((depth = 0; depth <= MAX_TAG_DEPTH; depth++)); do
+    if ! object="$(gh_query "${endpoint}" "${expr}")"; then
+      if [[ "${object}" == "HTTP 403 "* ]]; then
+        resolve_tag_anonymously "${repo}" "${tag}" "${object}"
+        return
+      fi
       echo "${object}"
       return 1
     fi
+    if [[ "${object}" != "tag "* ]]; then
+      break
+    fi
+    endpoint="repos/${repo}/git/tags/${object#tag }"
   done
   if [[ ! "${object}" =~ ^commit\ ([0-9a-f]{40})$ ]]; then
     echo "does not resolve to a commit: ${object}"
@@ -152,27 +182,36 @@ resolve_tag() {
   echo "${BASH_REMATCH[1]}"
 }
 
+# Says whether the pinned commit exists in <repo>, to explain a failed pin.
+describe_commit() {
+  local repo="$1" sha="$2" out
+  if out="$(gh_query "repos/${repo}/commits/${sha}" '.sha')" && [[ "${out}" == "${sha}" ]]; then
+    echo "the pinned commit exists upstream"
+  elif [[ "${out}" == "HTTP 404 "* || "${out}" == "HTTP 422 "* ]]; then
+    echo "the pinned commit does not exist upstream (${out})"
+  else
+    echo "the pinned commit could not be checked (${out})"
+  fi
+}
+
 # Verifies one pin and prints its line; returns 1 when the pin fails.
 check_pin() {
-  local key="$1" repo action sha tag sites tag_sha commit_note
+  local key="$1" repo action sha tag sites resolved tag_sha note=""
   read -r repo action sha tag <<<"${key}"
   sites="${PIN_SITES[${key}]}"
   # A tag of the upstream repository that points to the pinned commit proves the commit
   # exists there, so the commit itself is only queried to explain a failure.
-  if tag_sha="$(resolve_tag "${repo}" "${tag}")" && [[ "${tag_sha}" == "${sha}" ]]; then
-    echo "OK    ${action}@${sha} # ${tag}  [${sites}]"
-    return 0
-  fi
-  if commit_note="$(gh_query "repos/${repo}/commits/${sha}" '.sha')" && [[ "${commit_note}" == "${sha}" ]]; then
-    commit_note="the pinned commit exists upstream"
+  if resolved="$(resolve_tag "${repo}" "${tag}")"; then
+    read -r tag_sha note <<<"${resolved}"
+    if [[ "${tag_sha}" == "${sha}" ]]; then
+      echo "OK    ${action}@${sha} # ${tag}${note:+  (${note})}  [${sites}]"
+      return 0
+    fi
+    resolved="tag ${tag} points to ${tag_sha}${note:+ (${note})}, not to the pin"
   else
-    commit_note="the pinned commit does not exist upstream (${commit_note})"
+    resolved="tag ${tag} not resolved (${resolved})"
   fi
-  if [[ "${tag_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "FAIL  ${action}@${sha} # ${tag}: tag ${tag} points to ${tag_sha}, not to the pin; ${commit_note}  [${sites}]"
-  else
-    echo "FAIL  ${action}@${sha} # ${tag}: tag ${tag} not found (${tag_sha}); ${commit_note}  [${sites}]"
-  fi
+  echo "FAIL  ${action}@${sha} # ${tag}: ${resolved}; $(describe_commit "${repo}" "${sha}")  [${sites}]"
   return 1
 }
 

@@ -1,9 +1,10 @@
-"""Tests for scripts/check-action-pins.sh against a stand-in gh CLI.
+"""Tests for scripts/check-action-pins.sh against stand-in gh and git commands.
 
-The stand-in answers `gh api <endpoint>` from files, so these tests run offline.
-They cover the outcomes the script must tell apart: a tag that points to the
-pinned commit, a pinned commit that does not exist upstream, and a commit that
-exists but belongs to another tag than the comment claims.
+The stand-ins answer `gh api <endpoint>` and `git ls-remote` from files, so these
+tests run offline. They cover the outcomes the script must tell apart: a tag that
+points to the pinned commit, a pinned commit that does not exist upstream, a commit
+that exists but belongs to another tag than the comment claims, and an API refusal
+(HTTP 403 from an organization IP allow list) answered over anonymous git.
 """
 
 from __future__ import annotations
@@ -43,6 +44,31 @@ echo "gh: stand-in failure (HTTP ${code})" >&2
 exit 1
 """
 
+FAKE_GIT = """#!/usr/bin/env bash
+set -euo pipefail
+printf 'git prompt=%s %s\\n' "${GIT_TERMINAL_PROMPT:-unset}" "$*" >>"${FAKE_GH_DIR}/calls.log"
+url=""
+after_ls_remote=0
+for arg in "$@"; do
+  if [[ ${after_ls_remote} -eq 1 ]]; then
+    url="${arg}"
+    break
+  fi
+  if [[ "${arg}" == "ls-remote" ]]; then
+    after_ls_remote=1
+  fi
+done
+repo="${url#https://github.com/}"
+repo="${repo%.git}"
+key="ls-remote__${repo//\\//__}"
+if [[ -n "${repo}" && -f "${FAKE_GH_DIR}/${key}" ]]; then
+  cat "${FAKE_GH_DIR}/${key}"
+  exit 0
+fi
+echo "fatal: could not read Username for 'https://github.com': terminal prompts disabled" >&2
+exit 128
+"""
+
 
 class FakeGitHub:
     """Files under a directory stand in for GitHub API answers."""
@@ -52,12 +78,19 @@ class FakeGitHub:
         self.table.mkdir()
         self.bindir = root / "bin"
         self.bindir.mkdir()
-        gh = self.bindir / "gh"
-        gh.write_text(FAKE_GH, encoding="utf-8")
-        gh.chmod(0o755)
+        for name, script in (("gh", FAKE_GH), ("git", FAKE_GIT)):
+            stand_in = self.bindir / name
+            stand_in.write_text(script, encoding="utf-8")
+            stand_in.chmod(0o755)
 
     def answer(self, endpoint: str, text: str) -> None:
         (self.table / endpoint.replace("/", "__")).write_text(text + "\n", encoding="utf-8")
+
+    def tags(self, repo: str, listing: str) -> None:
+        """What anonymous `git ls-remote https://github.com/<repo>.git` lists."""
+        (self.table / ("ls-remote__" + repo.replace("/", "__"))).write_text(
+            listing + "\n", encoding="utf-8"
+        )
 
     def fail(self, endpoint: str, code: int) -> None:
         (self.table / (endpoint.replace("/", "__") + ".status")).write_text(
@@ -143,15 +176,52 @@ def test_tag_missing_upstream_is_reported(tmp_path, github):
     github.answer(f"repos/o/r/commits/{PINNED}", PINNED)
     result = _run(github, _workflows(tmp_path, ci=f"o/r@{PINNED} # v9.9.9"))
     assert result.returncode == 1
-    assert "tag v9.9.9 not found (HTTP 404" in result.stdout
+    assert "tag v9.9.9 not resolved (HTTP 404" in result.stdout
+    assert not any(call.startswith("git ") for call in github.calls()), "404 is an answer"
 
 
 def test_failed_queries_fail_closed(tmp_path, github):
+    github.fail("repos/o/r/git/ref/tags/v1.0.0", 502)
+    github.fail(f"repos/o/r/commits/{PINNED}", 502)
+    result = _run(github, _workflows(tmp_path, ci=f"o/r@{PINNED} # v1.0.0"))
+    assert result.returncode == 1
+    assert "not resolved (HTTP 502 from repos/o/r/git/ref/tags/v1.0.0)" in result.stdout
+    assert "the pinned commit could not be checked (HTTP 502" in result.stdout
+    assert "OK " not in result.stdout
+
+
+def test_ip_allow_list_refusal_falls_back_to_anonymous_git(tmp_path, github):
+    """An organization IP allow list answers 403 to the Actions token, even for public repos."""
+    github.fail("repos/o/r/git/ref/tags/v0.36.0", 403)
+    github.tags("o/r", f"{TAG_OBJECT}\trefs/tags/v0.36.0\n{PINNED}\trefs/tags/v0.36.0^{{}}")
+    result = _run(github, _workflows(tmp_path, scans=f"o/r@{PINNED} # v0.36.0"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    note = "(via anonymous git, the API answered HTTP 403)"
+    assert f"OK    o/r@{PINNED} # v0.36.0  {note}  [scans.yml:8]" in result.stdout
+    git_calls = [call for call in github.calls() if call.startswith("git ")]
+    assert len(git_calls) == 1
+    assert git_calls[0].startswith("git prompt=0 -C / ")
+    listing = "ls-remote https://github.com/o/r.git refs/tags/v0.36.0 refs/tags/v0.36.0^{}"
+    assert listing in git_calls[0]
+
+
+def test_anonymous_git_answer_is_held_to_the_pin(tmp_path, github):
+    github.fail("repos/o/r/git/ref/tags/v0.36.0", 403)
+    github.fail(f"repos/o/r/commits/{PINNED}", 403)
+    github.tags("o/r", f"{OTHER}\trefs/tags/v0.36.0")
+    result = _run(github, _workflows(tmp_path, scans=f"o/r@{PINNED} # v0.36.0"))
+    assert result.returncode == 1
+    assert f"tag v0.36.0 points to {OTHER} (via anonymous git" in result.stdout
+    assert "the pinned commit could not be checked (HTTP 403" in result.stdout
+
+
+def test_anonymous_git_failure_fails_closed(tmp_path, github):
     github.fail("repos/o/r/git/ref/tags/v1.0.0", 403)
     github.fail(f"repos/o/r/commits/{PINNED}", 403)
     result = _run(github, _workflows(tmp_path, ci=f"o/r@{PINNED} # v1.0.0"))
     assert result.returncode == 1
-    assert "HTTP 403" in result.stdout
+    refusal = "not resolved (HTTP 403 from repos/o/r/git/ref/tags/v1.0.0; anonymous git: fatal"
+    assert refusal in result.stdout
     assert "OK " not in result.stdout
 
 
