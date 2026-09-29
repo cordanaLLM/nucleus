@@ -89,12 +89,13 @@ praetor requires the check of every job that reports on every pull request: the 
 triggers on `pull_request` without a `paths` filter, and the job has no `if:` condition or one
 that holds on every run, such as `always()`. A job its condition skips is reported as
 successful, so a lane that can be skipped is never required. In this revision the ruleset
-requires nine checks:
+requires ten checks:
 
 | Check | Workflow | Reported on |
 | :--- | :--- | :--- |
 | `Praetor Governance` | `ci.yml` | every pull request to `main` |
 | `Lint & Pytest Quality Gates` | `ci.yml` | every pull request to `main` |
+| `UKI Real ukify Build` | `ci.yml` | every pull request to `main` |
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
 | `required-checks` | `required-aggregator.yml` | every pull request |
@@ -104,6 +105,12 @@ requires nine checks:
 `Semgrep SAST` and `Trivy Filesystem CVE Scan` are skipped on pull requests that touch no
 code path, so they are not required on their own; `Security Scan Gate` needs both and fails
 when either failed or was cancelled.
+
+`verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
+lists, so none of its jobs is required: `Verify Downstream Kernel Requirements`, the
+`Resolve KConfig (<stream>)` legs and `Verify Requirements Against the Resolved KConfig`
+report on the pull requests they concern and gate nothing else. `build-matrix.yml` does not
+run on pull requests at all.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:
