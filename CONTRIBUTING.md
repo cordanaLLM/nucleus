@@ -85,6 +85,13 @@ status check the classic branch protection of `main` requires. The praetor rules
 `.github/rulesets/main.json` requires it directly as well once it is applied; see
 [Repository Governance](docs/repository-governance.md#4-branch-ruleset).
 
+**No skip markers.** The gate also refuses a title or body that contains a marker GitHub
+honours to skip workflows: the bracketed forms `skip ci`, `ci skip`, `no ci`, `skip actions`
+and `actions skip`, in any letter case, and a `skip-checks: true` trailer. A squash merge
+turns the title and body into the commit message on `main`, and a marker there starts no
+workflow for that commit, which is how #34's merge landed unverified (#39). To discuss a
+marker, name it without its brackets. This check applies to release pull requests too.
+
 **One waiver exists.** A release pull request is authored by `github-actions[bot]` from a
 generated changelog on a `release-please--branches--*` branch. It cannot satisfy any of the
 three — release-please has no API to assign a milestone, a changelog references no single

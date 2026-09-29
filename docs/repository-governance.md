@@ -117,7 +117,11 @@ produce that:
 
 - A pull request into an `lts-*` branch: `ci.yml` and `codeql.yml` run only for pull requests
   into `main`. No `lts-*` branch exists yet; extend both triggers before one does.
-- A head commit whose message carries `[skip ci]`: GitHub then starts no workflow.
+- A head commit whose message carries a GitHub skip marker (for example the bracketed
+  `skip ci`): GitHub then starts no workflow. On a pull request branch that blocks the merge;
+  on `main` it lands a commit with no verification, because the squash message is the pull
+  request body. `pr-project-gate.yml` therefore refuses a title or body that contains a
+  marker (#39).
 - A workflow change that renames a required job: `make test` fails until `make ruleset` has
   re-rendered the file.
 

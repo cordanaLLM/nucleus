@@ -33,7 +33,18 @@ jobs:
           set -euo pipefail
           echo "==> Validating PR metadata against governance hard gates..."
 
-          # 0. Release automation waiver.
+          # 0. Skip markers.
+          # A squash merge turns the title and body into the commit message on main, and
+          # GitHub skips every push workflow when that message carries one of its skip
+          # markers. Refuse them here, before the release waiver, so no merge can land on
+          # main without verification (issue #39).
+          COMBINED="${PR_TITLE}"$'\n'"${PR_BODY}"
+          if printf '%s\n' "${COMBINED}" | grep -Eqi '\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|^skip-checks:[[:space:]]*true'; then
+            echo "::error::The title or body contains a GitHub skip marker. The squash commit on main would run no workflow; reword it (for example, describe the marker without its brackets)."
+            exit 1
+          fi
+
+          # 0b. Release automation waiver.
           # release-please authors its release pull request from a generated changelog.
           # It has no milestone (the API gives it no way to set one), no issue to
           # reference, and carries only the "autorelease: pending" label, so all three
@@ -58,7 +69,6 @@ jobs:
           fi
 
           # 2. Issue/Epic Reference Check
-          COMBINED="${PR_TITLE}"$'\n'"${PR_BODY}"
           if ! echo "${COMBINED}" | grep -Eqi '(fixes|closes|resolves|relates to|ref)[[:space:]]+(#[0-9]+|[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+#[0-9]+|EPIC-[0-9]+)'; then
             echo "::error::PR description must reference a tracked Issue or Epic (e.g. 'Fixes #123' or 'Relates to EPIC-01')."
             exit 1
