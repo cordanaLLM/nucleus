@@ -541,3 +541,67 @@ def test_actionlint_passes():
     cmd = [actionlint_bin] + [str(w) for w in workflows]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"actionlint failed on workflows:\n{res.stdout}\n{res.stderr}"
+
+
+def _run_metadata_gate(**overrides: str) -> subprocess.CompletedProcess:
+    """Run the metadata gate's script as the runner does, with a complete, valid pull request."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "pr-project-gate.yml").read_text(encoding="utf-8"))
+    step = next(
+        s
+        for s in parsed["jobs"]["validate-metadata"]["steps"]
+        if s.get("name") == "Verify PR Milestone, Issue Reference and Labels"
+    )
+    env = {
+        "PATH": os.environ["PATH"],
+        "PR_NUMBER": "1",
+        "PR_TITLE": "fix(ci): an ordinary change",
+        "PR_BODY": "Fixes #39",
+        "PR_MILESTONE": "v1.0.0-rc1",
+        "PR_LABELS": '["area/ci-cd"]',
+        "PR_AUTHOR": "lusoris",
+        "PR_HEAD_REF": "fix/example",
+    }
+    env.update(overrides)
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-c", step["run"]],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+def test_metadata_gate_passes_a_pull_request_without_skip_markers():
+    """A title and body that name no skip marker pass, so ordinary pull requests are unaffected."""
+    result = _run_metadata_gate()
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "field,text",
+    [
+        ("PR_BODY", "Fixes #39\n\nThe ruleset cannot see a commit marked [skip ci]."),
+        ("PR_BODY", "Fixes #39 [CI SKIP]"),
+        ("PR_BODY", "Fixes #39 [No Ci]"),
+        ("PR_BODY", "Fixes #39 [skip actions]"),
+        ("PR_BODY", "Fixes #39 [actions skip]"),
+        ("PR_BODY", "Fixes #39\n\nskip-checks: true"),
+        ("PR_TITLE", "docs: explain [skip ci]"),
+    ],
+)
+def test_metadata_gate_refuses_a_skip_marker(field, text):
+    """A squash merge would carry the marker into main's commit message and skip every workflow."""
+    result = _run_metadata_gate(**{field: text})
+    assert result.returncode == 1
+    assert "skip marker" in result.stdout + result.stderr
+
+
+def test_release_waiver_does_not_exempt_a_skip_marker():
+    """The release automation waiver covers metadata only; a skip marker is refused for it too."""
+    result = _run_metadata_gate(
+        PR_AUTHOR="github-actions[bot]",
+        PR_HEAD_REF="release-please--branches--main--components--nucleus",
+        PR_BODY="release notes [skip ci]",
+    )
+    assert result.returncode == 1
+    assert "skip marker" in result.stdout + result.stderr
