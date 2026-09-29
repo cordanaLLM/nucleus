@@ -39,8 +39,9 @@ def test_security_hardened_kconfig():
 # --- declared dependencies of the downstream requirement symbols ---------------------------
 # A fragment line survives `make olddefconfig` only when the symbol's Kconfig dependencies
 # are met. These pin the dependencies the fragments declare for symbols the requirement
-# documents ask for. They check declarations, not resolution: only the real build (issue
-# #18) proves that a declared symbol survives.
+# documents ask for. They check declarations, not resolution: the survival check of
+# scripts/merge-config.sh --source-tree, run for every leg by verify-requirements.yml, proves
+# that a declared symbol survives (docs/adr/0008).
 
 
 def test_config_lsm_is_set_once_and_lists_apparmor_and_bpf():
@@ -76,3 +77,19 @@ def test_proc_config_gz_exists_where_a_requirement_can_probe_it():
         config = vkr.read_config(KCONFIG / f"{arch}.config")
         assert config.get("CONFIG_IKCONFIG") == "y", arch
         assert config.get("CONFIG_IKCONFIG_PROC") == "y", arch
+
+
+def test_bbr_is_declared_with_the_menu_it_sits_in():
+    """TCP_CONG_BBR sits inside "if TCP_CONG_ADVANCED"; only the x86_64 defconfig sets it."""
+    for arch in VERSIONS["architectures"]:
+        config = vkr.read_config(KCONFIG / f"{arch}.config")
+        if config.get("CONFIG_TCP_CONG_BBR") in ("y", "m"):
+            assert config.get("CONFIG_TCP_CONG_ADVANCED") == "y", arch
+
+
+def test_a_built_in_virtio_fs_is_declared_with_a_built_in_fuse():
+    """VIRTIO_FS depends on FUSE_FS, and a tristate is capped by what it depends on."""
+    for arch in VERSIONS["architectures"]:
+        config = vkr.read_config(KCONFIG / f"{arch}.config")
+        if config.get("CONFIG_VIRTIO_FS") == "y":
+            assert config.get("CONFIG_FUSE_FS") == "y", arch

@@ -31,9 +31,18 @@ The policy is docs/adr/0007-document-driven-kernel-requirements.md:
 - ``abi.module-abi`` names the release of a built kernel, and none exists before issue
   #18, so a document that sets it fails closed.
 
-The evidence level is ``declared``: the kconfig fragments as scripts/merge-config.sh merges
-them. ``make olddefconfig`` can still drop a symbol whose dependencies are unmet; issue #18
-adds the ``resolved`` level, fed to ``stream_result`` from the built ``.config``.
+Two evidence levels (docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md):
+
+- ``declared``: the kconfig fragments as scripts/merge-config.sh merges them. ``make
+  olddefconfig`` can still drop a symbol whose dependencies are unmet.
+- ``resolved``: for every bound stream, the ``.config`` scripts/merge-config.sh
+  ``--source-tree`` resolves from the stream's verified source, given with
+  ``--resolved-config STREAM:ARCH=PATH``. A bound stream and listed architecture without one
+  fails closed. Unbound streams stay at the declared level, as information.
+
+``--plan`` prints the legs to resolve: every stream on every architecture versions.json builds.
+A resolved .config must name, in its Kconfig header, the architecture and release of the leg it
+is given for.
 """
 
 from __future__ import annotations
@@ -47,9 +56,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+# Downstream contract gates run this script with python3 -I, which keeps the script's own
+# directory off sys.path; the sibling module is therefore located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import versions_query  # noqa: E402
+
 SCHEMA = "aegis.p01-nucleus.kernel-requirement.v1"
 REPORT_SCHEMA = "nucleus.kernel-requirement-report.v1"
 EVIDENCE_LEVEL = "declared"
+RESOLVED_LEVEL = "resolved"
 
 # Bounds of the owner definition, Aegis-OS crates/aegis-fabrica-defs.
 MAX_PAYLOAD_BYTES = 16_384  # payload.rs MAX_PAYLOAD_BYTES, checked before parsing
@@ -190,6 +206,7 @@ class StreamResult:
     bound: bool
     release_ok: bool
     architectures: tuple[ArchitectureResult, ...]
+    evidence: str = EVIDENCE_LEVEL
 
     @property
     def satisfied(self) -> bool:
@@ -617,13 +634,14 @@ def stream_result(
     version: str,
     bound: bool,
     configs: Mapping[str, Mapping[str, str]],
+    evidence: str = EVIDENCE_LEVEL,
 ) -> StreamResult:
     """Evaluate one stream on every architecture the document lists.
 
     ``configs`` maps each architecture this forge builds (x86_64, not x86-64) to the
-    configuration that stands as evidence for it: declared_config today, the resolved
-    .config of a real build once issue #18 lands. A listed architecture with no entry is
-    one this forge does not build, and fails. A repeated architecture is evaluated once.
+    configuration that stands as evidence for it at the ``evidence`` level: declared_config,
+    or the resolved .config. A listed architecture with no entry is one this forge does not
+    build, and fails. A repeated architecture is evaluated once.
     """
     architectures = []
     for token in dict.fromkeys(requirement.architectures):
@@ -635,23 +653,52 @@ def stream_result(
         checks = check_features(requirement.features, config)
         architectures.append(ArchitectureResult(token, arch, checks))
     release_ok = at_least(version, requirement.abi.minimum_release)
-    return StreamResult(stream, version, bound, release_ok, tuple(architectures))
+    return StreamResult(stream, version, bound, release_ok, tuple(architectures), evidence)
 
 
-def evaluate_declared(
+Resolved = Mapping[tuple[str, str], Mapping[str, str]]
+
+
+def built_architectures(requirement: Requirement, versions: Mapping[str, object]) -> list[str]:
+    """The architectures the document lists that this forge builds, as versions.json names them."""
+    built = [ARCHITECTURES[token] for token in dict.fromkeys(requirement.architectures)]
+    return [arch for arch in built if arch in versions["architectures"]]
+
+
+def required_evidence(
+    requirement: Requirement, versions: Mapping[str, object], bound_streams: Sequence[str]
+) -> list[tuple[str, str]]:
+    """The stream and architecture pairs the resolved level needs a .config for."""
+    arches = built_architectures(requirement, versions)
+    streams = [name for name in versions["streams"] if name in bound_streams]
+    return [(stream, arch) for stream in streams for arch in arches]
+
+
+def evaluate_streams(
     requirement: Requirement,
     versions: Mapping[str, object],
     kconfig_dir: Path,
     bound_streams: Sequence[str],
+    resolved: Resolved | None = None,
 ) -> tuple[StreamResult, ...]:
-    """Every stream versions.json publishes, against the fragments declared for it."""
-    built = [ARCHITECTURES[token] for token in dict.fromkeys(requirement.architectures)]
-    built = [arch for arch in built if arch in versions["architectures"]]
+    """Every stream versions.json publishes, each against the evidence that stands for it.
+
+    Without ``resolved`` every stream is judged on its declared fragments. With it, a bound
+    stream is judged on its resolved .config, and an unbound one on its declared fragments,
+    as information.
+    """
+    built = built_architectures(requirement, versions)
     results = []
     for name, stream in versions["streams"].items():
-        configs = {arch: declared_config(kconfig_dir, arch, name) for arch in built}
         bound = name in bound_streams
-        results.append(stream_result(requirement, name, stream["version"], bound, configs))
+        if resolved is not None and bound:
+            configs = {arch: resolved[(name, arch)] for arch in built if (name, arch) in resolved}
+            level = RESOLVED_LEVEL
+        else:
+            configs = {arch: declared_config(kconfig_dir, arch, name) for arch in built}
+            level = EVIDENCE_LEVEL
+        version = stream["version"]
+        results.append(stream_result(requirement, name, version, bound, configs, level))
     return tuple(results)
 
 
@@ -711,8 +758,13 @@ def verify_document(
     kconfig_dir: Path,
     expected_sha256: str | None = None,
     expected_correlation_id: str | None = None,
+    resolved: Resolved | None = None,
 ) -> Outcome:
-    """Parse, evaluate and decide one document; a refused document is REJECTED, not raised."""
+    """Parse, evaluate and decide one document; a refused document is REJECTED, not raised.
+
+    At the resolved level, a bound stream and listed architecture without a resolved .config
+    is an ERROR: the evidence the verdict would rest on is missing, so no verdict is given.
+    """
     try:
         requirement = parse_requirement(raw, expected_sha256)
         if (
@@ -726,7 +778,16 @@ def verify_document(
             )
     except RequirementError as exc:
         return Outcome(source, "REJECTED", error_kind=exc.kind, error=exc.message)
-    results = evaluate_declared(requirement, versions, kconfig_dir, bound_streams)
+    if resolved is not None:
+        missing = [
+            f"{stream}:{arch}"
+            for stream, arch in required_evidence(requirement, versions, bound_streams)
+            if (stream, arch) not in resolved
+        ]
+        if missing:
+            message = f"no resolved configuration for {', '.join(missing)}"
+            return Outcome(source, "ERROR", error_kind="MissingEvidence", error=message)
+    results = evaluate_streams(requirement, versions, kconfig_dir, bound_streams, resolved)
     verdict = decide(requirement, results)
     status = "PASS" if verdict.satisfied else "FAIL"
     return Outcome(source, status, requirement, tuple(bound_streams), results, verdict)
@@ -769,6 +830,7 @@ def _stream_json(result: StreamResult) -> dict[str, object]:
     return {
         "stream": result.stream,
         "version": result.version,
+        "evidence": result.evidence,
         "bound": result.bound,
         "release_ok": result.release_ok,
         "satisfied": result.satisfied,
@@ -828,13 +890,15 @@ def outcome_json(outcome: Outcome) -> dict[str, object]:
     return doc
 
 
-def report_json(outcomes: Sequence[Outcome], revision: str | None) -> dict[str, object]:
+def report_json(
+    outcomes: Sequence[Outcome], revision: str | None, level: str = EVIDENCE_LEVEL
+) -> dict[str, object]:
     """The nucleus.kernel-requirement-report.v1 record: internal, not a contract."""
     passed = all(outcome.status == "PASS" for outcome in outcomes)
     return {
         "schema": REPORT_SCHEMA,
         "nucleus_revision": revision,
-        "evidence_level": EVIDENCE_LEVEL,
+        "evidence_level": level,
         "policy": POLICY,
         "verdict": "PASS" if passed else "FAIL",
         "documents": [outcome_json(outcome) for outcome in outcomes],
@@ -859,7 +923,8 @@ def _stream_lines(result: StreamResult, minimum: str) -> list[str]:
     role = "bound" if result.bound else "not bound, information only"
     release = "meets" if result.release_ok else "is below"
     lines = [
-        f"  {result.stream} {result.version} ({role}): release {release} minimum-release {minimum}"
+        f"  {result.stream} {result.version} ({role}, {result.evidence}): release {release} "
+        f"minimum-release {minimum}"
     ]
     for arch in result.architectures:
         if arch.arch is None:
@@ -915,12 +980,19 @@ def outcome_lines(outcome: Outcome) -> list[str]:
     return lines
 
 
-def header_lines(revision: str | None) -> list[str]:
+_LEVEL_NOTES = {
+    EVIDENCE_LEVEL: "kconfig fragments as scripts/merge-config.sh merges them, before "
+    "make olddefconfig",
+    RESOLVED_LEVEL: "each bound stream's .config, resolved from its verified source by "
+    "scripts/merge-config.sh --source-tree; unbound streams declared",
+}
+
+
+def header_lines(revision: str | None, level: str = EVIDENCE_LEVEL) -> list[str]:
     return [
         f"kernel requirement report ({REPORT_SCHEMA})",
         f"nucleus revision: {revision or 'unrecorded'}",
-        f"evidence level: {EVIDENCE_LEVEL} (kconfig fragments as scripts/merge-config.sh merges "
-        "them; olddefconfig resolution arrives with issue #18)",
+        f"evidence level: {level} ({_LEVEL_NOTES[level]})",
         "policy: every bound stream must hold the document on every listed architecture; "
         "unbound streams are information only",
     ]
@@ -940,6 +1012,12 @@ class Options:
     kconfig_dir: Path
     revision: str | None
     report_json: Path | None
+    resolved: dict[tuple[str, str], dict[str, str]] | None = None
+    plan: Path | None = None
+
+    @property
+    def level(self) -> str:
+        return EVIDENCE_LEVEL if self.resolved is None else RESOLVED_LEVEL
 
 
 def _pairs(values: Sequence[str], flag: str, pattern: re.Pattern[str] | None) -> dict[str, str]:
@@ -987,11 +1065,82 @@ def _parser() -> argparse.ArgumentParser:
         metavar="LABEL=ID",
         help="a dispatched correlation id, which must equal the document's",
     )
+    add(
+        "--resolved-config",
+        action="append",
+        default=[],
+        metavar="STREAM:ARCH=PATH",
+        help="a resolved .config (scripts/merge-config.sh --source-tree); any one of them "
+        "raises the evidence level to resolved",
+    )
+    add(
+        "--plan",
+        type=Path,
+        metavar="PATH",
+        help="write every stream and architecture pair versions.json builds, the legs the "
+        "resolve job resolves, as a GitHub Actions matrix, and verify nothing",
+    )
     add("--kconfig-dir", type=Path, default=Path("kconfig"))
     add("--versions", type=Path, default=Path("versions.json"))
     add("--nucleus-revision", metavar="SHA", help="the nucleus commit being verified")
     add("--report-json", type=Path, metavar="PATH", help="write the JSON report here")
     return parser
+
+
+_RESOLVED_KEY = re.compile(r"([a-z][a-z0-9-]*):([a-z0-9_]+)")
+# The Kconfig main menu title, which every .config Kconfig writes records near its top:
+# "# Linux/$(ARCH) $(KERNELVERSION) Kernel Configuration", ARCH being the make ARCH.
+_CONFIG_HEADER = re.compile(r"# Linux/(\S+) (\S+) Kernel Configuration")
+_HEADER_LINES = 5
+
+
+def resolved_header(path: Path) -> tuple[str, str]:
+    """The make ARCH and the kernelversion a resolved .config names in its Kconfig header."""
+    with path.open(encoding="utf-8") as handle:
+        head = [handle.readline().strip(" \t\r\n") for _ in range(_HEADER_LINES)]
+    for line in head:
+        match = _CONFIG_HEADER.fullmatch(line)
+        if match is not None:
+            return match.group(1), match.group(2)
+    raise ValueError(f"{path}: no '# Linux/<ARCH> <release> Kernel Configuration' header")
+
+
+def _check_resolved_header(key: str, path: Path, versions: Mapping[str, object]) -> None:
+    """Refuses a resolved .config whose header names another architecture or release.
+
+    The label is only what the caller says the file is; the header is what Kconfig wrote.
+    mainstream and realtime share a release, so the header cannot tell those two apart.
+    """
+    stream, arch = key.split(":")
+    expected = (
+        str(versions["architectures"][arch]["kernel_arch"]),
+        versions_query.kernelversion(str(versions["streams"][stream]["version"])),
+    )
+    named = resolved_header(path)
+    if named != expected:
+        raise ValueError(
+            f"--resolved-config {key}: {path} is a Linux/{named[0]} {named[1]} configuration; "
+            f"{key} is Linux/{expected[0]} {expected[1]}"
+        )
+
+
+def _resolved_configs(
+    values: Sequence[str], versions: Mapping[str, object]
+) -> dict[tuple[str, str], dict[str, str]] | None:
+    """--resolved-config values, each read as a .config; None when none is given."""
+    if not values:
+        return None
+    configs: dict[tuple[str, str], dict[str, str]] = {}
+    for key, path in _pairs(values, "--resolved-config", None).items():
+        match = _RESOLVED_KEY.fullmatch(key)
+        if match is None:
+            raise ValueError(f"--resolved-config expects STREAM:ARCH=PATH, got {_shown(key)}")
+        stream, arch = match.groups()
+        if stream not in versions["streams"] or arch not in versions["architectures"]:
+            raise ValueError(f"--resolved-config {key}: versions.json builds no such kernel")
+        _check_resolved_header(key, Path(path), versions)
+        configs[(stream, arch)] = read_config(Path(path))
+    return configs
 
 
 def _options(args: argparse.Namespace) -> Options:
@@ -1008,6 +1157,8 @@ def _options(args: argparse.Namespace) -> Options:
         kconfig_dir=args.kconfig_dir,
         revision=args.nucleus_revision,
         report_json=args.report_json,
+        resolved=_resolved_configs(args.resolved_config, versions),
+        plan=args.plan,
     )
     if args.nucleus_revision is not None and _REVISION.fullmatch(args.nucleus_revision) is None:
         raise ValueError("--nucleus-revision must be a full 40-character commit")
@@ -1049,9 +1200,24 @@ def _run_document(label: str, options: Options) -> Outcome:
             options.kconfig_dir,
             options.digests.get(label),
             options.correlation_ids.get(label),
+            options.resolved,
         )
     except (KconfigError, OSError) as exc:
         return Outcome(source, "ERROR", error_kind=type(exc).__name__, error=str(exc))
+
+
+def resolve_plan(versions: Mapping[str, object]) -> dict[str, list[dict[str, str]]]:
+    """Every stream on every architecture versions.json builds, as a GitHub Actions matrix.
+
+    One entry per stream, in versions.json order, carrying every architecture, space-separated.
+    The documents do not narrow it: resolving is also the survival check of the fragments
+    (docs/adr/0008), and a fragment line that configures nothing fails on its leg whether or
+    not a document binds that stream or lists that architecture. The verdict still reads only
+    a bound stream on a listed architecture (evaluate_streams); the other resolved
+    configurations are checked for their header and otherwise not consulted.
+    """
+    arches = " ".join(versions["architectures"])
+    return {"include": [{"stream": stream, "arches": arches} for stream in versions["streams"]]}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1061,13 +1227,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         options = _options(args)
     except (ValueError, OSError, KeyError) as exc:
         parser.error(str(exc))
+    if options.plan is not None:
+        plan = json.dumps(resolve_plan(options.versions), separators=(",", ":"))
+        options.plan.write_text(plan + "\n", encoding="utf-8")
+        print(plan)
+        return 0
     outcomes = [_run_document(label, options) for label in options.documents]
-    lines = header_lines(options.revision)
+    lines = header_lines(options.revision, options.level)
     for outcome in outcomes:
         lines.extend(outcome_lines(outcome))
     print("\n".join(lines))
     if options.report_json is not None:
-        report = report_json(outcomes, options.revision)
+        report = report_json(outcomes, options.revision, options.level)
         options.report_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return 0 if all(outcome.status == "PASS" for outcome in outcomes) else 1
 

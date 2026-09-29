@@ -80,8 +80,8 @@ execute_build() {
   mkdir -p "${OUTPUT_DIR}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
-    echo "[DRY-RUN] Would fetch kernel.org tarball for ${version}"
-    echo "[DRY-RUN] Would merge kconfig/security-hardened.config, kconfig/${ARCH}.config and kconfig/streams/${STREAM}.config (when present) with scripts/merge-config.sh --stream=${STREAM}"
+    echo "[DRY-RUN] Would fetch and verify the ${STREAM} ${version} source with scripts/fetch-kernel-source.sh --stream=${STREAM}"
+    echo "[DRY-RUN] Would resolve kconfig/security-hardened.config, kconfig/${ARCH}.config and kconfig/streams/${STREAM}.config (when present) against it with scripts/merge-config.sh --source-tree --stream=${STREAM} --arch=${ARCH}"
     echo "[DRY-RUN] Would execute 'make -j\$(nproc) bindeb-pkg LOCALVERSION=-lusoris1'"
     echo "[DRY-RUN] Build simulated successfully."
     return 0

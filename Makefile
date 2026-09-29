@@ -8,7 +8,7 @@ DRY_RUN ?= true
 VMLINUZ ?=
 INITRD ?=
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config package-deb package-uki verify-reproducibility docker-builder clean
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -105,6 +105,12 @@ merge-config: ## Merge the security, architecture and stream kconfig fragments (
 	else \
 		./scripts/merge-config.sh --arch="$(ARCH)" --stream="$(STREAM)"; \
 	fi
+
+fetch-source: ## Fetch and verify a stream's signed kernel source (STREAM=<stream> DEST=<dir, default build/linux-<stream>>)
+	@./scripts/fetch-kernel-source.sh --stream="$(STREAM)" --dest="$(or $(DEST),build/linux-$(STREAM))"
+
+resolve-config: ## Resolve the kconfig against a verified tree and check survival (STREAM=<stream> ARCH=<arch> SOURCE_TREE=<dir>)
+	@./scripts/merge-config.sh --arch="$(ARCH)" --stream="$(STREAM)" --source-tree="$(or $(SOURCE_TREE),build/linux-$(STREAM))"
 
 package-deb: ## Package native Debian packages (STREAM=<stream> ARCH=<arch> DRY_RUN=true)
 	@echo "==> Packaging Debian packages for stream '$(STREAM)' [$(ARCH)]..."

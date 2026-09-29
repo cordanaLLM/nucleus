@@ -18,15 +18,17 @@ as a Unified Kernel Image, and cosign signed the result. Imago verifies these ar
 by digest and provenance before an image consumes them, and that verification would have
 passed on empty files.
 
-The work is issue #18: fetch the pinned tarball, verify it, merge the kconfig fragments,
-run `bindeb-pkg`, and cross-compile for `arm64` and `riscv64`. `AGENTS.md` section 1 has
-the stage-by-stage state and the contract with imago.
+The work is issue #18. Its first part is done: `scripts/fetch-kernel-source.sh` fetches the
+pinned source and verifies its signature, and `scripts/merge-config.sh --source-tree` resolves
+the kconfig fragments against it and refuses a value `olddefconfig` dropped. What remains is to
+run `bindeb-pkg` and cross-compile for `arm64` and `riscv64`. `AGENTS.md` section 1 has the
+stage-by-stage state and the contract with imago.
 
 ---
 
 ## 1. System Role & Ecosystem Topology
 
-`cordanaLLM/nucleus` is the kernel compilation sister repository to `cordanaLLM/imago`. 
+`cordanaLLM/nucleus` is the kernel compilation sister repository to `cordanaLLM/imago`.
 
 Instead of compiling kernels inside image builders (which slows down Packer and wastes CI compute), `cordanaLLM/nucleus` compiles, patches, and packages standardized `.deb` packages for four discrete release channels across `x86_64`, `arm64`, and `riscv64`.
 
@@ -73,10 +75,10 @@ Confirm:
 
 ### Order 3: Inspect Stream Targets in `versions.json`
 Verify the target kernel streams:
-- `bleeding`: Linux 7.3-rc2
-- `mainstream`: Linux 7.2.4
-- `lts`: Linux 6.18.50
-- `realtime`: Linux 7.2-rt
+- `bleeding`: Linux 7.3-rc5, from the signed tag
+- `mainstream`: Linux 7.2.8
+- `lts`: Linux 6.18.54
+- `realtime`: Linux 7.2.8 with the in-tree `PREEMPT_RT`
 
 ---
 
@@ -103,10 +105,11 @@ Verify the target kernel streams:
 3. Commit adhering to Conventional Commits: `feat(patches): add bbrv3 congestion tuning patch for mainstream`.
 
 ### Recipe C: Bumping a Kernel Version
-1. Edit [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) with the new version, tag, and upstream tarball URL.
-2. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/cordanaLLM/nucleus/blob/main/README.md) in the exact same commit.
-3. Validate schema: `make lint && make test`.
-4. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`).
+1. Edit [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json): the new `version` and `tag`, and the `source` with them. For a tarball, the URL, the signature URL and the `sha256`, taken from kernel.org's `sha256sums.asc` after `gpgv` verifies it against the autosigner key in `keys/`; for a release candidate, the tag and the commit `git ls-remote <repository> 'refs/tags/<tag>^{}'` reports. [Kernel Streams](streams.md#3-sources-and-signatures) has the details.
+2. Prove it: `make fetch-source STREAM=<stream>`, then `make resolve-config STREAM=<stream> ARCH=<arch>` for each architecture. A symbol the new release dropped fails the survival check; fix the fragment, never the check.
+3. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/cordanaLLM/nucleus/blob/main/README.md) in the exact same commit.
+4. Validate schema: `make lint && make test`.
+5. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`); `verify-requirements.yml` resolves all twelve stream and architecture legs again.
 
 ---
 

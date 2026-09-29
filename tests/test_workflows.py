@@ -188,6 +188,42 @@ def test_publish_release_guard_passes_with_the_token():
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
 
 
+def test_verify_requirements_resolves_every_leg_from_its_verified_source():
+    """The resolved level: plan, fetch and verify, resolve with the survival check, verify."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
+    jobs = parsed["jobs"]
+    assert "--plan=" in {s.get("name"): s for s in jobs["verify"]["steps"]}[
+        "Plan the Resolved Evidence"
+    ]["run"]
+    resolve = jobs["resolve"]
+    assert resolve["needs"] == "verify" and resolve["container"]["image"] == "ubuntu:26.04"
+    assert resolve["strategy"]["matrix"] == "${{ fromJSON(needs.verify.outputs.plan) }}"
+    steps = {step.get("name", ""): step for step in resolve["steps"]}
+    install = steps["Install the Resolution Toolchain"]["run"]
+    for package in ("dwarves", "gpgv", "gcc-aarch64-linux-gnu", "gcc-riscv64-linux-gnu"):
+        assert package in install, package
+    fetch = steps["Fetch and Verify the Kernel Source"]
+    assert "scripts/fetch-kernel-source.sh" in fetch["run"] and "STREAM" in fetch["env"]
+    # The download is cached in --work and verified again on reuse; the tree is never cached.
+    restore, save = steps["Restore the Source Download"], steps["Save the Source Download"]
+    assert restore["uses"].startswith("actions/cache/restore@")
+    assert save["uses"].startswith("actions/cache/save@")
+    assert restore["with"]["path"] == save["with"]["path"] == ".kernel-source-work"
+    assert f"--work={restore['with']['path']}" in fetch["run"]
+    assert '--dest="${RUNNER_TEMP}/linux-${STREAM}"' in fetch["run"]
+    resolve_step = steps["Resolve the Configuration"]
+    assert "--source-tree=" in resolve_step["run"] and "ARCHES" in resolve_step["env"]
+    for step in resolve["steps"]:
+        assert "${{ matrix" not in step.get("run", ""), step.get("name")
+    verify = {s.get("name", ""): s for s in jobs["verify-resolved"]["steps"]}
+    assert "--resolved-config=" in verify["Verify Requirements Against the Resolved KConfig"]["run"]
+    assert jobs["verify-resolved"]["needs"] == ["verify", "resolve"]
+    for job in jobs.values():
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("actions/checkout@"):
+                assert step["with"]["persist-credentials"] is False, "no job pushes"
+
+
 def test_required_aggregator_contract():
     """Ensure required-aggregator.yml defines the required-checks job."""
     aggregator = WORKFLOWS_DIR / "required-aggregator.yml"

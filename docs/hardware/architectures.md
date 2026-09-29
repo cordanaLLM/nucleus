@@ -17,15 +17,15 @@
 ```mermaid
 graph TD
     SRC["Unified Upstream Source (versions.json)"] --> KCONF_MERGE["scripts/merge-config.sh"]
-    
+
     KCONF_MERGE --> X86_CONF["x86_64 Hardened Config"]
     KCONF_MERGE --> ARM_CONF["arm64 Hardened Config"]
     KCONF_MERGE --> RISCV_CONF["riscv64 Hardened Config"]
-    
+
     X86_CONF --> TOOL_X86["LLVM/Clang 20 (Native/Cross)"]
     ARM_CONF --> TOOL_ARM["LLVM/Clang 20 + aarch64-linux-gnu-binutils"]
     RISCV_CONF --> TOOL_RISCV["LLVM/Clang 20 + riscv64-linux-gnu-binutils"]
-    
+
     TOOL_X86 --> OUT_X86["linux-image-*_amd64.deb / BOOTX64.EFI"]
     TOOL_ARM --> OUT_ARM["linux-image-*_arm64.deb / BOOTAA64.EFI"]
     TOOL_RISCV --> OUT_RISCV["linux-image-*_riscv64.deb / BOOTRISCV64.EFI"]
@@ -56,7 +56,7 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
 - **Memory Management**: 5-level paging enabled (`CONFIG_X86_5LEVEL=y`) supporting up to 4 PB physical memory and 128 PB virtual address space.
 - **Microcode Loader**: Early microcode updating (`CONFIG_MICROCODE=y`) built-in for early speculative execution mitigation (Spectre v2, Retbleed, Downfall, SRSO).
 - **Virtualization Acceleration**: the host hypervisor `CONFIG_KVM=m` with both vendor backends, `CONFIG_KVM_INTEL=m` and `CONFIG_KVM_AMD=m` (imago `FLAVOR-BASE`, Aegis-OS `REQ-BOOT-01`), and device passthrough through `CONFIG_VFIO=m` and `CONFIG_VFIO_PCI=m` behind the Intel and AMD IOMMU drivers.
-- **Requirement Prerequisites** (`kconfig/x86_64.config`): `CONFIG_IKCONFIG_PROC` for the `/proc/config.gz` probe; `CONFIG_DEBUG_KERNEL` and `CONFIG_DEBUG_INFO_DWARF5` so that `CONFIG_DEBUG_INFO_BTF` survives `olddefconfig` (the build host needs pahole 1.22 or newer); `CONFIG_BPF_LSM`; `CONFIG_POWERCAP` with `CONFIG_INTEL_RAPL=m`. The requirement documents and their bindings are in [Kernel Streams](../streams.md#4-consumer-bindings).
+- **Requirement Prerequisites** (`kconfig/x86_64.config`): `CONFIG_IKCONFIG_PROC` for the `/proc/config.gz` probe; `CONFIG_DEBUG_KERNEL` and `CONFIG_DEBUG_INFO_DWARF5` so that `CONFIG_DEBUG_INFO_BTF` survives `olddefconfig` (the build host needs pahole 1.22 or newer); `CONFIG_BPF_LSM`; `CONFIG_POWERCAP` with `CONFIG_INTEL_RAPL=m`. The requirement documents and their bindings are in [Kernel Streams](../streams.md#5-consumer-bindings).
 
 ### 3.2 `arm64` (AArch64)
 - **Architecture Level**: Enforces ARMv8.2-A with Crypto Extensions (`CONFIG_ARM64_CRYPTO=y`, AES/SHA2/SHA3 accelerated via NEON/SVE).
@@ -75,6 +75,7 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
 - **Advanced Interrupt Architecture (AIA)**:
   - `CONFIG_RISCV_AIA=y`: Native message-signaled interrupts (IMSIC) and incoming interrupt controller (APLIC) replacing legacy PLIC bottlenecks.
 - **SBI (Supervisor Binary Interface)**: Compliant with RISC-V SBI v2.0+ specification for system reset, timer, and IPI handling.
+- **KASLR**: `CONFIG_RANDOMIZE_BASE` (the security baseline) depends on `CONFIG_RELOCATABLE` on riscv since Linux 7.2, and the riscv defconfig leaves it unset, so `kconfig/riscv64.config` declares it.
 
 ---
 
@@ -100,14 +101,14 @@ TARGET_ARCH="arm64"
 CROSS_COMPILE="aarch64-linux-gnu-"
 KERNEL_OUT="/opt/lusoris/build/mainstream-${TARGET_ARCH}"
 
-mkdir -p "${KERNEL_OUT}"
+# Fetch the mainstream source and prove it: pinned sha256 and kernel.org signature
+./scripts/fetch-kernel-source.sh --stream=mainstream --dest=/usr/src/linux
 
-# Merge the security baseline, the arm64 fragment and the stream layer
+# Resolve the configuration: the arm64 defconfig, the fragments through the kernel's
+# merge_config.sh, make olddefconfig, then the survival check. The ARCH, the defconfig and
+# the CROSS_COMPILE prefix come from versions.json architectures.arm64.
 ./scripts/merge-config.sh --arch="${TARGET_ARCH}" --stream=mainstream \
-  --output="${KERNEL_OUT}/.config"
-
-# Generate resolved configuration
-make -C /usr/src/linux O="${KERNEL_OUT}" ARCH="${TARGET_ARCH}" olddefconfig
+  --source-tree=/usr/src/linux --build-dir="${KERNEL_OUT}"
 
 # Compile kernel, modules, and generate Debian packages
 make -C /usr/src/linux \

@@ -29,10 +29,10 @@ flowchart TD
     Patches["Curated Patch Queue<br/><small>patches/*</small>"]:::engine
 
     subgraph Streams["Kernel Release Streams"]
-        Bleeding["bleeding (7.3-rc2)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
-        Mainstream["mainstream (7.2.4)<br/><small>Battlemage Xe2 / ROCm 10</small>"]:::stream
-        LTS["lts (6.18.50)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
-        RT["realtime (7.2-rt)<br/><small>Deterministic Low-Latency</small>"]:::stream
+        Bleeding["bleeding (7.3-rc5)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
+        Mainstream["mainstream (7.2.8)<br/><small>Battlemage Xe2 / ROCm 10</small>"]:::stream
+        LTS["lts (6.18.54)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
+        RT["realtime (7.2.8 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
     end
 
     Downstream["Downstream Image Forge<br/><small>cordanaLLM/imago</small>"]:::dest
@@ -52,10 +52,10 @@ flowchart TD
 
 | Stream | Upstream Base | Target Workloads & Hardware Stack | Default In Flavors |
 | :--- | :--- | :--- | :--- |
-| **`bleeding`** | **Linux 7.3-rc2** | NVIDIA Blackwell RTX 5090 / B200, CXL 3.0, sched-ext, experimental BBRv3 | `*-nvidia-bleeding` |
-| **`mainstream`** | **Linux 7.2.4** | Intel Arc Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610, Podman 5.x | `base-*`, `docker-*`, `ai-infer-*` |
-| **`lts`** | **Linux 6.18.50** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
-| **`realtime`** | **Linux 7.2-rt** | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
+| **`bleeding`** | **Linux 7.3-rc5** | NVIDIA Blackwell RTX 5090 / B200, CXL 3.0, sched-ext, experimental BBRv3 | `*-nvidia-bleeding` |
+| **`mainstream`** | **Linux 7.2.8** | Intel Arc Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610, Podman 5.x | `base-*`, `docker-*`, `ai-infer-*` |
+| **`lts`** | **Linux 6.18.54** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
+| **`realtime`** | **Linux 7.2.8**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
 
 ### Downstream Kernel Requirements
 
@@ -96,6 +96,12 @@ make help
 # Merge the security baseline, architecture and stream fragments (STREAM defaults to mainstream)
 make merge-config ARCH=x86_64 STREAM=realtime
 
+# Fetch a stream's kernel source and prove it (pinned sha256 and kernel.org signature, or the
+# signed release-candidate tag), then resolve the configuration against it and check that every
+# requested value survived make olddefconfig; needs gpgv, gpg, pahole and the cross compilers
+make fetch-source STREAM=realtime
+make resolve-config STREAM=realtime ARCH=arm64
+
 # Package native Debian packages (.deb) with headers
 make package-deb STREAM=mainstream ARCH=x86_64
 
@@ -129,6 +135,7 @@ Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>
 │   ├── principles.md           # Engineering principles & NASA/JPL Power of 10 adaptations
 │   ├── streams.md              # Detailed stream specifications
 │   └── patches.md              # Patch queue management & upstreaming policy
+├── keys/                       # kernel.org signing keys the source verification trusts
 ├── kconfig/                    # Modular kernel configuration fragments
 │   ├── x86_64.config           # AMD64 virtualization & bare-metal baseline
 │   ├── arm64.config            # AArch64 Neoverse & Apple Silicon baseline
@@ -147,7 +154,7 @@ Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>
 
 - **Zero-Leak Invariant**: No RFC 1918 private IPs (`10.x`, `192.168.x`, `172.16-31.x`) or developer workstation paths (`/home/...`) are permitted in tracked files. Placeholders like `192.0.2.x` and `kernel.example.com` must be used.
 - **Power of 10 Compliance**: All shell functions are constrained to $\le 60$ lines with `set -euo pipefail` and zero ShellCheck warnings.
-- **Reproducible Builds**: All kernel compilation scripts pin exact upstream tarball checksums declared in `versions.json`.
+- **Verified Sources**: Every kernel source is pinned in `versions.json` (a tarball `sha256`, or a tag and its commit) and used only after its kernel.org signature verifies against a key in `keys/` that the stream lists (`scripts/fetch-kernel-source.sh`, [ADR-0008](docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md)).
 
 ---
 

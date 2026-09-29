@@ -10,7 +10,7 @@ The **CIS Distribution-Independent Linux Benchmark** categorizes security config
 - **Level 1 (Basic / Operational)**: Prudent security baselines achievable with minimal performance impact and broad software compatibility.
 - **Level 2 (High-Security / Defense-in-Depth)**: Specialized security controls for high-assurance, multi-tenant environments where attack surface minimization supersedes legacy backwards compatibility.
 
-In `cordanaLLM/nucleus`, kernel configuration fragments (`kconfig/security-hardened.config` and `kconfig/base.config`) directly enforce CIS Level 2 requirements at compile time, guaranteeing that unauthorized features cannot be activated even if requested by user-space binaries.
+In `cordanaLLM/nucleus`, kernel configuration fragments (`kconfig/security-hardened.config` and the architecture fragments, resolved onto the architecture's defconfig and checked for survival by `scripts/merge-config.sh --source-tree`) directly enforce CIS Level 2 requirements at compile time, guaranteeing that unauthorized features cannot be activated even if requested by user-space binaries.
 
 ```mermaid
 graph TD

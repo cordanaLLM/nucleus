@@ -15,12 +15,28 @@
 #
 # scripts/merge-config.sh — Composable KConfig Fragment Merger
 # Complies with NASA/JPL Power of 10: functions <= 60 lines, checked returns.
+#
+# Two modes:
+#   fragments    merge the fragments alone into one declared configuration (the default).
+#   source tree  with --source-tree, resolve the fragments against a kernel tree: the
+#                architecture's defconfig, then scripts/kconfig/merge_config.sh -m with the
+#                fragments, then make olddefconfig, then the survival check
+#                (scripts/kconfig_survival.py), which refuses the result when a requested
+#                value did not survive. A run that does not finish leaves no configuration
+#                behind, neither at the output path nor in the build directory.
+#                docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md.
 set -euo pipefail
 
 ARCH="x86_64"
 STREAM=""
 OUTPUT_FILE=""
 DRY_RUN="false"
+SOURCE_TREE=""
+BUILD_DIR=""
+KERNEL_ARCH=""
+BASE_CONFIG=""
+CROSS_COMPILE=""
+RESOLVED="false"
 declare -a EXTRA_FRAGMENTS=()
 
 # The fragment grammar, shared with read_config() in scripts/verify_kernel_requirement.py.
@@ -66,13 +82,19 @@ Options:
   --arch=<arch>        Target architecture from versions.json [default: x86_64]
   --stream=<stream>    Release stream from versions.json; layers kconfig/streams/<stream>.config
                        after the architecture fragment when that file exists [default: none]
-  --output=<path>      Output path for merged .config [default: output/.config-<arch>]
+  --output=<path>      Output path for merged .config [default: output/.config-<arch>, or
+                       output/kernel-<stream>-<arch>.config with --source-tree]
   --dry-run            Simulate configuration merge without writing target file
+  --source-tree=<dir>  Resolve against this verified kernel tree (scripts/fetch-kernel-source.sh);
+                       needs --stream, make, flex, bison, bc, pahole and the architecture's
+                       cross toolchain from versions.json
+  --build-dir=<dir>    The O= directory of the resolution [default: output/kbuild-<stream>-<arch>]
   -h, --help           Show this help message
 
 Fragments merge in this order, the last assignment of a symbol winning:
   kconfig/security-hardened.config, kconfig/<arch>.config, kconfig/streams/<stream>.config,
   then each extra fragment. The output is byte-reproducible: sorted by symbol, no timestamp.
+With --source-tree the output is the resolved .config, which carries no timestamp either.
 EOF
 }
 
@@ -95,7 +117,15 @@ parse_arguments() {
         DRY_RUN="true"
         shift
         ;;
-      -h|--help)
+      --source-tree=*)
+        SOURCE_TREE="${1#*=}"
+        shift
+        ;;
+      --build-dir=*)
+        BUILD_DIR="${1#*=}"
+        shift
+        ;;
+      -h | --help)
         show_usage
         exit 0
         ;;
@@ -178,7 +208,7 @@ merge_fragments() {
     if [[ -n "${body}" ]]; then
       printf '%s\n' "${body}"
     fi
-  } > "${target_out}"
+  } >"${target_out}"
 }
 
 verify_security_symbols() {
@@ -200,9 +230,127 @@ verify_security_symbols() {
   echo "    ✓ Security baseline symbols verified in ${config_path}"
 }
 
+# Reads the architecture's ARCH, base defconfig and toolchain prefix from versions.json.
+load_arch_data() {
+  local output line
+  if ! output="$(python3 scripts/versions_query.py arch "${ARCH}")"; then
+    echo "Error: versions.json declares no build data for ${ARCH}" >&2
+    return 1
+  fi
+  while IFS= read -r line; do
+    case "${line%%=*}" in
+      kernel_arch) KERNEL_ARCH="${line#*=}" ;;
+      base_config) BASE_CONFIG="${line#*=}" ;;
+      cross_compile) CROSS_COMPILE="${line#*=}" ;;
+      *) ;;
+    esac
+  done <<<"${output}"
+}
+
+# Checks what a resolution needs before it starts. pahole is required, not optional:
+# DEBUG_INFO_BTF depends on PAHOLE_VERSION >= 122, and without pahole olddefconfig drops BTF
+# and SCHED_CLASS_EXT with it. The compiler is the one that builds, so compiler-dependent
+# symbols resolve as they will in the build.
+validate_source_tree() {
+  if [[ -z "${STREAM}" ]]; then
+    echo "Error: --source-tree needs --stream" >&2
+    return 1
+  fi
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    echo "Error: --source-tree resolves a configuration; it has no dry run" >&2
+    return 1
+  fi
+  if [[ ! -f "${SOURCE_TREE}/Makefile" || ! -x "${SOURCE_TREE}/scripts/kconfig/merge_config.sh" ]]; then
+    echo "Error: ${SOURCE_TREE} is not a kernel source tree" >&2
+    return 1
+  fi
+  load_arch_data
+  local tool
+  for tool in make gcc flex bison bc pahole "${CROSS_COMPILE}gcc" "${CROSS_COMPILE}ld"; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+      echo "Error: ${tool} is required to resolve the ${ARCH} configuration and is not installed" >&2
+      return 1
+    fi
+  done
+}
+
+kernel_make() {
+  make -s -C "${SOURCE_TREE}" O="${BUILD_DIR}" ARCH="${KERNEL_ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" "$@"
+}
+
+# The tree must be the release versions.json names for the stream.
+check_tree_release() {
+  local expected found
+  expected="$(python3 scripts/versions_query.py source "${STREAM}" | sed -n 's/^kernelversion=//p')"
+  found="$(kernel_make kernelversion)"
+  if [[ -z "${expected}" || "${found}" != "${expected}" ]]; then
+    echo "Error: ${SOURCE_TREE} is kernel ${found}; versions.json names ${expected:-nothing} for ${STREAM}" >&2
+    return 1
+  fi
+}
+
+# An EXIT trap of the source tree mode. A run that did not finish leaves no configuration
+# behind: neither the output file, which an earlier run may have written, nor the build
+# directory's .config, in which a build would otherwise compile a refused configuration.
+discard_unfinished_resolution() {
+  local status=$?
+  if [[ "${RESOLVED}" != "true" ]]; then
+    rm -f "${OUTPUT_FILE}" "${BUILD_DIR}/.config" "${BUILD_DIR}/.config.old"
+  fi
+  return "${status}"
+}
+
+resolve_config() {
+  local -a sources absolute=()
+  mapfile -t sources < <(fragment_sources)
+  if ! awk "${MERGE_AWK}" "${sources[@]}" >/dev/null; then
+    echo "Error: a fragment carries a line that is not kconfig; nothing was resolved" >&2
+    return 1
+  fi
+  local src
+  for src in "${sources[@]}"; do
+    absolute+=("$(realpath "${src}")")
+  done
+  # defconfig writes .config afresh; everything else in the build directory derives from it.
+  # The output of an earlier run goes first, so that only this run can put one there.
+  mkdir -p "${BUILD_DIR}"
+  rm -f "${OUTPUT_FILE}" "${BUILD_DIR}/.config" "${BUILD_DIR}/.config.old"
+  check_tree_release
+  echo "==> Base configuration: make ARCH=${KERNEL_ARCH} ${BASE_CONFIG} (CROSS_COMPILE=${CROSS_COMPILE})"
+  kernel_make "${BASE_CONFIG}"
+  for src in "${sources[@]}"; do
+    echo "==> Merging fragment: ${src}"
+  done
+  # merge_config.sh writes its temporary files to the working directory: the build directory.
+  if ! (cd "${BUILD_DIR}" && "${SOURCE_TREE}/scripts/kconfig/merge_config.sh" -m .config "${absolute[@]}") \
+    >"${BUILD_DIR}/merge_config.log" 2>&1; then
+    cat "${BUILD_DIR}/merge_config.log" >&2
+    return 1
+  fi
+  echo "==> Resolving: make olddefconfig"
+  kernel_make olddefconfig
+  python3 scripts/kconfig_survival.py --config "${BUILD_DIR}/.config" "${sources[@]}"
+  verify_security_symbols "${BUILD_DIR}/.config"
+  mkdir -p "$(dirname "${OUTPUT_FILE}")"
+  cp "${BUILD_DIR}/.config" "${OUTPUT_FILE}"
+  echo "==> Resolved ${STREAM}/${ARCH}, kernelrelease $(kernel_make kernelrelease), written to ${OUTPUT_FILE}"
+  RESOLVED="true"
+}
+
 main() {
   parse_arguments "$@"
   validate_environment
+
+  if [[ -n "${SOURCE_TREE}" ]]; then
+    BUILD_DIR="$(realpath -m "${BUILD_DIR:-output/kbuild-${STREAM}-${ARCH}}")"
+    OUTPUT_FILE="${OUTPUT_FILE:-output/kernel-${STREAM}-${ARCH}.config}"
+    trap discard_unfinished_resolution EXIT
+    validate_source_tree
+    SOURCE_TREE="$(realpath "${SOURCE_TREE}")"
+    echo "==> Resolving the KConfig for stream '${STREAM}', architecture '${ARCH}' against ${SOURCE_TREE}"
+    resolve_config
+    return 0
+  fi
 
   if [[ -z "${OUTPUT_FILE}" ]]; then
     OUTPUT_FILE="output/.config-${ARCH}"

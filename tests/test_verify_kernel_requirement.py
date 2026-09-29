@@ -30,6 +30,7 @@ ROWS = {row["label"]: row for row in VERSIONS["downstream"]["requirements"]}
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import verify_kernel_requirement as vkr  # noqa: E402
+import versions_query as vq  # noqa: E402
 
 CID = "test:decide-0001"
 
@@ -809,3 +810,155 @@ def test_main_refuses_arguments_versions_json_does_not_back(args):
     with pytest.raises(SystemExit) as info:
         vkr.main([*ANCHORS, *args])
     assert info.value.code == 2
+
+
+# --- the resolved evidence level (docs/adr/0008) ----------------------------------------------
+# A resolved .config is what scripts/merge-config.sh --source-tree writes after olddefconfig.
+# Here it is the declared configuration, edited the way olddefconfig can edit it.
+
+
+def _aegis_outcome(resolved):
+    raw = (FIXTURES / "aegis-os.json").read_bytes()
+    row = ROWS["aegis-os"]
+    source = vkr.Source("aegis-os", row["repository"], row["path"], None, None)
+    return vkr.verify_document(source, raw, row["streams"], VERSIONS, KCONFIG, resolved=resolved)
+
+
+def _declared(stream: str, arch: str = "x86_64") -> dict:
+    return vkr.declared_config(KCONFIG, arch, stream)
+
+
+def test_a_bound_stream_is_judged_on_its_resolved_config_and_the_rest_on_declared():
+    outcome = _aegis_outcome({("realtime", "x86_64"): _declared("realtime")})
+    assert outcome.status == "PASS", outcome.verdict
+    levels = {result.stream: result.evidence for result in outcome.results}
+    assert levels["realtime"] == "resolved"
+    assert {level for stream, level in levels.items() if stream != "realtime"} == {"declared"}
+
+
+def test_a_symbol_olddefconfig_dropped_fails_the_resolved_level():
+    resolved = _declared("realtime")
+    del resolved["CONFIG_PREEMPT_RT"]
+    outcome = _aegis_outcome({("realtime", "x86_64"): resolved})
+    assert outcome.status == "FAIL"
+    assert any(
+        "realtime x86_64: CONFIG_PREEMPT_RT" in reason and "observed unrecorded" in reason
+        for reason in outcome.verdict.reasons
+    ), outcome.verdict.reasons
+
+
+def test_a_bound_pair_without_a_resolved_config_is_an_error_not_a_verdict():
+    outcome = _aegis_outcome({("mainstream", "x86_64"): _declared("mainstream")})
+    assert (outcome.status, outcome.error_kind) == ("ERROR", "MissingEvidence")
+    assert outcome.error == "no resolved configuration for realtime:x86_64"
+
+
+def _resolved_file(tmp_path: Path, stream: str, arch: str = "x86_64", header=None) -> Path:
+    """A resolved .config as Kconfig writes it: its header, then the declared symbols."""
+    if header is None:
+        kernel_arch = VERSIONS["architectures"][arch]["kernel_arch"]
+        header = (kernel_arch, vq.kernelversion(VERSIONS["streams"][stream]["version"]))
+    path = tmp_path / f"kernel-{stream}-{arch}.config"
+    lines = ["#", "# Automatically generated file; DO NOT EDIT."]
+    lines.append(f"# Linux/{header[0]} {header[1]} Kernel Configuration")
+    lines.append("#")
+    lines.extend(f"{key}={value}" for key, value in _declared(stream, arch).items())
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_main_reports_the_resolved_level(tmp_path, capsys):
+    configs = []
+    for stream in VERSIONS["streams"]:
+        path = _resolved_file(tmp_path, stream)
+        configs.append(f"--resolved-config={stream}:x86_64={path}")
+    report = tmp_path / "report.json"
+    code = _cli(tmp_path, *configs, f"--report-json={report}")
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "evidence level: resolved" in out
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["evidence_level"] == "resolved"
+    imago = data["documents"][0]["streams"]
+    assert {stream["evidence"] for stream in imago} == {"resolved"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["realtime-x86_64=x.config", "nightly:x86_64=x.config", "realtime:mips=x.config"],
+)
+def test_main_refuses_a_resolved_config_versions_json_does_not_build(tmp_path, value):
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--resolved-config={value}")
+    assert info.value.code == 2
+
+
+def test_main_accepts_resolved_configs_the_documents_do_not_read(tmp_path, capsys):
+    """Every leg is resolved; a leg no document binds or lists is accepted and not consulted."""
+    configs = [
+        f"--resolved-config={stream}:{arch}={_resolved_file(tmp_path, stream, arch)}"
+        for stream in VERSIONS["streams"]
+        for arch in VERSIONS["architectures"]
+    ]
+    code = _cli(tmp_path, *configs)
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "evidence level: resolved" in out
+
+
+def _release(stream: str) -> str:
+    return vq.kernelversion(VERSIONS["streams"][stream]["version"])
+
+
+@pytest.mark.parametrize(
+    ("key", "named"),
+    [
+        ("mainstream:x86_64", ("x86_64", "lts")),
+        ("lts:x86_64", ("arm64", "lts")),
+        ("lts:riscv64", ("riscv64", "lts")),
+    ],
+    ids=["another-release", "another-architecture", "the-name-not-the-make-arch"],
+)
+def test_main_refuses_a_resolved_config_whose_header_names_another_leg(
+    tmp_path, capsys, key, named
+):
+    """The label is what the caller says; the Kconfig header is what the file is."""
+    stream, arch = key.split(":")
+    header = (named[0], _release(named[1]))
+    path = _resolved_file(tmp_path, stream, arch, header=header)
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--resolved-config={key}={path}")
+    assert info.value.code == 2
+    assert f"is a Linux/{header[0]} {header[1]} configuration" in capsys.readouterr().err
+
+
+def test_main_refuses_a_resolved_config_without_a_kconfig_header(tmp_path, capsys):
+    """A declared merge is not a resolved configuration, whatever it is labelled."""
+    path = tmp_path / "declared.config"
+    body = "".join(f"{key}={value}\n" for key, value in _declared("lts").items())
+    path.write_text("# Generated by nucleus scripts/merge-config.sh\n" + body, encoding="utf-8")
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--resolved-config=lts:x86_64={path}")
+    assert info.value.code == 2
+    assert "Kernel Configuration' header" in capsys.readouterr().err
+
+
+def _plan(tmp_path: Path, **documents) -> dict:
+    tmp_path.mkdir(exist_ok=True)
+    plan = tmp_path / "plan.json"
+    assert _cli(tmp_path, f"--plan={plan}", **documents) == 0
+    return json.loads(plan.read_text(encoding="utf-8"))
+
+
+def test_the_plan_is_every_stream_on_every_architecture(tmp_path, capsys):
+    """Resolving is also the survival check, so no leg is left out, bound or listed or not."""
+    arches = " ".join(VERSIONS["architectures"])
+    expected = [{"stream": stream, "arches": arches} for stream in VERSIONS["streams"]]
+    assert _plan(tmp_path) == {"include": expected}
+    assert len(expected) * len(VERSIONS["architectures"]) == 12
+
+
+def test_the_plan_does_not_depend_on_the_documents(tmp_path, capsys):
+    """A refused document narrows nothing: the declared run has already failed on it."""
+    refused = _plan(tmp_path / "refused", imago=_altered("features", [], name="imago.json"))
+    assert refused == _plan(tmp_path / "fixtures")

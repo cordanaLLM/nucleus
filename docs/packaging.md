@@ -47,6 +47,21 @@ flowchart TD
 
 The Linux kernel source tree features native Debian packaging targets (`deb-pkg` and `bindeb-pkg`). We utilize `bindeb-pkg` to avoid generating redundant source Debian tarballs (`.orig.tar.gz`), focusing strictly on binary artifacts.
 
+A package is built from two inputs, both produced before anything compiles
+([ADR-0008](adr/0008-signed-kernel-sources-and-resolved-configuration.md)):
+
+1. **A verified source tree**: `scripts/fetch-kernel-source.sh --stream=<stream> --dest=<dir>`
+   checks the pinned `sha256` and the kernel.org signature of a tarball, or `git verify-tag` and
+   the pinned commit of a release-candidate tag, and refuses otherwise.
+2. **A resolved configuration**: `scripts/merge-config.sh --stream=<stream> --arch=<arch>
+   --source-tree=<dir>` applies the architecture defconfig, the fragments and `make
+   olddefconfig`, refuses when a requested value did not survive, and writes
+   `output/kernel-<stream>-<arch>.config`. Its build directory (`--build-dir`) is the `O=`
+   directory of the compile.
+
+Compiling them is the second part of issue #18; until it lands `scripts/build_kernel.sh`
+refuses its production path.
+
 ### 2.1 Invocation & Environment Controls
 Hermetic builds enforce reproducible timestamps and identity metadata:
 ```bash
@@ -68,7 +83,7 @@ The kernel version string is constructed from upstream release plus a determinis
 - Localversion: `-lusoris1-mainstream-amd64`
 - Resulting Kernel Release (`uname -r`): `7.2.4-lusoris1-mainstream-amd64`
 
-This convention prevents collisions with distribution stock kernels (`linux-image-generic`, `linux-image-amd64`) and allows side-by-side installations in `/boot`.
+This convention prevents collisions with distribution stock kernels (`linux-image-generic`, `linux-image-amd64`) and allows side-by-side installations in `/boot`. It is also what tells `mainstream` and `realtime` apart: both resolve from the same 7.2.8 tree, whose `make kernelrelease` is `7.2.8` for either until a localversion is set.
 
 ### 2.3 Module Stripping & Debug Symbols
 Production builds strip debug symbols from in-tree kernel modules before packaging, reducing `linux-image` size from >800MB to ~85MB:
@@ -255,7 +270,7 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) are meant to pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
-`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `kernel-<stream>.config` (the stream-layered merge `scripts/merge-config.sh --stream=<stream>` writes: the security baseline, the architecture fragment, then `kconfig/streams/<stream>.config`, sorted by symbol and without a timestamp, so its digest is reproducible; until issue #18 builds kernels it is the declared merge, not the `olddefconfig`-resolved `.config`), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`. No UKI (`.efi`) is uploaded yet: the workflow uploads no `.efi`, and `SHA256SUMS` covers `*.deb`, `*.json` and `*.config` only because `publish-release.yml` does not call `scripts/package-uki.sh`.
+`publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4) with `*.deb`, `kernel-<stream>.config` (the stream-layered merge `scripts/merge-config.sh --stream=<stream>` writes: the security baseline, the architecture fragment, then `kconfig/streams/<stream>.config`, sorted by symbol and without a timestamp, so its digest is reproducible; until issue #18 builds kernels it is the declared merge, not the `olddefconfig`-resolved `.config` that `scripts/merge-config.sh --source-tree` writes as `output/kernel-<stream>-<arch>.config` and `verify-requirements.yml` already checks), `kernel-<stream>.cdx.json`, `kernel-<stream>.spdx.json`, `SHA256SUMS`, its keyless cosign bundle `SHA256SUMS.bundle`, and `kernel-<stream>.manifest.json`. No UKI (`.efi`) is uploaded yet: the workflow uploads no `.efi`, and `SHA256SUMS` covers `*.deb`, `*.json` and `*.config` only because `publish-release.yml` does not call `scripts/package-uki.sh`.
 
 The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
 
