@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
 Supersedes the OCI destination of [ADR-0004](0004-native-debian-and-uki-dual-packaging.md), `ghcr.io/lusoris/kernels`, in its decision diagram and in section 2 of its decision. The rest of ADR-0004 stands.
 

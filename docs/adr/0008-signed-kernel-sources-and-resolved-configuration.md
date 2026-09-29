@@ -4,9 +4,9 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
-Once accepted, this ADR supersedes two parts of accepted ADRs, and amends one proposed ADR:
+This ADR supersedes two parts of accepted ADRs, and amends ADR-0007:
 
 - [ADR-0001](0001-declarative-kernel-manifest.md), decision item 1: a stream no longer declares
   `tarball_url`; it declares a `source` (section 1), and `architectures` is an object that

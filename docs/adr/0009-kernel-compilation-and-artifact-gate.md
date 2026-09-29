@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
 Once accepted, this ADR supersedes part of an accepted ADR:
 
