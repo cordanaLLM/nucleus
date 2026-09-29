@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Run dry-run simulation instead of full compilation"
+        description: "State what each leg would build instead of compiling it"
         type: boolean
         required: false
         default: false
@@ -21,12 +21,25 @@ concurrency:
 jobs:
   build:
     name: Build Kernel (${{ matrix.stream }} / ${{ matrix.arch }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # arm64 compiles natively on the hosted arm64 runner; riscv64 has no hosted runner and
+    # cross-compiles on x86_64 (docs/adr/0009-kernel-compilation-and-artifact-gate.md).
+    runs-on: ${{ matrix.runner }}
+    # timeout and disk_gib per architecture, from the local builds of 2026-09-29 (32 threads,
+    # cold compiler cache): x86_64 compiled in 2000 to 2600 CPU-seconds with a 5.1 to 5.9 GiB
+    # object tree; arm64 defconfig in 9700 CPU-seconds with an 11 GiB tree; riscv64, which
+    # carries no debug information, in 3300 CPU-seconds with a 1.1 GiB tree. On a 4-vCPU runner
+    # at half the local per-thread speed that is about 25, 80 and 28 minutes of compile; the
+    # limits add the install, the fetch and a margin. disk_gib is the tree plus the source, the
+    # cache and the packages, rounded up. On the hosted runners, with a cold compiler cache, runs
+    # 36504114874 and 36507112520 measured a compile of 1029 to 1208 s on x86_64, 1023 to 1572 s
+    # on riscv64 and 2087 to 2250 s on arm64; the longest whole leg took 40 minutes (arm64).
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
-      contents: write
+      contents: read
     container:
       image: ubuntu:26.04
+      volumes:
+        - /mnt:/mnt
     strategy:
       fail-fast: false
       matrix:
@@ -39,38 +52,131 @@ jobs:
           - x86_64
           - arm64
           - riscv64
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            timeout: 60
+            disk_gib: 10
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            timeout: 90
+            disk_gib: 16
+          - arch: riscv64
+            runner: ubuntu-24.04
+            timeout: 60
+            disk_gib: 8
+    env:
+      STREAM: ${{ matrix.stream }}
+      ARCH: ${{ matrix.arch }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+      CCACHE_MAXSIZE: 700M
+    defaults:
+      run:
+        # The container's default shell is dash; the steps below need bash.
+        shell: bash
 
     steps:
-      - name: Install Build Toolchain Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y --no-install-recommends \
-            build-essential libncurses-dev bison flex libssl-dev libelf-dev \
-            bc fakeroot rsync debhelper kmod python3 git ca-certificates bash
-
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install the Build Toolchain
+        env:
+          WITH_QEMU: ${{ matrix.arch == 'x86_64' && github.event.inputs.dry_run != 'true' }}
+        run: |
+          set -euo pipefail
+          if [[ "${WITH_QEMU}" == "true" ]]; then
+            bash ./scripts/install-build-toolchain.sh --with-qemu
+          else
+            bash ./scripts/install-build-toolchain.sh
+          fi
+
+      # The hosted runners keep a larger scratch disk at /mnt; the build goes wherever there is
+      # more room, and a runner without enough anywhere fails here rather than an hour in.
+      - name: Probe Free Disk Space
+        id: disk
+        if: env.DRY_RUN != 'true'
+        env:
+          NEED_GIB: ${{ matrix.disk_gib }}
+        run: |
+          set -euo pipefail
+          base="$(./scripts/probe-build-space.sh --need-gib="${NEED_GIB}" "${GITHUB_WORKSPACE}" /mnt)"
+          echo "work_dir=${base}/nucleus-build" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore the Compiler Cache
+        if: env.DRY_RUN != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-${{ hashFiles('versions.json', 'kconfig/**') }}
+          restore-keys: |
+            ccache-${{ matrix.stream }}-${{ matrix.arch }}-
 
       - name: Compile Kernel Package
-        # The container's default shell is dash, which cannot parse the array below.
-        shell: bash
+        id: build
         env:
-          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          WORK_DIR: ${{ steps.disk.outputs.work_dir }}
         run: |
-          EXTRA_ARGS=()
-          if [[ "${DRY_RUN_INPUT}" == "true" ]]; then
-            EXTRA_ARGS+=("--dry-run")
+          set -euo pipefail
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            ./scripts/build_kernel.sh --stream="${STREAM}" --arch="${ARCH}" --dry-run
+            exit 0
           fi
-          ./scripts/build_kernel.sh --stream="${{ matrix.stream }}" --arch="${{ matrix.arch }}" "${EXTRA_ARGS[@]}"
+          # In a container job the github.workspace context names the host path; GITHUB_WORKSPACE does not.
+          export PATH="/usr/lib/ccache:${PATH}" CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache"
+          ./scripts/build_kernel.sh --stream="${STREAM}" --arch="${ARCH}" \
+            --work-dir="${WORK_DIR}" --output-dir="output/${STREAM}-${ARCH}"
+          record="${WORK_DIR}/${STREAM}-${ARCH}/build.json"
+          mkdir -p records
+          cp "${record}" "records/build-${STREAM}-${ARCH}.json"
+          python3 - "${record}" >> "${GITHUB_OUTPUT}" <<'PY'
+          import json, sys
+          record = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(f"kernelrelease={record['kernelrelease']}")
+          print(f"config_sha256={record['config_sha256']}")
+          PY
+          ccache --show-stats
+
+      - name: Keep the Build Log
+        if: failure() && steps.disk.outputs.work_dir != ''
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: build-log-${{ matrix.stream }}-${{ matrix.arch }}
+          path: ${{ steps.disk.outputs.work_dir }}/${{ matrix.stream }}-${{ matrix.arch }}/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Save the Compiler Cache
+        if: always() && steps.build.outputs.config_sha256 != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-${{ steps.build.outputs.config_sha256 }}
+
+      # TCG, not KVM: the container has no /dev/kvm, and a boot to userspace takes seconds.
+      - name: Boot the Kernel to Userspace
+        if: matrix.arch == 'x86_64' && env.DRY_RUN != 'true'
+        env:
+          KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+        run: |
+          set -euo pipefail
+          python3 scripts/boot_smoke.py --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
+            --kernelrelease="${KERNELRELEASE}" --timeout=300 --log="records/boot-${STREAM}-${ARCH}.log"
 
       - name: Stage Artifacts and Checksums
+        if: env.DRY_RUN != 'true'
         run: |
-          mkdir -p output
-          ./scripts/publish_release.sh "v${{ matrix.stream }}-$(date +'%Y%m%d')"
+          set -euo pipefail
+          OUTPUT_DIR="output/${STREAM}-${ARCH}" ./scripts/publish_release.sh "build-${STREAM}-${ARCH}"
 
       - name: Upload Build Artifacts
+        if: env.DRY_RUN != 'true'
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: kernel-${{ matrix.stream }}-${{ matrix.arch }}
-          path: output/
+          path: |
+            output/${{ matrix.stream }}-${{ matrix.arch }}/
+            records/
+          if-no-files-found: error
           retention-days: 7

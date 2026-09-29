@@ -103,8 +103,8 @@ with open('${ROOT_DIR}/versions.json') as f:
 ")
 
   for s in ${streams}; do
-    if ! grep -q "\"${s}\"" "${ROOT_DIR}/scripts/build_kernel.sh"; then
-      echo "    Error: Stream '${s}' not registered in scripts/build_kernel.sh"
+    if ! python3 "${ROOT_DIR}/scripts/versions_query.py" --versions="${ROOT_DIR}/versions.json" source "${s}" >/dev/null; then
+      echo "    Error: Stream '${s}' does not resolve to a buildable source (scripts/versions_query.py)"
       return 1
     fi
     if ! grep -qi "${s}" "${ROOT_DIR}/docs/streams.md"; then
@@ -112,7 +112,7 @@ with open('${ROOT_DIR}/versions.json') as f:
       return 1
     fi
   done
-  echo "    ✓ All streams (${streams}) synchronized across manifest, build scripts, and docs."
+  echo "    ✓ All streams (${streams}) synchronized across manifest, build source, and docs."
 }
 
 audit_static_linters() {

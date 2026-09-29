@@ -18,7 +18,8 @@ The shell scripts that fetch and configure a kernel read versions.json through t
 so every value they place on a command line has been checked against its shape first:
 
     versions_query.py source <stream>   the stream's source and the kernelversion it carries
-    versions_query.py arch <arch>       the architecture's ARCH, base defconfig and toolchain
+    versions_query.py arch <arch>       the architecture's ARCH, base defconfig, toolchain and
+                                        Debian architecture
 
 A value outside its shape, an unknown stream or an unknown architecture is refused with
 exit status 2 and nothing on standard output. versions.schema.json states the same shapes
@@ -44,6 +45,7 @@ _VERSION = re.compile(r"([0-9]+)[.]([0-9]+)(?:[.]([0-9]+))?(-rc[0-9]+)?")
 _NAME = re.compile(r"[a-z0-9_]+")
 _DEFCONFIG = re.compile(r"[a-z0-9_]*defconfig")
 _PREFIX = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)*-")
+_DEBIAN_ARCH = re.compile(r"[a-z0-9]+")
 
 _TARBALL_FIELDS = ("url", "signature_url", "sha256")
 _GIT_TAG_FIELDS = ("repository", "tag", "commit")
@@ -122,6 +124,7 @@ def arch_fields(versions: Mapping[str, object], arch: str) -> list[tuple[str, st
         ("kernel_arch", _shaped(entry.get("kernel_arch"), _NAME, f"{where}.kernel_arch")),
         ("base_config", _shaped(entry.get("base_config"), _DEFCONFIG, f"{where}.base_config")),
         ("cross_compile", _shaped(entry.get("cross_compile"), _PREFIX, f"{where}.cross_compile")),
+        ("debian_arch", _shaped(entry.get("debian_arch"), _DEBIAN_ARCH, f"{where}.debian_arch")),
     ]
 
 

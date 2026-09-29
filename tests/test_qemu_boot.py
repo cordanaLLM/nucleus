@@ -1,90 +1,147 @@
-"""Sub-second headless QEMU microVM cold boot verification test suite.
+"""scripts/boot_smoke.py: the initramfs it packs, the verdict it reaches, and its refusals.
 
-Validates direct-kernel-boot execution, console output parsing, and sub-second boot timing.
+These tests are hermetic: QEMU is replaced by a stub that prints a console transcript, and the
+init is a placeholder file, so no kernel and no emulator is needed. The real boot of a built
+kernel runs in the build-matrix workflow on every x86_64 leg, and in the evidence for issue #18.
 """
 
-import shutil
+from __future__ import annotations
+
 import subprocess
-import time
+import sys
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = REPO_ROOT / "scripts" / "boot_smoke.py"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import boot_smoke  # noqa: E402
+
+KR = "7.2.8-lusoris1-mainstream"
+BANNER = f"[    0.000000] Linux version {KR} (nucleus@forge) (x86_64-linux-gnu-gcc 15.2.0) #lusoris1 SMP\n"
+MARKER = f"NUCLEUS-BOOT-SMOKE release={KR}\n"
 
 
-def test_qemu_invocation_parameters():
-    """Ensure microVM direct-kernel-boot parameters adhere to low-latency specifications."""
-    kernel_path = "/tmp/test-vmlinuz"
-    cmd = [
-        "qemu-system-x86_64",
-        "-M", "microvm,x-option-roms=off,pit=off,pic=off,rtc=off",
-        "-kernel", kernel_path,
-        "-append", "console=ttyS0 quiet init=/bin/sh earlyprintk=serial,ttyS0,115200",
-        "-nodefaults",
-        "-no-user-config",
-        "-nographic",
-        "-no-reboot",
+def _read_newc(data: bytes) -> list[tuple[str, int, bytes, tuple[int, int]]]:
+    """Parse a newc archive independently of the writer."""
+    entries, offset = [], 0
+    while True:
+        assert data[offset : offset + 6] == b"070701", offset
+        fields = [int(data[offset + 6 + 8 * i : offset + 14 + 8 * i], 16) for i in range(13)]
+        mode, size, rdev, namesize = fields[1], fields[6], (fields[9], fields[10]), fields[11]
+        name_start = offset + 110
+        name = data[name_start : name_start + namesize - 1].decode()
+        assert data[name_start + namesize - 1] == 0
+        data_start = name_start + namesize + (-(110 + namesize) % 4)
+        assert data_start % 4 == 0
+        body = data[data_start : data_start + size]
+        offset = data_start + size + (-size % 4)
+        if name == "TRAILER!!!":
+            assert offset == len(data)
+            return entries
+        entries.append((name, mode, body, rdev))
+
+
+def test_initramfs_holds_the_init_and_a_console_node():
+    entries = _read_newc(boot_smoke.initramfs(b"\x7fELF-init"))
+    assert [(name, oct(mode)) for name, mode, _, _ in entries] == [
+        ("dev", "0o40755"),
+        ("dev/console", "0o20600"),
+        ("init", "0o100755"),
     ]
-    assert "-M" in cmd
-    assert "microvm" in cmd[2]
-    assert "-nographic" in cmd
-    assert "-no-reboot" in cmd
-    assert any("console=ttyS0" in arg for arg in cmd)
+    assert entries[1][3] == (5, 1)
+    assert entries[2][2] == b"\x7fELF-init"
 
 
-def test_qemu_serial_output_parsing():
-    """Verify kernel boot banner and sub-second timing evaluation."""
-    mock_serial_output = (
-        "[    0.000000] Linux version 7.2.4-lusoris1-mainstream (builder@lusoris) #1 SMP PREEMPT\n"
-        "[    0.001200] Command line: console=ttyS0 quiet init=/bin/sh\n"
-        "[    0.045000] x86/fpu: Supporting XSAVE feature 0x001\n"
-        "[    0.120000] Freeing unused kernel image (initmem) memory: 2048K\n"
-        "[    0.185000] Run /bin/sh as init process\n"
+def test_newc_padding_holds_for_every_length():
+    for length in range(9):
+        entries = _read_newc(boot_smoke.newc_archive([boot_smoke.CpioEntry("f" * (length + 1), 0o100644, b"x" * length)]))
+        assert entries[0][2] == b"x" * length
+
+
+@pytest.mark.parametrize(
+    ("console", "missing"),
+    [
+        (BANNER + MARKER, []),
+        (MARKER, ["no 'Linux version"]),
+        (BANNER, ["init never printed"]),
+        (BANNER.replace(KR, "7.2.80-lusoris1-mainstream") + MARKER, ["no 'Linux version"]),
+        (BANNER + MARKER.replace(KR, "7.2.8-lusoris1-realtime"), ["init never printed"]),
+    ],
+)
+def test_verdict_needs_the_banner_and_the_init_line_for_this_release(console, missing):
+    found = boot_smoke.verdict(console, KR)
+    assert len(found) == len(missing)
+    for text, expected in zip(found, missing, strict=True):
+        assert expected in text
+
+
+def test_the_boot_cannot_hang_or_reboot_into_a_loop():
+    args = boot_smoke._parser().parse_args(["--kernel=/k", f"--kernelrelease={KR}"])
+    command = boot_smoke.qemu_command(args, Path("/initrd"))
+    assert "-no-reboot" in command and "-nographic" in command
+    append = command[command.index("-append") + 1]
+    assert "panic=-1" in append and "console=ttyS0" in append and "rdinit=/init" in append
+    assert command[command.index("-initrd") + 1] == "/initrd"
+    assert args.accel == "tcg" and 1 <= args.timeout <= 3600
+
+
+def _stub(tmp_path: Path, body: str) -> Path:
+    stub = tmp_path / "qemu-stub"
+    stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return stub
+
+
+def _cli(tmp_path: Path, stub: Path, *extra: str):
+    kernel = tmp_path / "vmlinuz"
+    kernel.write_bytes(b"MZ-kernel")
+    init = tmp_path / "init"
+    init.write_bytes(b"\x7fELF")
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), f"--kernel={kernel}", f"--kernelrelease={KR}",
+         f"--qemu={stub}", f"--init-binary={init}", f"--log={tmp_path / 'console.log'}", *extra],
+        capture_output=True, text=True, check=False,
     )
 
-    # Verify banner
-    assert "Linux version" in mock_serial_output
-    assert "7.2.4-lusoris1-mainstream" in mock_serial_output
 
-    # Evaluate boot latency from timestamp delta
-    lines = [l for l in mock_serial_output.splitlines() if l.startswith("[")]
-    last_line = lines[-1]
-    ts_str = last_line.split("]")[0].strip("[").strip()
-    boot_time = float(ts_str)
-    assert boot_time < 1.0, f"Cold boot exceeded 1.0s target: {boot_time}s"
+def test_a_kernel_that_reaches_userspace_passes(tmp_path):
+    stub = _stub(tmp_path, f"printf '%s' '{BANNER}{MARKER}'")
+    result = _cli(tmp_path, stub)
+    assert result.returncode == 0, result.stderr
+    assert f"booted {KR} to userspace" in result.stdout
+    assert MARKER.strip() in (tmp_path / "console.log").read_text(encoding="utf-8")
 
 
-def test_live_qemu_microvm_boot():
-    """Execute live QEMU headless boot if emulator and kernel binary exist."""
-    qemu_bin = shutil.which("qemu-system-x86_64")
-    if not qemu_bin:
-        pytest.skip("qemu-system-x86_64 emulator not installed in test environment")
+def test_a_kernel_that_panics_is_refused(tmp_path):
+    stub = _stub(tmp_path, f"printf '%s' '{BANNER}Kernel panic - not syncing: No working init found.'")
+    result = _cli(tmp_path, stub)
+    assert result.returncode == 1
+    assert "init never printed" in result.stderr and "Kernel panic" in result.stderr
 
-    # Look for compiled kernel in output or /boot
-    candidates = list((REPO_ROOT / "output").glob("**/vmlinuz*")) + list(Path("/boot").glob("vmlinuz*"))
-    readable_candidates = [c for c in candidates if c.is_file()]
-    if not readable_candidates:
-        pytest.skip("No compiled vmlinuz kernel binary available for live boot test")
 
-    target_kernel = readable_candidates[0]
-    cmd = [
-        qemu_bin,
-        "-M", "microvm",
-        "-m", "256M",
-        "-kernel", str(target_kernel),
-        "-append", "console=ttyS0 quiet panic=1 earlyprintk=serial,ttyS0,115200",
-        "-nodefaults",
-        "-nographic",
-        "-no-reboot",
-    ]
+def test_a_kernel_that_hangs_is_killed_at_the_timeout_and_refused(tmp_path):
+    stub = _stub(tmp_path, f"printf '%s' '{BANNER}'; exec sleep 30")
+    result = _cli(tmp_path, stub, "--timeout=1")
+    assert result.returncode == 1
+    assert "QEMU was killed after 1s" in result.stderr
 
-    t0 = time.monotonic()
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-        elapsed = time.monotonic() - t0
-        assert elapsed < 5.0
-    except subprocess.TimeoutExpired:
-        # MicroVM booted and was killed by timeout
-        pass
-    except Exception as e:
-        pytest.skip(f"Live QEMU boot test skipped due to hypervisor permissions: {e}")
+
+def test_the_smoke_test_refuses_to_run_without_qemu(tmp_path):
+    result = _cli(tmp_path, _stub(tmp_path, "exit 0"), "--qemu=/nonexistent/qemu-system-x86_64")
+    assert result.returncode == 2
+    assert "is required for the boot smoke test" in result.stderr
+
+
+def test_the_smoke_test_refuses_an_empty_kernel_image(tmp_path):
+    kernel = tmp_path / "vmlinuz"
+    kernel.write_bytes(b"")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), f"--kernel={kernel}", f"--kernelrelease={KR}",
+         f"--qemu={_stub(tmp_path, 'exit 0')}"],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 2
+    assert "is not a kernel image" in result.stderr

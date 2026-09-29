@@ -79,7 +79,7 @@
       "propertyNames": {"pattern": "^[a-z0-9_]+$"},
       "additionalProperties": {
         "type": "object",
-        "required": ["kernel_arch", "base_config", "cross_compile"],
+        "required": ["kernel_arch", "base_config", "cross_compile", "debian_arch"],
         "additionalProperties": false,
         "properties": {
           "kernel_arch": {"description": "The ARCH= value the kernel build takes.", "type": "string", "pattern": "^[a-z0-9_]+$"},
@@ -88,6 +88,11 @@
             "description": "The CROSS_COMPILE prefix of the GNU toolchain for this architecture. It is set on every host, the native one included, so compiler-dependent symbols resolve against the compiler that builds.",
             "type": "string",
             "pattern": "^[a-z0-9_]+(-[a-z0-9_]+)*-$"
+          },
+          "debian_arch": {
+            "description": "The Debian architecture of the packages bindeb-pkg builds for it; the artifact gate refuses a package of any other.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+$"
           }
         }
       }

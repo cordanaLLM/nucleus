@@ -17,6 +17,8 @@ jobs:
   publish:
     name: Publish Kernel Release & Notify Downstream
     runs-on: ubuntu-latest
+    # One x86_64 kernel compile (see build-matrix.yml for the measurement) plus signing.
+    timeout-minutes: 120
     permissions:
       contents: write
       id-token: write
@@ -39,6 +41,9 @@ jobs:
 
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The kernel build below runs in a container over this checkout; it gets no token.
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -66,32 +71,67 @@ jobs:
           set -euo pipefail
           python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --ref "${GITHUB_REF}" --github-output "${GITHUB_OUTPUT}"
 
-      - name: Package Signed Deb and UKI Binaries
-        env:
-          STREAM: ${{ steps.meta.outputs.stream }}
-          VERSION: ${{ steps.meta.outputs.release_version }}
+      # provenance.revision is the commit the release was built from: the tag's commit, which
+      # the resolver above has made the run's ref.
+      - name: Record the Tagged Revision
+        id: rev
         run: |
           set -euo pipefail
-          mkdir -p output
+          built="$(git rev-parse --verify 'HEAD^{commit}')"
+          tagged="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
+          if [[ "${built}" != "${tagged}" ]]; then
+            echo "::error title=Revision mismatch::checked out ${built}, the run's ref is ${tagged}" >&2
+            exit 1
+          fi
+          echo "revision=${built}" >> "${GITHUB_OUTPUT}"
 
-          # Generate production deb packages
-          ./scripts/build_kernel.sh --stream="${STREAM}" --arch="x86_64"
+      # The kernel compiles in the Ubuntu 26.04 userland build-matrix.yml proves, in a container
+      # that sees neither the job's token nor its OIDC credentials. The v1 artifact contract
+      # (imago.nucleus.kernel-artifact.v1) has no architecture field, so a release is x86_64.
+      - name: Build the Tagged Stream
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          REVISION: ${{ steps.meta.outputs.rev }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${GITHUB_WORKSPACE}:/forge" -v /mnt:/mnt -w /forge \
+            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" ubuntu:26.04 bash -c '
+              set -euo pipefail
+              bash ./scripts/install-build-toolchain.sh
+              base="$(./scripts/probe-build-space.sh /forge /mnt)"
+              status=0
+              ./scripts/build_kernel.sh --stream="${STREAM}" --arch=x86_64 --revision="${REVISION}" \
+                --work-dir="${base}/nucleus-build" --output-dir=output || status=$?
+              mkdir -p output records
+              if [[ -f "${base}/nucleus-build/${STREAM}-x86_64/build.json" ]]; then
+                cp "${base}/nucleus-build/${STREAM}-x86_64/build.json" records/build.json
+              fi
+              chown -R "${HOST_UID}:${HOST_GID}" output records
+              exit "${status}"'
 
+      # The gate runs again, on this host, over exactly the directory that is checksummed and
+      # signed next: every package opened, its version, architecture, kernel and config checked.
+      - name: Gate the Kernel Artifacts
+        id: gate
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          REVISION: ${{ steps.meta.outputs.rev }}
+        run: |
+          set -euo pipefail
+          kernelrelease="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["kernelrelease"])' records/build.json)"
+          python3 scripts/check_kernel_artifacts.py --dir=output --stream="${STREAM}" --arch=x86_64 \
+            --revision="${REVISION}" --kernelrelease="${kernelrelease}"
+          echo "kernelrelease=${kernelrelease}" >> "${GITHUB_OUTPUT}"
 
-          # Ship the merged kconfig the build used; imago pins its digest as kernel.config_digest
-          ./scripts/merge-config.sh --arch=x86_64 --stream="${STREAM}" --output="output/kernel-${STREAM}.config"
-
-          # Generate SBOMs
+      - name: Checksum and Sign the Release
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
           syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"
           syft dir:output/ -o "spdx-json=output/kernel-${STREAM}.spdx.json"
-
-          # Generate Checksums
-          (
-            cd output
-            sha256sum -- *.deb *.json *.config > SHA256SUMS
-          )
-
-          # Keyless Cosign signature
+          OUTPUT_DIR=output ./scripts/publish_release.sh "${RELEASE_TAG}"
           cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
 
       # imago.nucleus.kernel-artifact.v1 is owned by cordanaLLM/imago (pkg/kernel). The manifest
@@ -102,6 +142,8 @@ jobs:
           STREAM: ${{ steps.meta.outputs.stream }}
           VERSION: ${{ steps.meta.outputs.release_version }}
           RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          KERNELRELEASE: ${{ steps.gate.outputs.kernelrelease }}
+          REVISION: ${{ steps.rev.outputs.revision }}
           SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish-release.yml@${{ github.ref }}
         run: |
           set -euo pipefail
@@ -133,15 +175,15 @@ jobs:
               "stream": stream,
               "version": version,
               "kernel": {
-                  "release": version,
-                  "config_digest": "sha256:" + digest(out / f"kernel-{stream}.config"),
+                  "release": os.environ["KERNELRELEASE"],
+                  "config_digest": "sha256:" + digest(out / f"kernel-{stream}-x86_64.config"),
               },
               "artifacts": artifacts,
               "checksums": {"file": "SHA256SUMS", "sha256": digest(out / "SHA256SUMS")},
               "provenance": {
                   "repository": repository,
                   "tag": os.environ["RELEASE_TAG"],
-                  "revision": os.environ["GITHUB_SHA"],
+                  "revision": os.environ["REVISION"],
                   "bundle": "SHA256SUMS.bundle",
                   "signer_identity": os.environ["SIGNER_IDENTITY"],
               },
@@ -157,6 +199,7 @@ jobs:
           tag_name: ${{ steps.meta.outputs.release_tag }}
           files: |
             output/*.deb
+            output/vmlinuz-*
             output/*.config
             output/*.cdx.json
             output/*.spdx.json

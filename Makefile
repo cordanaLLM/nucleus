@@ -7,8 +7,14 @@ DRY_RUN ?= true
 # package-uki with DRY_RUN=false: the kernel image to wrap, and an optional initramfs.
 VMLINUZ ?=
 INITRD ?=
+# build-kernel and package-deb with DRY_RUN=false: a tree fetch-kernel-source.sh verified
+# (build-kernel fetches one when it is empty; package-deb refuses without it).
+SOURCE_TREE ?=
+# boot-smoke: the kernel image to boot and the release it must report.
+KERNEL ?=
+KERNELRELEASE ?=
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -75,9 +81,11 @@ test-coverage: ## Run test suite with coverage report
 	@echo "==> Running test suite with coverage..."
 	@pytest tests/ -v --cov=scripts --cov=tests --cov-report=term-missing
 
-test-boot: ## Run QEMU microVM cold boot verification test suite
-	@echo "==> Running QEMU microVM sub-second cold boot tests..."
+test-boot: ## Run the hermetic tests of the boot smoke test (no QEMU needed)
 	@pytest tests/test_qemu_boot.py -v
+
+boot-smoke: ## Boot a built x86_64 kernel to userspace under QEMU (KERNEL=<vmlinuz> KERNELRELEASE=<release>)
+	@python3 scripts/boot_smoke.py --kernel="$(KERNEL)" --kernelrelease="$(KERNELRELEASE)"
 
 docs-serve: ## Serve documentation portal locally via mkdocs
 	@echo "==> Serving documentation locally at http://127.0.0.1:8000..."
@@ -90,12 +98,12 @@ docs-build: ## Build documentation portal strictly
 audit: ## Run 7-stage repository health quality gate audit
 	@./scripts/audit-repository-health.sh
 
-build-kernel: ## Compile kernel or run dry-run build (STREAM=<stream> ARCH=<arch> DRY_RUN=true)
+build-kernel: ## Compile a stream into gated Debian packages, or state the plan (STREAM=<stream> ARCH=<arch> DRY_RUN=true [SOURCE_TREE=<dir>])
 	@echo "==> Invoking kernel build for stream '$(STREAM)' [$(ARCH)]..."
 	@if [ "$(DRY_RUN)" = "true" ]; then \
 		./scripts/build_kernel.sh --stream="$(STREAM)" --arch="$(ARCH)" --dry-run; \
 	else \
-		./scripts/build_kernel.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
+		./scripts/build_kernel.sh --stream="$(STREAM)" --arch="$(ARCH)" $(if $(SOURCE_TREE),--source-tree="$(SOURCE_TREE)"); \
 	fi
 
 merge-config: ## Merge the security, architecture and stream kconfig fragments (ARCH=<arch> STREAM=<stream> DRY_RUN=true)
@@ -112,12 +120,12 @@ fetch-source: ## Fetch and verify a stream's signed kernel source (STREAM=<strea
 resolve-config: ## Resolve the kconfig against a verified tree and check survival (STREAM=<stream> ARCH=<arch> SOURCE_TREE=<dir>)
 	@./scripts/merge-config.sh --arch="$(ARCH)" --stream="$(STREAM)" --source-tree="$(or $(SOURCE_TREE),build/linux-$(STREAM))"
 
-package-deb: ## Package native Debian packages (STREAM=<stream> ARCH=<arch> DRY_RUN=true)
+package-deb: ## Build Debian packages from a verified tree (STREAM=<stream> ARCH=<arch> DRY_RUN=true; DRY_RUN=false needs SOURCE_TREE=<dir>)
 	@echo "==> Packaging Debian packages for stream '$(STREAM)' [$(ARCH)]..."
 	@if [ "$(DRY_RUN)" = "true" ]; then \
 		./scripts/package-deb.sh --stream="$(STREAM)" --arch="$(ARCH)" --dry-run; \
 	else \
-		./scripts/package-deb.sh --stream="$(STREAM)" --arch="$(ARCH)"; \
+		./scripts/package-deb.sh --stream="$(STREAM)" --arch="$(ARCH)" $(if $(SOURCE_TREE),--source-tree="$(SOURCE_TREE)"); \
 	fi
 
 package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY_RUN=true; DRY_RUN=false needs VMLINUZ=<path>, optional INITRD=<path>)

@@ -329,6 +329,7 @@ def test_the_committed_streams_and_architectures_query_cleanly():
             "kernel_arch",
             "base_config",
             "cross_compile",
+            "debian_arch",
         ]
 
 

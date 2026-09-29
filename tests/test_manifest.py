@@ -79,3 +79,8 @@ def test_supported_architectures(manifest_data):
     for arch, data in archs.items():
         assert data["base_config"].endswith("defconfig"), arch
         assert data["cross_compile"].endswith("-linux-gnu-"), arch
+    assert {arch: data["debian_arch"] for arch, data in archs.items()} == {
+        "x86_64": "amd64",
+        "arm64": "arm64",
+        "riscv64": "riscv64",
+    }
