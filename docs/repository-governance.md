@@ -79,9 +79,10 @@ approvals and code-owner review then applies again.
 
 `.github/rulesets/main.json` is the repository ruleset `praetor-main-protection`, rendered by
 `make ruleset` from `.standards.yaml` and the workflows. It targets `main` and every `lts-*`
-branch. **Committing the file does not apply it.** Until it is applied, `main` is protected by
-the classic branch protection alone: the single required check `required-checks`, strict
-up-to-date branches, linear history, no approving review and no signature requirement.
+branch. **Committing the file does not apply it.** It was applied on 2026-09-29 as ruleset
+`24167009` (#26), and the classic branch protection was removed the same day, so the ruleset
+alone protects `main`. After a change to the file, apply it again (section 4) and read it back
+with `gh api repos/cordanaLLM/nucleus/rules/branches/main`.
 
 ### Required checks
 
@@ -141,8 +142,8 @@ in this repository, so the sync writes praetor's default taxonomy of 14 labels t
 creates the missing ones on GitHub; it deletes no label. The description, homepage and
 topics are left alone, because `.standards.yaml` leaves them empty.
 
-GitHub enforces a ruleset and the classic branch protection of the same branch together; where
-both define a rule, the most restrictive one applies. After the ruleset is applied:
+The ruleset is the only protection of `main`: the classic branch protection, which required
+only `required-checks`, was removed on 2026-09-29. Under the ruleset:
 
 - Every commit of a pull request must carry a verified signature, not only the merge result.
 - Review threads must be resolved before a merge.

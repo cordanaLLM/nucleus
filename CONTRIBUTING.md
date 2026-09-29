@@ -80,9 +80,9 @@ sequenceDiagram
 | Issue reference | The title or body must match `fixes`, `closes`, `resolves`, `relates to` or `ref` followed by `#123`, `owner/repo#123`, or `EPIC-01`. |
 | Label | At least one `tier/*` or `area/*` label. |
 
-The gate reports as `Validate PR Milestone & Metadata` and feeds `required-checks`, the single
-status check the classic branch protection of `main` requires. The praetor ruleset committed as
-`.github/rulesets/main.json` requires it directly as well once it is applied; see
+The gate reports as `Validate PR Milestone & Metadata`. It is one of the ten status checks the
+repository ruleset (`.github/rulesets/main.json`, applied to `main`) requires, and it also feeds
+the `required-checks` aggregate; see
 [Repository Governance](docs/repository-governance.md#4-branch-ruleset).
 
 **No skip markers.** The gate also refuses a title or body that contains a marker GitHub

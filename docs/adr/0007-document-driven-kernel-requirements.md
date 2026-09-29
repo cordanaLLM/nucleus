@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
 Once accepted, this ADR supersedes section 2, "Upstream Requirement Verification", of
 [ADR-0005](0005-bidirectional-image-forge-synchronization.md), and Channel 2 of its decision
@@ -13,10 +13,10 @@ Nothing is posted back to a consumer, and this forge holds no token that could p
 result of a run is the nucleus run summary and its `kernel-requirement-report` artifact
 (section 5). Section 1, section 3 and Channel 1 of ADR-0005 stand.
 
-It merges as Proposed, as ADR-0006 did, because two of its questions belong to the contract
-owner, Aegis-OS: the `required-by` grammar and the array form (section 2), and whether a listed
-architecture is a promise or an option (section 3). The owner of this repository moves it to
-Accepted, or to Rejected.
+It merged as Proposed because two of its questions belonged to the contract owner, Aegis-OS:
+the `required-by` grammar and the array form (section 2), and whether a listed architecture is
+a promise or an option (section 3). Aegis-OS answered both on 2026-09-29 (Aegis-OS#167, merged
+as `18c9791`), and the owner of this repository accepted this record the same day.
 
 ---
 
@@ -108,13 +108,13 @@ document is used, decodes it the way the owner does, evaluates every stream and 
 The `required-by` divergence exists because imago's live document names its flavors
 (`FLAVOR-BASE`, `FLAVOR-K8S-NODE`), which the owner's `RequirementId` refuses. It applies to
 every source, Aegis-OS's own document included; every identifier the owner accepts is still
-accepted. It is an open question to Aegis-OS: either the owner widens `required-by`, or imago
-moves to `REQ-` identifiers and this forge narrows back.
+accepted. Aegis-OS resolved it by widening `required-by` to the same grammar (its decision D103,
+Aegis-OS#167); `REQ-` is now enforced only on the documents Aegis-OS itself issues.
 
 The array form is refused here. `deny_unknown_fields` does not apply to a JSON array, so the
 owner's derived decoder accepts a document written as an array of its values, in field order.
-No publisher writes that form, and it is most likely a decoder bug; it is an open question to
-Aegis-OS. Refusing it only narrows what this gate accepts.
+No publisher writes that form. Aegis-OS confirmed it as a decoder bug and now decodes every
+contract struct from a JSON object only (Aegis-OS#167), so both sides refuse it.
 
 `tests/test_verify_kernel_requirement.py` ports the owner's vectors from
 `tests/kernel_requirement.rs` where they apply, and pins both divergences.
@@ -144,8 +144,9 @@ fails, saying so.
 
 The owner's own check against a reference profile accepts a profile whose architecture is any
 listed one (`kernel.rs`, `unmet_identity`). This forge builds for every listed architecture,
-so it requires all of them; whether a listed architecture is a promise or an option is an open
-question to Aegis-OS. Both live documents list only `x86-64`.
+so it requires all of them; Aegis-OS confirmed that a listed
+architecture is a promise and made its own check all-of as well (its decision D104,
+Aegis-OS#167). Both live documents list only `x86-64`.
 
 ### 4. The evidence level is `declared`
 
