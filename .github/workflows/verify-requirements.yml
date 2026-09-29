@@ -188,7 +188,7 @@ jobs:
           retention-days: 30
 
   resolve:
-    name: Resolve KConfig (${{ matrix.stream }})
+    name: Resolve KConfig (${{ matrix.leg.stream }})
     needs: verify
     if: needs.verify.outputs.resolve == 'true'
     runs-on: ubuntu-latest
@@ -196,9 +196,15 @@ jobs:
     container:
       # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
       image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    # One matrix variable, leg, whose values are the plan's include legs ({stream, arches}):
+    # the same legs as `matrix: ${{ fromJSON(needs.verify.outputs.plan) }}`, written so the
+    # pinned praetorctl can parse the file. The praetor commit ci.yml pins (PRAETOR_COMMIT)
+    # decodes strategy.matrix as a mapping and refuses a matrix that is one expression, which
+    # fails `praetorctl sync` in the governance job (docs/repository-governance.md, section 6).
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.verify.outputs.plan) }}
+      matrix:
+        leg: ${{ fromJSON(needs.verify.outputs.plan).include }}
     steps:
       # pahole (dwarves) is required: DEBUG_INFO_BTF depends on it, and SCHED_CLASS_EXT on BTF.
       # The cross compilers resolve arm64 and riscv64 against the compiler that builds them.
@@ -228,7 +234,7 @@ jobs:
         id: source
         shell: bash
         env:
-          STREAM: ${{ matrix.stream }}
+          STREAM: ${{ matrix.leg.stream }}
         run: |
           set -euo pipefail
           pin="$(python3 scripts/versions_query.py source "${STREAM}" |
@@ -246,7 +252,7 @@ jobs:
       - name: Fetch and Verify the Kernel Source
         shell: bash
         env:
-          STREAM: ${{ matrix.stream }}
+          STREAM: ${{ matrix.leg.stream }}
         run: |
           set -euo pipefail
           ./scripts/fetch-kernel-source.sh --stream="${STREAM}" --dest="${RUNNER_TEMP}/linux-${STREAM}" \
@@ -263,8 +269,8 @@ jobs:
       - name: Resolve the Configuration
         shell: bash
         env:
-          STREAM: ${{ matrix.stream }}
-          ARCHES: ${{ matrix.arches }}
+          STREAM: ${{ matrix.leg.stream }}
+          ARCHES: ${{ matrix.leg.arches }}
         run: |
           set -euo pipefail
           read -r -a arches <<< "${ARCHES}"
@@ -277,7 +283,7 @@ jobs:
       - name: Upload the Resolved Configuration
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: resolved-config-${{ matrix.stream }}
+          name: resolved-config-${{ matrix.leg.stream }}
           path: output/kernel-*.config
           if-no-files-found: error
           retention-days: 30

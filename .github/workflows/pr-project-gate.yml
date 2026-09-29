@@ -2,7 +2,7 @@
 name: pr-project-gate
 on:
   pull_request:
-    types: [opened, edited, labeled, unlabeled, synchronize, milestoned]
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize, milestoned]
 
 permissions:
   contents: read

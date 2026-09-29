@@ -38,7 +38,7 @@ sequenceDiagram
     Contributor->>Origin: git push -u origin feat/intel-xe2-bmg
     Contributor->>Origin: gh pr create --fill
     Origin->>CI: Trigger ci.yml & security-scans.yml
-    CI-->>Main: required-checks pass & maintainer approval
+    CI-->>Main: required checks pass, maintainer merges
     Main->>Main: Squash and merge to main
 ```
 
@@ -79,6 +79,24 @@ writes that version into `VERSION`. A kernel is released by a different tag,
 the kernel tag starts `publish-release.yml`, a manual run must start from that tag
 (`--ref`), and the downstream dispatch needs the `KERNEL_FORGE_TOKEN` secret, checked
 before anything is built. [Packaging](../packaging.md) sections 5.4 and 5.5 describe both.
+
+### Agent Context and praetor Governance
+
+`AGENTS.md` is the only hand-edited agent instruction file. `CLAUDE.md`, `.codex/rules.md`,
+`.cursor/rules/hiss-invariants.mdc`, `.gemini/GEMINI.md`, `.github/copilot-instructions.md`
+and `.windsurfrules` are compiled from it: after every change to `AGENTS.md`, run
+`make context` and commit the regenerated files in the same commit. The `Praetor Governance`
+CI job fails when they differ from `AGENTS.md`.
+
+The praetor commit this repository is governed by is pinned in one place, `PRAETOR_COMMIT` in
+`.github/workflows/ci.yml`. `versions.json` pins kernel streams, not tools. To move the pin,
+follow [Moving the pin](../repository-governance.md#moving-the-pin): copy the catalog files
+from the new commit when they changed, regenerate `.standards.lock` in a scratch clone, set
+`PRAETOR_COMMIT` to the full SHA, and run `make governance-check`, `make context`,
+`make ruleset`, `make lint` and `make test`.
+
+A change that adds, removes or renames a job in a workflow that runs on pull requests also
+runs `make ruleset`, because `.github/rulesets/main.json` lists those jobs as required checks.
 
 ---
 

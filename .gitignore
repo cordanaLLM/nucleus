@@ -48,6 +48,10 @@ venv/
 *~
 
 # Worktrees & scratch
+# /.workingdir/ holds agent evidence and session state: the text register block in
+# AGENTS.md routes evidence above its inline bound to .workingdir/evidence/, and
+# praetorctl adopt writes its backups under .workingdir/adopt-backups/.
+/.workingdir/
 .workingdir2/
 .scratch/
 

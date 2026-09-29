@@ -14,7 +14,12 @@ SOURCE_TREE ?=
 KERNEL ?=
 KERNELRELEASE ?=
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean
+# praetorctl built from the commit PRAETOR_COMMIT in .github/workflows/ci.yml names, and a
+# praetor checkout at that commit for the catalog check (docs/repository-governance.md).
+PRAETORCTL ?= praetorctl
+PRAETOR_SRC ?=
+
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean context ruleset governance-check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +56,8 @@ lint: lint-manifest lint-workflows ## Run ShellCheck, Yamllint, Actionlint, and 
 	@if command -v yamllint >/dev/null 2>&1; then \
 		echo "==> Running Yamllint..."; \
 		yamllint -c .yamllint.yml .github/; \
+	else \
+		echo "==> SKIP: yamllint not installed; YAML lint did not run."; \
 	fi
 	@echo "==> All lint checks passed successfully."
 
@@ -61,6 +68,8 @@ lint-workflows: ## Run actionlint on GitHub Actions workflows
 			actionlint .github/workflows/*.yml; \
 		elif [ -x "$$HOME/go/bin/actionlint" ]; then \
 			"$$HOME/go/bin/actionlint" .github/workflows/*.yml; \
+		else \
+			echo "==> SKIP: actionlint not installed; workflow lint did not run."; \
 		fi \
 	fi
 	@echo "==> Workflow linting complete."
@@ -97,6 +106,48 @@ docs-build: ## Build documentation portal strictly
 
 audit: ## Run 7-stage repository health quality gate audit
 	@./scripts/audit-repository-health.sh
+
+context: ## Recompile CLAUDE.md and the other agent context files from AGENTS.md
+	@$(PRAETORCTL) compile-context
+	@$(PRAETORCTL) compile-context --verify
+
+ruleset: ## Re-render .github/rulesets/main.json from .standards.yaml and the workflows (local only)
+	@had_labels=false; \
+	if [ -f .config/labels.yaml ]; then had_labels=true; fi; \
+	if [ -f .github/rulesets/main.json ]; then mv .github/rulesets/main.json .github/rulesets/main.json.bak; fi; \
+	status=0; \
+	$(PRAETORCTL) sync || status=$$?; \
+	if [ "$$had_labels" = false ]; then rm -f .config/labels.yaml; fi; \
+	if [ "$$status" -ne 0 ] && [ -f .github/rulesets/main.json.bak ]; then \
+		mv .github/rulesets/main.json.bak .github/rulesets/main.json; \
+	else \
+		rm -f .github/rulesets/main.json.bak; \
+	fi; \
+	if [ "$$status" -eq 0 ] && [ -n "$$(tail -c 1 .github/rulesets/main.json)" ]; then \
+		echo >> .github/rulesets/main.json; \
+	fi; \
+	exit "$$status"
+
+governance-check: ## Run the praetor checks CI runs (PRAETOR_SRC=<praetor checkout at the pin> adds the catalog checks)
+	@if [ -n "$(PRAETOR_SRC)" ]; then \
+		pin=$$(sed -n 's/^  PRAETOR_COMMIT: "\([0-9a-f]\{40\}\)"$$/\1/p' .github/workflows/ci.yml); \
+		head=$$(git -C "$(PRAETOR_SRC)" rev-parse HEAD); \
+		if [ -z "$$pin" ] || [ "$$head" != "$$pin" ]; then \
+			echo "==> ERROR: PRAETOR_SRC is at '$$head', PRAETOR_COMMIT is '$$pin'." >&2; \
+			exit 1; \
+		fi; \
+		$(PRAETORCTL) plan --catalog-root "$(PRAETOR_SRC)"; \
+	else \
+		echo "==> SKIP: PRAETOR_SRC unset; the catalog check against the praetor pin did not run."; \
+	fi
+	@had_labels=false; \
+	if [ -f .config/labels.yaml ]; then had_labels=true; fi; \
+	status=0; \
+	$(PRAETORCTL) sync $(if $(PRAETOR_SRC),--catalog-root "$(PRAETOR_SRC)") || status=$$?; \
+	if [ "$$had_labels" = false ]; then rm -f .config/labels.yaml; fi; \
+	exit "$$status"
+	@$(PRAETORCTL) plan
+	@$(PRAETORCTL) compile-context --verify
 
 build-kernel: ## Compile a stream into gated Debian packages, or state the plan (STREAM=<stream> ARCH=<arch> DRY_RUN=true [SOURCE_TREE=<dir>])
 	@echo "==> Invoking kernel build for stream '$(STREAM)' [$(ARCH)]..."

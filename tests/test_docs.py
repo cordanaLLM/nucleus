@@ -29,17 +29,37 @@ def test_mkdocs_config_exists():
     assert config.get("site_name") == "nucleus"
 
 
+# Upper bound on the entries one mkdocs nav tree may hold; the walk below is iterative
+# and bounded (HISS-01, HISS-02), and fails instead of truncating when a tree exceeds it.
+MAX_NAV_ENTRIES = 4096
+
+
 def _extract_nav_paths(nav_item):
+    """Return every page path in a mkdocs nav tree, in document order."""
     paths = []
-    if isinstance(nav_item, str):
-        paths.append(nav_item)
-    elif isinstance(nav_item, dict):
-        for val in nav_item.values():
-            paths.extend(_extract_nav_paths(val))
-    elif isinstance(nav_item, list):
-        for item in nav_item:
-            paths.extend(_extract_nav_paths(item))
+    pending = [nav_item]
+    for _ in range(MAX_NAV_ENTRIES):
+        if not pending:
+            return paths
+        item = pending.pop()
+        if isinstance(item, str):
+            paths.append(item)
+        elif isinstance(item, dict):
+            pending.extend(reversed(list(item.values())))
+        elif isinstance(item, list):
+            pending.extend(reversed(item))
+    assert not pending, f"mkdocs nav holds more than {MAX_NAV_ENTRIES} entries"
     return paths
+
+
+def test_extract_nav_paths_keeps_document_order():
+    """The iterative nav walk returns the pages of nested sections in document order."""
+    nav = [
+        "index.md",
+        {"Section": ["a.md", {"Sub": ["b.md", "c.md"]}, "d.md"]},
+        {"Other": "e.md"},
+    ]
+    assert _extract_nav_paths(nav) == ["index.md", "a.md", "b.md", "c.md", "d.md", "e.md"]
 
 
 def test_mkdocs_nav_files_exist():

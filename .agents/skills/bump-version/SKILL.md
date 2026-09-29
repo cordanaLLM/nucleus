@@ -7,7 +7,7 @@ references:
 
 # /bump-version — Version Bump Skill
 
-Execute coordinated kernel stream version bumps across the Single Source of Truth (`versions.json`), schema validators, and documentation portal.
+Execute coordinated kernel stream version bumps across Single Source of Truth (`versions.json`), schema validators, and documentation portal.
 
 ## Usage
 
@@ -35,8 +35,8 @@ make docs-build
    - Confirm official release tag, tarball URL, and checksums.
 
 2. **Update Manifest (`versions.json`)**:
-   - Update `version`, `tag`, and `tarball_url` under the target stream.
-   - Update `metadata.updated` timestamp to the current date (`YYYY-MM-DD`).
+   - Update `version`, `tag`, and `tarball_url` under target stream.
+   - Update `metadata.updated` timestamp to current date (`YYYY-MM-DD`).
 
 3. **Schema & Test Validation**:
    - Run `make lint-manifest` to validate against `versions.schema.json`.
@@ -44,17 +44,19 @@ make docs-build
 
 4. **Synchronize Documentation**:
    - Update `docs/streams.md` with new version details, changelog highlights, and upstream status.
-   - Update stream table in `README.md` in the exact same commit.
+   - Update stream table in `README.md` in same commit.
 
 5. **Commit & Branch**:
    - Commit following Conventional Commits: `chore(versions): bump <stream> kernel to <version>`.
 
 ## Progressive Disclosure & Reference
 
-For the comprehensive version bump verification checklist, consult:
+Full version bump verification checklist:
+
 - [`references/version-bump-checklist.md`](references/version-bump-checklist.md)
 
 ## Invariants to Preserve
+
 1. **SSOT Rule**: Versions must be changed ONLY in `versions.json`. Never hardcode version strings in build scripts.
-2. **Docs Synchrony**: Never bump a version without updating `docs/streams.md` and `README.md` in the same commit.
+2. **Docs Synchrony**: Never bump version without updating `docs/streams.md` and `README.md` in same commit.
 3. **Quality Gates**: All tests must remain green before opening a pull request.

@@ -1,0 +1,76 @@
+{
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/main",
+        "refs/heads/lts-*"
+      ]
+    }
+  },
+  "enforcement": "active",
+  "name": "praetor-main-protection",
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "required_signatures"
+    },
+    {
+      "parameters": {
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      },
+      "type": "pull_request"
+    },
+    {
+      "parameters": {
+        "required_status_checks": [
+          {
+            "context": "Praetor Governance"
+          },
+          {
+            "context": "Lint \u0026 Pytest Quality Gates"
+          },
+          {
+            "context": "UKI Real ukify Build"
+          },
+          {
+            "context": "CodeQL (python)"
+          },
+          {
+            "context": "CodeQL (actions)"
+          },
+          {
+            "context": "Validate PR Milestone \u0026 Metadata"
+          },
+          {
+            "context": "required-checks"
+          },
+          {
+            "context": "Detect Security Scan Paths"
+          },
+          {
+            "context": "Gitleaks History Scan"
+          },
+          {
+            "context": "Security Scan Gate"
+          }
+        ],
+        "strict_required_status_checks_policy": true
+      },
+      "type": "required_status_checks"
+    }
+  ],
+  "target": "branch"
+}

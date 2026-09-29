@@ -1,5 +1,6 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
+import json
 import os
 import re
 import shutil
@@ -12,6 +13,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 BUILD_IMAGE = re.compile(r"ubuntu:26\.04(@sha256:[0-9a-f]{64})?")
+RULESET = REPO_ROOT / ".github" / "rulesets" / "main.json"
+
+# Job conditions that hold on every run that is not cancelled, whitespace removed. The
+# selection below mirrors how praetorctl picks required checks (praetor docs/adoption.md,
+# "Which jobs the ruleset requires") for the workflow shapes this repository uses.
+EVERY_RUN_CONDITIONS = {"always()", "!cancelled()", "success()||failure()", "failure()||success()"}
 
 
 def test_workflows_count():
@@ -327,7 +334,11 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     ]["run"]
     resolve = jobs["resolve"]
     assert resolve["needs"] == "verify" and BUILD_IMAGE.fullmatch(resolve["container"]["image"])
-    assert resolve["strategy"]["matrix"] == "${{ fromJSON(needs.verify.outputs.plan) }}"
+    # One variable whose values are the plan's legs; praetorctl at the pin cannot parse a
+    # matrix that is one expression (docs/repository-governance.md, section 6).
+    assert resolve["strategy"]["matrix"] == {"leg": "${{ fromJSON(needs.verify.outputs.plan).include }}"}
+    assert resolve["name"] == "Resolve KConfig (${{ matrix.leg.stream }})"
+    assert "matrix.stream" not in str(resolve) and "matrix.arches" not in str(resolve)
     steps = {step.get("name", ""): step for step in resolve["steps"]}
     install = steps["Install the Resolution Toolchain"]["run"]
     for package in ("dwarves", "gpgv", "gcc-aarch64-linux-gnu", "gcc-riscv64-linux-gnu"):
@@ -362,6 +373,153 @@ def test_required_aggregator_contract():
     parsed = yaml.safe_load(content)
     assert "jobs" in parsed
     assert "required-checks" in parsed["jobs"], "required-aggregator must define job 'required-checks'"
+
+
+def _security_gate_job():
+    workflow = WORKFLOWS_DIR / "security-scans.yml"
+    parsed = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    return parsed["jobs"], parsed["jobs"]["security-gate"]
+
+
+def test_security_scans_aggregate_contract():
+    """Ensure one always() job in security-scans.yml needs every scan job."""
+    jobs, gate = _security_gate_job()
+    assert str(gate["if"]).strip() == "always()", "the gate must report on every run"
+    assert "continue-on-error" not in gate, "an advisory gate can never fail"
+    scans = sorted(name for name in jobs if name != "security-gate")
+    assert sorted(gate["needs"]) == scans, "the gate must need every other job of the workflow"
+    env = gate["steps"][-1]["env"]
+    for job in scans:
+        assert env[f"{job.upper()}_RESULT"] == f"${{{{ needs.{job}.result }}}}"
+
+
+@pytest.mark.parametrize(
+    ("results", "expected"),
+    [
+        ({"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "success"}, 0),
+        ({"changes": "success", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"}, 0),
+        ({"changes": "success", "semgrep": "failure", "trivy": "skipped", "gitleaks": "success"}, 1),
+        ({"changes": "success", "semgrep": "skipped", "trivy": "cancelled", "gitleaks": "success"}, 1),
+        ({"changes": "failure", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"}, 1),
+        ({"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "failure"}, 1),
+        ({"changes": "cancelled", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "cancelled"}, 1),
+    ],
+)
+def test_security_gate_fails_on_failed_or_cancelled_scans(results, expected):
+    """Run the gate's own script against each combination of scan results."""
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash not found in PATH")
+    _, gate = _security_gate_job()
+    env = {"PATH": "/usr/bin:/bin"}
+    for job, result in results.items():
+        env[f"{job.upper()}_RESULT"] = result
+    res = subprocess.run([bash, "-c", gate["steps"][-1]["run"]], env=env, capture_output=True, text=True)
+    assert res.returncode == expected, f"{results}: {res.stdout}{res.stderr}"
+
+
+def _runs_on_every_pull_request_to_main(parsed):
+    """Whether a workflow triggers on every pull request that targets main."""
+    on = parsed.get("on", parsed.get(True))  # PyYAML reads the bare key `on` as True.
+    if isinstance(on, str):
+        return on == "pull_request"
+    if isinstance(on, list):
+        return "pull_request" in on
+    if not isinstance(on, dict) or "pull_request" not in on:
+        return False
+    trigger = on["pull_request"]
+    if not isinstance(trigger, dict):
+        return True
+    if "paths" in trigger or "paths-ignore" in trigger:
+        return False
+    branches = trigger.get("branches")
+    return branches is None or "main" in branches
+
+
+def _job_contexts(job_id, job):
+    """The check names a job reports on every run, expanding matrix include legs."""
+    condition = "".join(str(job.get("if", "")).replace("${{", "").replace("}}", "").split())
+    if condition and condition not in EVERY_RUN_CONDITIONS:
+        return []
+    if str(job.get("continue-on-error", False)).lower() != "false":
+        return []
+    name = job.get("name", job_id)
+    if "${{" not in name:
+        return [name]
+    legs = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
+    contexts = []
+    for leg in legs:
+        expanded = name
+        for key, value in leg.items():
+            expanded = re.sub(r"\$\{\{\s*matrix\." + re.escape(key) + r"\s*\}\}", str(value), expanded)
+        contexts.append(expanded)
+    return contexts
+
+
+def _checks_reported_on_every_pull_request():
+    reported = set()
+    for workflow in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        parsed = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+        if not _runs_on_every_pull_request_to_main(parsed):
+            continue
+        for job_id, job in parsed["jobs"].items():
+            reported.update(_job_contexts(job_id, job))
+    return reported
+
+
+def test_ruleset_requires_exactly_the_checks_every_pull_request_reports():
+    """A required check that no pull request reports would block every merge.
+
+    .github/rulesets/main.json is rendered by `make ruleset`; re-render it whenever a
+    workflow that runs on pull requests gains, loses or renames a job. This test compares
+    the required check names only. The review counts, signature and history rules, and the
+    review-mode override are checked by the `praetorctl sync` step of the governance job,
+    which fails when the file differs from the policy `.standards.yaml` declares.
+    """
+    ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
+    rules = [rule for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
+    assert len(rules) == 1, "the ruleset must carry one required_status_checks rule"
+    required = [check["context"] for check in rules[0]["parameters"]["required_status_checks"]]
+    reported = _checks_reported_on_every_pull_request()
+    never_reported = sorted(set(required) - reported)
+    assert not never_reported, f"required checks no pull request reports: {never_reported}"
+    not_required = sorted(reported - set(required))
+    assert not not_required, f"ruleset is stale, run `make ruleset`; not required: {not_required}"
+
+
+def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
+    """The praetor pin is one full commit SHA, and CI checks the vendored catalog against it.
+
+    `plan` passes when `.standards.lock` is missing, so the job also runs
+    `praetorctl sync --catalog-root praetor-src`, which fails on a missing lock and on a
+    committed ruleset that differs from the declared policy. It must stay local: `--remote`
+    would write to GitHub from a pull request job.
+    """
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))
+    pin = parsed["env"]["PRAETOR_COMMIT"]
+    assert re.fullmatch(r"[0-9a-f]{40}", pin), f"PRAETOR_COMMIT must be a full commit SHA: {pin}"
+    assert (REPO_ROOT / ".standards.lock").is_file(), ".standards.lock must be committed"
+
+    steps = parsed["jobs"]["governance"]["steps"]
+    for step in steps:
+        uses = step.get("uses", "")
+        if uses.startswith("actions/checkout@"):
+            assert step["with"]["persist-credentials"] is False, f"checkout keeps credentials: {step}"
+    checkout = next(step for step in steps if step.get("with", {}).get("repository") == "cordanaLLM/praetor")
+    assert checkout["with"]["ref"] == "${{ env.PRAETOR_COMMIT }}"
+
+    commands = [step["run"].strip() for step in steps if "run" in step]
+    assert not [command for command in commands if "--remote" in command], "governance job must stay local"
+    order = [
+        "praetorctl plan --catalog-root praetor-src",
+        "praetorctl sync --catalog-root praetor-src",
+        "rm -rf praetor-src",
+        "praetorctl plan",
+        "praetorctl compile-context --verify",
+    ]
+    positions = [commands.index(command) for command in order]
+    assert positions == sorted(positions), f"governance steps out of order: {commands}"
+    assert 'test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_COMMIT}"' in commands[0]
 
 
 def test_actionlint_passes():

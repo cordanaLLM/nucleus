@@ -13,6 +13,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The praetor commit whose praetorctl the governance job builds. The catalog under
+  # .config/archetypes/ must match this commit's copies and .standards.lock must pin
+  # them. Bump it as described in docs/repository-governance.md; versions.json pins
+  # kernel streams, not tools.
+  PRAETOR_COMMIT: "80b228bd067df563ed19155507a30542966c7ffa"
+
 jobs:
   lint-and-test:
     name: Lint & Pytest Quality Gates
@@ -128,3 +135,66 @@ jobs:
           # The real-ukify test skips without ukify or a kernel image; here that would be a
           # silent pass, so every test in the file must have run.
           grep -q 'skipped="0"' "${RUNNER_TEMP}/uki-junit.xml"
+
+  governance:
+    name: Praetor Governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # No credential stays in .git/config while this job runs a binary built from another
+      # repository.
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned praetor source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: cordanaLLM/praetor
+          ref: ${{ env.PRAETOR_COMMIT }}
+          path: praetor-src
+          persist-credentials: false
+
+      - name: Set up the Go toolchain declared by praetor
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: praetor-src/go.mod
+          cache: false
+
+      - name: Build pinned praetorctl
+        env:
+          GOTOOLCHAIN: local
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=readonly
+        run: |
+          set -euo pipefail
+          test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_COMMIT}"
+          mkdir -p "${RUNNER_TEMP}/bin"
+          (cd praetor-src && go mod download && go mod verify \
+            && go build -trimpath -buildvcs=false -o "${RUNNER_TEMP}/bin/praetorctl" ./cmd/standardsctl)
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+
+      # Fails when .standards.lock does not pin the pinned praetor's catalog. The plan step
+      # below fails when the copies under .config/archetypes/ do not match the lock.
+      - name: Verify the lock against the pinned praetor catalog
+        run: praetorctl plan --catalog-root praetor-src
+
+      # plan passes without .standards.lock: it then resolves built-in defaults and reports
+      # the missing lock as drift without failing. sync fails on a missing lock, and it
+      # fails when .github/rulesets/main.json differs from the policy .standards.yaml
+      # declares. It runs locally, without --remote, and only writes .config/labels.yaml into
+      # this workspace.
+      - name: Verify the lock exists and the committed ruleset matches the policy
+        run: praetorctl sync --catalog-root praetor-src
+
+      # The praetor checkout is a build and verification input only; nothing after this
+      # step may read it as nucleus content.
+      - name: Remove the praetor source
+        run: rm -rf praetor-src
+
+      - name: Verify the vendored catalog against the lock and resolve the policy
+        run: praetorctl plan
+
+      - name: Verify the compiled agent context
+        run: praetorctl compile-context --verify
