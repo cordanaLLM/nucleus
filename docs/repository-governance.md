@@ -171,9 +171,12 @@ runs:
    `<!-- caveman:on -->`, the exemption praetor documents for text that must stay in full
    sentences; the Text Register block after it is rendered from `.standards.yaml`.
 
-The lock's `pinned_version: v1.0.0` and the `version: v1.0.0` of each entry are a constant
-that `praetorctl adopt` writes; praetor has no `v1.0.0` tag. They do not name the pin;
-`PRAETOR_COMMIT` does, and the digests hold the catalog to it.
+The lock's `pinned_version` and the `version` of each entry, `v0.0.0+catalog.3536de06c71a`,
+name the catalog content, not a praetor release: `praetorctl adopt` takes the first twelve hex
+digits of a digest over every archetype and facet under praetor's `.config/archetypes/`, so the
+version moves when that catalog changes and stays put when only praetor's code does. No check
+reads it; the digests hold the vendored catalog to the lock. The version does not name the
+pin either; `PRAETOR_COMMIT` does.
 
 ### Building praetorctl at the pin
 
@@ -196,11 +199,14 @@ Pass it to the Makefile targets as `PRAETORCTL=<bin dir>/praetorctl`.
 1. Choose the new praetor commit and build `praetorctl` from it as above.
 2. Compare the five vendored files with praetor's copies at that commit:
    `.config/archetypes/os-image.yaml` and `.config/archetypes/facets/{security-high,api-public,docs-seoportal,agent-sandboxed}.yaml`.
-3. If any differs, copy the five files from praetor and regenerate `.standards.lock` in a
-   scratch clone of this repository, never in your working checkout:
+3. Regenerate `.standards.lock` in a scratch clone of this repository, never in your working
+   checkout:
    `praetorctl adopt --force --profile os-image --lock-source-root <praetor checkout>`.
-   Copy back only `.standards.lock`; adoption rewrites many other files, and none of them
-   belongs to a re-pin. praetor has no lock-only command yet.
+   Copy back the five files if any differs, and `.standards.lock` if it differs from the
+   committed one; the lock can change while the five files do not, because its version
+   covers every archetype and facet in praetor's catalog. Copy back nothing else; adoption
+   rewrites many other files, and none of them belongs to a re-pin. praetor has no lock-only
+   command yet.
 4. Set `PRAETOR_COMMIT` in `.github/workflows/ci.yml` to the full SHA.
 5. Run `make governance-check PRAETOR_SRC=<praetor checkout>`, `make context`,
    `make ruleset`, `make lint` and `make test`, and commit every file they changed.
