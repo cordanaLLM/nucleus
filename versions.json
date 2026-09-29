@@ -112,6 +112,13 @@
           "realtime"
         ]
       }
-    ]
+    ],
+    "requirement_schema": {
+      "repository": "cordanaLLM/Aegis-OS",
+      "path": "build/kernel-requirement.schema.json",
+      "commit": "e3fe08a0eb622b438569198f0679f8ce935533c7",
+      "sha256": "99ece6bacbb1bbd2534bbe9cf073027b2e364e8eb3d329ea68b675e2eca87019",
+      "vendored": "tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json"
+    }
   }
 }

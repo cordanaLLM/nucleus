@@ -74,7 +74,15 @@ python3 scripts/verify_kernel_requirement.py \
   --requirement aegis-os=tests/fixtures/kernel-requirement/aegis-os.json
 ```
 
-The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); the stream fragments and bindings are in [docs/streams.md](docs/streams.md).
+Each fetched document is also read through the JSON Schema Aegis-OS publishes for it, pinned by commit and sha256 in `versions.json` `downstream.requirement_schema`, before the verifier decides; the two readings must agree ([ADR-0010](docs/adr/0010-owner-json-schema-for-requirement-documents.md)). To check the copies under `tests/fixtures/` against the pinned schema:
+
+```bash
+python3 scripts/check_requirement_schema.py check \
+  --requirement imago=tests/fixtures/kernel-requirement/imago.json \
+  --requirement aegis-os=tests/fixtures/kernel-requirement/aegis-os.json
+```
+
+The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); the stream fragments, bindings and the schema pin are in [docs/streams.md](docs/streams.md).
 
 ---
 
