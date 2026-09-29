@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.1.0...nucleus-v0.2.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **forge:** compile every leg and gate its artifacts before signing ([#37](https://github.com/cordanaLLM/nucleus/issues/37))
+* **packaging:** refuse to emit a UKI that is not one ([#27](https://github.com/cordanaLLM/nucleus/issues/27))
+* **release:** make the release path startable and its tags unambiguous ([#33](https://github.com/cordanaLLM/nucleus/issues/33))
+* **build:** refuse to emit a kernel artifact this forge did not compile ([#19](https://github.com/cordanaLLM/nucleus/issues/19))
+* **release:** publish the imago.nucleus.kernel-artifact.v1 manifest and carry the release tag downstream ([#11](https://github.com/cordanaLLM/nucleus/issues/11))
+
+### Features
+
+* **forge:** compile every leg and gate its artifacts before signing ([#37](https://github.com/cordanaLLM/nucleus/issues/37)) ([82aa6b7](https://github.com/cordanaLLM/nucleus/commit/82aa6b7a3c68a42a6330370c81ec642482014c9f))
+* **forge:** fetch signed kernel sources and resolve the kernel configuration ([#36](https://github.com/cordanaLLM/nucleus/issues/36)) ([30253b9](https://github.com/cordanaLLM/nucleus/commit/30253b996b3407b91754ff9a845c3c60c065f1e1))
+* **governance:** declare the praetor os-image profile ([#13](https://github.com/cordanaLLM/nucleus/issues/13)) ([b7a0ef1](https://github.com/cordanaLLM/nucleus/commit/b7a0ef198d7fe7bb8e4feea33bf5268f581b9c38))
+* **init:** bootstrap lusoris-kernel-forge repository ([e527cd3](https://github.com/cordanaLLM/nucleus/commit/e527cd3400c76dac9aa2812f50e732a8fdfafbfb))
+* **onboarding:** establish full ecosystem and repository parity with lusoris-cloud-images ([#7](https://github.com/cordanaLLM/nucleus/issues/7)) ([c3397fc](https://github.com/cordanaLLM/nucleus/commit/c3397fcec25c8b71776f4d58b4cd61f00b5a8423))
+* **packaging:** implement multi-arch builder container, dual packaging pipeline, and qemu boot verification ([#9](https://github.com/cordanaLLM/nucleus/issues/9)) ([494ea58](https://github.com/cordanaLLM/nucleus/commit/494ea58dcd7032e19fc82691398f06a14749ece1))
+* **release:** publish the imago.nucleus.kernel-artifact.v1 manifest and carry the release tag downstream ([#11](https://github.com/cordanaLLM/nucleus/issues/11)) ([3c9643b](https://github.com/cordanaLLM/nucleus/commit/3c9643bf03a266ef1befa67b8de206bec643235e))
+* **requirements:** read requirement documents through the owner's JSON Schema ([#44](https://github.com/cordanaLLM/nucleus/issues/44)) ([2222d61](https://github.com/cordanaLLM/nucleus/commit/2222d61661fd89bb34442a49d6b355c34988536a))
+* **requirements:** verify kernel requirement documents per bound stream ([#35](https://github.com/cordanaLLM/nucleus/issues/35)) ([0a4eac9](https://github.com/cordanaLLM/nucleus/commit/0a4eac93f29fef432bfa9d892ad236568ce2f482))
+
+
+### Bug Fixes
+
+* **build:** refuse to emit a kernel artifact this forge did not compile ([#19](https://github.com/cordanaLLM/nucleus/issues/19)) ([c5fbeb8](https://github.com/cordanaLLM/nucleus/commit/c5fbeb8c271caadef8dbefdb23c2a3a1c460db17))
+* **ci:** build the kernel on 26.04 with a shell that can parse the build step ([#17](https://github.com/cordanaLLM/nucleus/issues/17)) ([74ba997](https://github.com/cordanaLLM/nucleus/commit/74ba997e37a8e12565aeacf4869e17fefe07e68a))
+* **ci:** let the repository's own release pull request through its governance gate ([#25](https://github.com/cordanaLLM/nucleus/issues/25)) ([8672247](https://github.com/cordanaLLM/nucleus/commit/8672247ff1bd22ed6b6b89d498116f20ff00c2ab))
+* **ci:** refuse pull requests whose squash message would skip CI ([#40](https://github.com/cordanaLLM/nucleus/issues/40)) ([2f889fd](https://github.com/cordanaLLM/nucleus/commit/2f889fd2e969c298e2e35e17419f1c337d024081))
+* **packaging:** refuse to emit a UKI that is not one ([#27](https://github.com/cordanaLLM/nucleus/issues/27)) ([454ae97](https://github.com/cordanaLLM/nucleus/commit/454ae973e2bb5f7ffe85725dfbcfb45c3af58052))
+* **release:** make the release path startable and its tags unambiguous ([#33](https://github.com/cordanaLLM/nucleus/issues/33)) ([8365d5d](https://github.com/cordanaLLM/nucleus/commit/8365d5d7462385fbd8195226172e0a01c6782755))
+* **requirements:** write no bytecode into a consumer's checkout ([#41](https://github.com/cordanaLLM/nucleus/issues/41)) ([9e050cf](https://github.com/cordanaLLM/nucleus/commit/9e050cf8fc2fb62de943229f22ab104dce455e92))
+
 ## [Unreleased]
 
 ### Changed
