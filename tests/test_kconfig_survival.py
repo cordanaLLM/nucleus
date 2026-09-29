@@ -127,7 +127,7 @@ def test_the_command_exits_0_1_or_2(tmp_path):
 # --- scripts/merge-config.sh --source-tree, against a stand-in kernel tree -------------------
 # The stand-in answers the four make targets the script calls and merges fragments by
 # appending them, so the plumbing is tested without a kernel: the real resolution of all
-# twelve stream and architecture legs runs in verify-requirements.yml.
+# twelve stream and architecture legs runs in verify-requirements.yml (its resolve job).
 
 VERSIONS = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
 MERGE_CONFIG = REPO_ROOT / "scripts" / "merge-config.sh"
@@ -206,18 +206,23 @@ def test_source_tree_mode_writes_the_config_when_every_request_survives(tmp_path
 
 
 def test_source_tree_mode_refuses_a_request_olddefconfig_dropped(tmp_path, stand_in):
+    """A refused run leaves no configuration, not even the one an earlier run wrote."""
     tree, env, _ = stand_in
+    earlier, output = _resolve(tmp_path, tree, env)
+    assert earlier.returncode == 0 and output.is_file(), earlier.stdout + earlier.stderr
     result, output = _resolve(tmp_path, tree, {**env, "DROP": "CONFIG_STRICT_KERNEL_RWX"})
     assert result.returncode != 0
     assert (
         "CONFIG_STRICT_KERNEL_RWX: requested =y by kconfig/security-hardened.config"
         in result.stderr
     )
-    assert not output.exists(), "a configuration that lost a request is never written"
+    assert not output.exists(), "a configuration that lost a request is never left in place"
+    assert not (tmp_path / "kbuild" / ".config").exists(), "nor is it left to a build"
 
 
 def test_source_tree_mode_refuses_a_tree_of_another_release(tmp_path, stand_in):
     tree, env, version = stand_in
+    _resolve(tmp_path, tree, env)
     result, output = _resolve(tmp_path, tree, env, stream="lts")
     assert result.returncode != 0
     assert f"is kernel {version}; versions.json names" in result.stderr

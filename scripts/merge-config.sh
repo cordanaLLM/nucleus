@@ -22,7 +22,9 @@
 #                architecture's defconfig, then scripts/kconfig/merge_config.sh -m with the
 #                fragments, then make olddefconfig, then the survival check
 #                (scripts/kconfig_survival.py), which refuses the result when a requested
-#                value did not survive. docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md.
+#                value did not survive. A run that does not finish leaves no configuration
+#                behind, neither at the output path nor in the build directory.
+#                docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md.
 set -euo pipefail
 
 ARCH="x86_64"
@@ -34,6 +36,7 @@ BUILD_DIR=""
 KERNEL_ARCH=""
 BASE_CONFIG=""
 CROSS_COMPILE=""
+RESOLVED="false"
 declare -a EXTRA_FRAGMENTS=()
 
 # The fragment grammar, shared with read_config() in scripts/verify_kernel_requirement.py.
@@ -286,6 +289,17 @@ check_tree_release() {
   fi
 }
 
+# An EXIT trap of the source tree mode. A run that did not finish leaves no configuration
+# behind: neither the output file, which an earlier run may have written, nor the build
+# directory's .config, in which a build would otherwise compile a refused configuration.
+discard_unfinished_resolution() {
+  local status=$?
+  if [[ "${RESOLVED}" != "true" ]]; then
+    rm -f "${OUTPUT_FILE}" "${BUILD_DIR}/.config" "${BUILD_DIR}/.config.old"
+  fi
+  return "${status}"
+}
+
 resolve_config() {
   local -a sources absolute=()
   mapfile -t sources < <(fragment_sources)
@@ -298,8 +312,9 @@ resolve_config() {
     absolute+=("$(realpath "${src}")")
   done
   # defconfig writes .config afresh; everything else in the build directory derives from it.
+  # The output of an earlier run goes first, so that only this run can put one there.
   mkdir -p "${BUILD_DIR}"
-  rm -f "${BUILD_DIR}/.config" "${BUILD_DIR}/.config.old"
+  rm -f "${OUTPUT_FILE}" "${BUILD_DIR}/.config" "${BUILD_DIR}/.config.old"
   check_tree_release
   echo "==> Base configuration: make ARCH=${KERNEL_ARCH} ${BASE_CONFIG} (CROSS_COMPILE=${CROSS_COMPILE})"
   kernel_make "${BASE_CONFIG}"
@@ -319,6 +334,7 @@ resolve_config() {
   mkdir -p "$(dirname "${OUTPUT_FILE}")"
   cp "${BUILD_DIR}/.config" "${OUTPUT_FILE}"
   echo "==> Resolved ${STREAM}/${ARCH}, kernelrelease $(kernel_make kernelrelease), written to ${OUTPUT_FILE}"
+  RESOLVED="true"
 }
 
 main() {
@@ -326,10 +342,11 @@ main() {
   validate_environment
 
   if [[ -n "${SOURCE_TREE}" ]]; then
-    validate_source_tree
-    SOURCE_TREE="$(realpath "${SOURCE_TREE}")"
     BUILD_DIR="$(realpath -m "${BUILD_DIR:-output/kbuild-${STREAM}-${ARCH}}")"
     OUTPUT_FILE="${OUTPUT_FILE:-output/kernel-${STREAM}-${ARCH}.config}"
+    trap discard_unfinished_resolution EXIT
+    validate_source_tree
+    SOURCE_TREE="$(realpath "${SOURCE_TREE}")"
     echo "==> Resolving the KConfig for stream '${STREAM}', architecture '${ARCH}' against ${SOURCE_TREE}"
     resolve_config
     return 0
