@@ -52,9 +52,9 @@ yet is said in the table as plainly as what it does.
 | `patches/` | **not applied** by the build. The one patch there, `common/0001-sched-ext-tuning.patch`, changes a license identifier and does not apply to 7.2.8 (`patch -p1 --dry-run`) |
 | `scripts/package-uki.sh` | real, unsigned: `ukify` build, then `package-uki.sh` deletes any output that `scripts/check_uki.py` refuses (not a PE with the UKI sections it wires) before it is checksummed; CI builds one from Ubuntu's kernel, never yet from a nucleus kernel; no release workflow publishes a UKI; **refuses** without a kernel or `ukify` (issue #21) |
 | `scripts/publish_release.sh` | real: `SHA256SUMS` over exactly the files in `OUTPUT_DIR`; **refuses** an empty directory, a zero-byte file, a file that is not a publishable artifact, a directory without a package, and a `sha256sum` failure, writing nothing (issue #31) |
-| `publish-release.yml` | real, has never run: builds the tagged stream for x86_64 in the pinned `ubuntu:26.04` image with the checkout mounted read-only, gates, boots it under QEMU, gates again on the host, SBOM, checksums, keyless cosign signature; publishes the packages, `vmlinuz-<kernelrelease>` and `kernel-<stream>-x86_64.config`. The manifest's `kernel.release` is the recorded kernel release, `config_digest` the resolved configuration's digest, `revision` the tag's commit; imago's verifier (16f964b) accepts a release assembled this way locally and refuses one flipped bit |
+| `publish-release.yml` | real, has released all four streams (tags `v7.2.8-realtime-lusoris1`, `v7.2.8-mainstream-lusoris1`, `v6.18.54-lts-lusoris1`, `v7.3-rc5-bleeding-lusoris1`; each verified with `sha256sum -c`, cosign and `imago kernel artifact verify`): builds the tagged stream for x86_64 in the pinned `ubuntu:26.04` image with the checkout mounted read-only, gates, boots it under QEMU, gates again on the host, SBOM, checksums, keyless cosign signature; publishes the packages, `vmlinuz-<kernelrelease>` and `kernel-<stream>-x86_64.config`. The manifest's `kernel.release` is the recorded kernel release, `config_digest` the resolved configuration's digest, `revision` the tag's commit; imago's verifier (16f964b) accepts a release assembled this way locally and refuses one flipped bit |
 | `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures in `ubuntu:26.04` (pinned by digest, the one every workflow uses), arm64 natively on `ubuntu-24.04-arm`, riscv64 cross-compiled; disk probe, compiler cache, gate, x86_64 boot, checksums; job permissions `contents: read`. Run 36507112520 compiled and gated all twelve legs, booted the four x86_64 kernels, and built the arm64 headers packages natively. An earlier run lost a riscv64 leg to a race in the uutils `install -D` that Ubuntu 26.04 ships; the build now uses GNU `install` (`gnuinstall`) |
-| downstream dispatch to `cordanaLLM/imago` | wired, has never run: `publish-release.yml` has no runs yet. `kernel_release_published` carries stream, version and tag, and needs the `KERNEL_FORGE_TOKEN` secret, which is not configured; without it the run stops with an error naming the secret |
+| downstream dispatch to `cordanaLLM/imago` | real on this side: every release sent `kernel_release_published` (stream, version, tag) with the `KERNEL_FORGE_TOKEN` secret, a fine-grained token limited to `cordanaLLM/imago` that expires after 366 days. imago's receiving `sync-kernel-manifest` fails at job setup on a dead action pin (cordanaLLM/imago#47), so no release has been pinned there yet |
 
 The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
 reported success on all twelve legs in under three minutes, and `publish-release` would
@@ -104,8 +104,10 @@ image on every pull request.
     job setup), so the weekly schedule and the pull request and push triggers are what exercise
     this gate today.
   - `scripts/verify_kernel_requirement.py` decodes a document the way its owner does (the Rust crate
-    `crates/aegis-fabrica-defs` in Aegis-OS), with two named divergences: a wider `required-by`
-    and a refused array form. Every bound stream must meet `abi.minimum-release` and every
+    `crates/aegis-fabrica-defs` in Aegis-OS), and its owner's published JSON Schema
+    (`downstream.requirement_schema` in `versions.json`, ADR-0010); the two divergences ADR-0007
+    named closed when Aegis-OS widened `required-by` and refused the array form (Aegis-OS#167).
+    Every bound stream must meet `abi.minimum-release` and every
     feature's exact state on every listed architecture; a failure names the correlation id,
     stream, architecture, symbol, `required-by`, required state and observed value. Unbound
     streams are reported, never gating.

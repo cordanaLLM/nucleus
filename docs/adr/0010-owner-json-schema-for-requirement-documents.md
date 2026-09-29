@@ -4,15 +4,14 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
 This ADR adds a check to [ADR-0007](0007-document-driven-kernel-requirements.md) and does not
 supersede any of it: the decoding rules of its section 2, the policy of its section 3 and the
 evidence levels stand. It records one thing that ADR-0007's frozen body cannot: the two
 divergences it names in section 2 are closed at the owner (section 4 below).
 
-It merges as Proposed, like the ADRs before it. The owner of this repository moves it to
-Accepted, or to Rejected.
+It merged as Proposed, and the owner of this repository accepted it the same day.
 
 ---
 
