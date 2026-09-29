@@ -26,8 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       # Written as include legs, not as a language axis: both forms run the same two
-      # jobs, but praetorctl expands the job name into the ruleset's required checks
-      # only from strategy.matrix.include and refuses the axis form.
+      # jobs, and praetorctl expands either into the ruleset's required checks, but
+      # tests/test_workflows.py expands check names from strategy.matrix.include only.
       matrix:
         include:
           - language: python

@@ -334,11 +334,11 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     ]["run"]
     resolve = jobs["resolve"]
     assert resolve["needs"] == "verify" and BUILD_IMAGE.fullmatch(resolve["container"]["image"])
-    # One variable whose values are the plan's legs; praetorctl at the pin cannot parse a
-    # matrix that is one expression (docs/repository-governance.md, section 6).
-    assert resolve["strategy"]["matrix"] == {"leg": "${{ fromJSON(needs.verify.outputs.plan).include }}"}
-    assert resolve["name"] == "Resolve KConfig (${{ matrix.leg.stream }})"
-    assert "matrix.stream" not in str(resolve) and "matrix.arches" not in str(resolve)
+    # The plan is the matrix; each leg reports as "Resolve KConfig (<stream>)"
+    # (docs/repository-governance.md, sections 4 and 6).
+    assert resolve["strategy"]["matrix"] == "${{ fromJSON(needs.verify.outputs.plan) }}"
+    assert resolve["name"] == "Resolve KConfig (${{ matrix.stream }})"
+    assert "matrix.leg" not in str(resolve)
     steps = {step.get("name", ""): step for step in resolve["steps"]}
     install = steps["Install the Resolution Toolchain"]["run"]
     for package in ("dwarves", "gpgv", "gcc-aarch64-linux-gnu", "gcc-riscv64-linux-gnu"):
