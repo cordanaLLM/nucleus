@@ -38,7 +38,7 @@ The following table indexes all architectural decision records governing `cordan
 | [**ADR-0008**](0008-signed-kernel-sources-and-resolved-configuration.md) | Signed Kernel Sources and a Resolved, Survival-Checked Kernel Configuration (supersedes decision item 1 of ADR-0001 and items 1 and 2 of ADR-0002; amends section 4 of ADR-0007) | `Accepted` | 2026-09-29 | Kernel Sources & Configuration |
 | [**ADR-0009**](0009-kernel-compilation-and-artifact-gate.md) | Kernel Compilation, the Artifact Gate and the Boot Smoke Test (supersedes bullets 2 and 3 of section 1 of ADR-0004) | `Accepted`; release revisions above 1: see [ADR-0011](0011-bpf-trampoline-ftrace-and-release-revisions.md) | 2026-09-29 | Kernel Build & Release Integrity |
 | [**ADR-0010**](0010-owner-json-schema-for-requirement-documents.md) | Requirement Documents Are Read Through the Owner's JSON Schema, Pinned by Commit and Digest (adds a check to ADR-0007) | `Accepted` | 2026-09-29 | Cross-Repo Requirement Contract |
-| [**ADR-0011**](0011-bpf-trampoline-ftrace-and-release-revisions.md) | Function Tracing in the Baseline for BPF Trampolines, and Release Revisions Above 1 (supersedes the single-revision clause of section 2 of ADR-0009) | `Proposed` | 2026-09-29 | Kernel Configuration & Release Integrity |
+| [**ADR-0011**](0011-bpf-trampoline-ftrace-and-release-revisions.md) | Function Tracing in the Baseline for BPF Trampolines, and Release Revisions Above 1 (supersedes the single-revision clause of section 2 of ADR-0009) | `Accepted` | 2026-09-29 | Kernel Configuration & Release Integrity |
 
 ---
 

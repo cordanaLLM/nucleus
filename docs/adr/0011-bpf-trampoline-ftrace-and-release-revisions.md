@@ -4,7 +4,7 @@ Date: 2026-09-29
 
 ## Status
 
-Proposed
+Accepted (2026-09-29)
 
 The owner of this repository decided both parts on 2026-09-29; this record states them.
 
