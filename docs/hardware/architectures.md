@@ -68,6 +68,7 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
   - High-Performance Database / HPC: Optional 64 KB page configuration (`CONFIG_ARM64_64K_PAGES=y`) to minimize TLB miss penalties on multi-terabyte memory nodes.
 - **ACPI & DeviceTree Dual Boot**: Supports both ACPI enterprise boot (Neoverse servers, Ampere Altra) and Flattened Device Tree (FDT) for edge boards.
 - **BTF for sched-ext**: `CONFIG_SCHED_CLASS_EXT` depends on `CONFIG_DEBUG_INFO_BTF`, so `kconfig/arm64.config` declares its chain: `CONFIG_DEBUG_KERNEL`, `CONFIG_DEBUG_INFO_DWARF5`, and `# CONFIG_DEBUG_INFO_REDUCED is not set`, which the arm64 defconfig would otherwise set.
+- **BPF trampolines**: the arm64 defconfig unsets `CONFIG_FTRACE`; the security baseline sets it with `CONFIG_FUNCTION_TRACER`, `CONFIG_DYNAMIC_FTRACE` and `CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. Direct calls need GCC's `-fpatchable-function-entry` (`DYNAMIC_FTRACE_WITH_ARGS`) and, before Linux 7.3, `DYNAMIC_FTRACE_WITH_CALL_OPS`, which a `CFI` or size-optimized build loses ([ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
 
 ### 3.3 `riscv64` (RISC-V 64-bit)
 - **Profile Alignment**: RVA22 / RVA23 profiles with standard extensions: `rv64imafdc_zicsr_zifencei_zba_zbb_zbs_zicboz_zicbom`.
@@ -76,6 +77,7 @@ make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
   - `CONFIG_RISCV_AIA=y`: Native message-signaled interrupts (IMSIC) and incoming interrupt controller (APLIC) replacing legacy PLIC bottlenecks.
 - **SBI (Supervisor Binary Interface)**: Compliant with RISC-V SBI v2.0+ specification for system reset, timer, and IPI handling.
 - **KASLR**: `CONFIG_RANDOMIZE_BASE` (the security baseline) depends on `CONFIG_RELOCATABLE` on riscv since Linux 7.2, and the riscv defconfig leaves it unset, so `kconfig/riscv64.config` declares it.
+- **BPF trampolines**: `CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS` (the security baseline) needs `DYNAMIC_FTRACE_WITH_CALL_OPS` on riscv, which a `CFI` build loses, and `HAVE_DYNAMIC_FTRACE` needs GCC's `-fpatchable-function-entry=8` and, with compressed instructions (`RISCV_ISA_C`), `-fmin-function-alignment` ([ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
 
 ---
 

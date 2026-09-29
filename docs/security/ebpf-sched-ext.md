@@ -156,3 +156,63 @@ bpftool map show
 cat /sys/kernel/sched_ext/state
 ```
 Under operational status, `sysctl` reports `bpf_jit_harden = 2` and `/sys/kernel/sched_ext/state` confirms whether an extensible scheduler is enabled or in fallback state.
+
+---
+
+## 6. BPF Trampolines and Function Tracing
+
+A BPF LSM program, and every `fentry`, `fexit` and `fmod_ret` program, runs from a BPF
+trampoline, and the kernel reaches the trampoline through ftrace. `register_fentry()` in
+`kernel/bpf/trampoline.c` hands the attach to ftrace when the target function has an ftrace call
+site, which needs `CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. Without `CONFIG_FUNCTION_TRACER` there
+is no call site, and the fallback refuses a kernel function: `-EBUSY` on x86_64, `-ENOTSUPP` on
+arm64, `-EFAULT` on riscv64. The program loads and cannot attach. That is what happened to
+Aegis-OS's BPF LSM program on the revision 1 releases, which did not set `CONFIG_FUNCTION_TRACER`.
+
+`kconfig/security-hardened.config` therefore requests the chain on every stream and architecture:
+
+```ini
+CONFIG_FTRACE=y
+CONFIG_FUNCTION_TRACER=y
+CONFIG_DYNAMIC_FTRACE=y
+CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS=y
+```
+
+All twelve legs resolve the four at `=y`, and the survival check refuses a leg on which one does
+not survive, for example when a toolchain loses the compiler support that direct calls need on
+arm64 and riscv64. The decision, the per-architecture conditions and the trade-off are
+[ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md).
+
+### 6.1 Compiled in, not running
+
+- **No tracing at boot.** `DYNAMIC_FTRACE` keeps every call site a nop until a tracer or a BPF
+  trampoline registers it. A booted kernel reports `current_tracer` as `nop` and an empty
+  `enabled_functions`. No fragment declares another tracer, `FTRACE_SYSCALLS` or
+  `BOOTTIME_TRACING` (`tests/test_kconfig.py`), and nothing here passes `ftrace=` on the command
+  line.
+- **Root only.** tracefs, at `/sys/kernel/tracing`, is created with mode `0700`
+  (`TRACEFS_DEFAULT_MODE` in `fs/tracefs/inode.c`). Loading a tracing or LSM program needs
+  `CAP_BPF` and `CAP_PERFMON` (`kernel/bpf/syscall.c`), and `CONFIG_BPF_UNPRIV_DEFAULT_OFF` stays
+  set.
+- **What comes with it.** `FUNCTION_GRAPH_TRACER` is built by default under `FUNCTION_TRACER`,
+  x86_64 gains `KPROBES_ON_FTRACE`, and arm64, whose `defconfig` had switched the tracing menu
+  off, gains event tracing, uprobe events and `BPF_EVENTS`. Each tracer stays off until root
+  starts it. This departs from kernel-hardening-checker, whose `cut_attack_surface` checks want
+  `FTRACE`, `FUNCTION_TRACER` and `GENERIC_TRACER` unset; without them BPF LSM cannot attach.
+- **Cost.** Every traceable function starts with a patchable nop, and ftrace records every call
+  site: 56130 in 220 pages on the realtime x86_64 kernel, whose `vmlinuz` grows by 3.2 percent.
+
+### 6.2 Checking an attach
+
+```bash
+# Functions that currently have a BPF trampoline attached: the "D" flag and "direct-->bpf_trampoline"
+sudo cat /sys/kernel/tracing/enabled_functions
+
+# Loaded LSM and tracing programs
+sudo bpftool prog show
+```
+
+Before a program attaches, `enabled_functions` is empty. On the realtime x86_64 build of this
+change, an LSM program on `file_open` and an `fentry` program on `security_file_open` attach and
+run under QEMU, and the file lists both with `direct-->bpf_trampoline_...`; the released
+`7.2.8-lusoris1-realtime` refuses both attaches with `-EBUSY`.

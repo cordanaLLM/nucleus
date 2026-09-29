@@ -92,7 +92,7 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert '"revision": os.environ["REVISION"]' in manifest["run"]
     assert "GITHUB_SHA" not in manifest["run"]
     text = (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
-    assert "-lusoris1" not in text.replace("v<version>-<stream>-lusoris1", ""), "no hardcoded revision"
+    assert "-lusoris1" not in text, "no hardcoded revision"
     assert "/dev/urandom" not in text
     checkout = steps[names.index("Checkout Repository")]
     assert checkout["with"]["persist-credentials"] is False

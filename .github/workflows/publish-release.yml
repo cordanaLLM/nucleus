@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Kernel release tag v<version>-<stream>-lusoris1 (<version> = the stream's version in versions.json); start the run from this tag (--ref)"
+        description: "Kernel release tag v<version>-<stream>-lusoris<N> (<version> = the stream's versions.json version, <N> = revision 1-9999); start the run from the tag (--ref)"
         required: true
 
 permissions:

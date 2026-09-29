@@ -97,6 +97,16 @@ stream without a fragment builds the architecture configuration unchanged.
 | `realtime` | `kconfig/streams/realtime.config` | `CONFIG_PREEMPT_RT=y` and `CONFIG_HZ_1000=y`, which Aegis-OS asks for together (`REQ-P07-01`), and `CONFIG_EXPERT=y`, because `PREEMPT_RT` depends on `EXPERT && ARCH_SUPPORTS_RT` (`kernel/Kconfig.preempt`); x86, arm64 and riscv select `ARCH_SUPPORTS_RT` in 6.18.54, 7.2.8 and 7.3-rc5 |
 | `bleeding`, `mainstream`, `lts` | none | nothing beyond the architecture fragment |
 
+Every leg also carries the baseline, `kconfig/security-hardened.config`. It requests the chain
+BPF trampolines need, so that BPF LSM, `fentry` and `fexit` programs can attach: `FTRACE`,
+`FUNCTION_TRACER`, `DYNAMIC_FTRACE` and `DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. Direct calls depend on
+the architecture's `HAVE_DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. x86 selects it unconditionally. arm64
+selects it when `DYNAMIC_FTRACE_WITH_ARGS` resolves, and in 6.18.54 and 7.2.8 also needs
+`DYNAMIC_FTRACE_WITH_CALL_OPS` (no `CFI`, not optimized for size). riscv selects it with
+`DYNAMIC_FTRACE_WITH_CALL_OPS`. All twelve legs meet these conditions with the Ubuntu 26.04
+toolchain, so none needs an architecture override
+([ADR-0011](adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
+
 With `--source-tree=<verified tree>`, the same fragments are resolved against the stream's
 source: the architecture's `base_config` from `versions.json` (`x86_64_defconfig`, or
 `defconfig` for arm64 and riscv64), then the kernel's `scripts/kconfig/merge_config.sh -m` with
@@ -138,6 +148,13 @@ built from the same tree, do not share a release or a package name:
 
 A release candidate's package version spells `-rc5` as `~rc5`, so dpkg orders it before the
 final release, and its package files spell that `~` as `.` ([packaging section 2.2](packaging.md)).
+
+The table shows revision 1, the first release of each stream, which does not carry the BPF
+trampoline chain. Revision 2 releases the same upstream versions with it, as
+`7.3.0-rc5-lusoris2-bleeding`, `7.2.8-lusoris2-mainstream`, `6.18.54-lusoris2-lts` and
+`7.2.8-lusoris2-realtime`, at package versions ending in `-lusoris2`. A new revision is a new
+kernel release, so its image and headers packages install next to the earlier revision's
+([packaging section 5.4](packaging.md)).
 
 `build-matrix.yml` compiles every stream for x86_64, arm64 and riscv64, opens every package with
 the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages;

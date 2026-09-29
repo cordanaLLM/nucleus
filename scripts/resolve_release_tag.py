@@ -18,11 +18,12 @@ A kernel release tag has the form ``v<version>-<stream>-lusoris<N>``:
 
 - ``<stream>`` is a key of ``streams`` in versions.json;
 - ``<version>`` equals that stream's ``version`` exactly;
-- ``<N>`` is the forge revision. The release workflow passes it to
-  ``scripts/build_kernel.sh --revision``, which writes ``-lusoris<N>`` into the
-  kernel release and the package version. Only ``1`` is accepted for now: no
-  release has needed a second revision yet, and accepting integers of at
-  least 1 (without leading zeros) is a change to ``SUPPORTED_REVISION`` alone.
+- ``<N>`` is the forge revision, an integer from 1 to 9999 written without
+  leading zeros: exactly what ``scripts/build_kernel.sh --revision`` accepts.
+  The release workflow passes it to the build, which writes ``-lusoris<N>``
+  into the kernel release and the package version, so a second revision
+  releases the same upstream version again under a new kernel release
+  (``7.2.8-lusoris2-realtime``) and package version (``7.2.8-lusoris2``).
 
 The stream is spelled out because two streams may carry the same upstream
 version. There is no fallback: a tag that does not name exactly one stream at
@@ -58,7 +59,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VERSIONS = REPO_ROOT / "versions.json"
 GRAMMAR = "v<version>-<stream>-lusoris<N>"
 TAG_SHAPE = re.compile(r"v(?P<body>.+)-lusoris(?P<rev>[0-9]+)")
-SUPPORTED_REVISION = "1"
+# The range scripts/build_kernel.sh --revision accepts (^[1-9][0-9]{0,3}$); the two must agree.
+REVISION_TOKEN = re.compile(r"[1-9][0-9]{0,3}")
 STREAM_TOKEN = re.compile(r"[a-z][a-z0-9-]*")
 VERSION_TOKEN = re.compile(r"[0-9][A-Za-z0-9._+-]*")
 MAX_TAG_LENGTH = 128
@@ -126,10 +128,10 @@ def split_revision(tag: str) -> tuple[str, int]:
             f"tag {tag!r} does not end in -lusoris<N>; a kernel release tag is {GRAMMAR}"
         )
     rev = shape.group("rev")
-    if rev != SUPPORTED_REVISION:
+    if not REVISION_TOKEN.fullmatch(rev):
         raise TagError(
-            f"tag {tag!r} carries revision {rev!r}; only revision {SUPPORTED_REVISION} is "
-            "released for now"
+            f"tag {tag!r} carries revision {rev!r}; a revision is an integer from 1 to 9999 "
+            "without leading zeros"
         )
     return shape.group("body"), int(rev)
 

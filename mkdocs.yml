@@ -82,6 +82,7 @@ nav:
       - ADR-0008 Signed Sources & Resolved Configuration: adr/0008-signed-kernel-sources-and-resolved-configuration.md
       - ADR-0009 Kernel Compilation & Artifact Gate: adr/0009-kernel-compilation-and-artifact-gate.md
       - ADR-0010 Owner JSON Schema for Requirements: adr/0010-owner-json-schema-for-requirement-documents.md
+      - ADR-0011 BPF Trampolines & Release Revisions: adr/0011-bpf-trampoline-ftrace-and-release-revisions.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

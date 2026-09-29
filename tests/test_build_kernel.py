@@ -94,6 +94,15 @@ def test_revision_is_threaded_into_localversion_and_package_version(tmp_path):
     assert "-lusoris1" not in result.stdout
 
 
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="dpkg orders Debian versions")
+def test_a_later_revision_is_a_newer_package_version():
+    """linux-libc-dev keeps its name across revisions, so dpkg must upgrade lusoris1 to lusoris2."""
+    compare = ["dpkg", "--compare-versions"]
+    for older, newer in (("7.2.8-lusoris1", "7.2.8-lusoris2"), ("7.2.8-lusoris9", "7.2.8-lusoris10"),
+                         ("7.3~rc5-lusoris2", "7.3-lusoris1")):
+        assert subprocess.run([*compare, older, "lt", newer], check=False).returncode == 0, (older, newer)
+
+
 @pytest.mark.parametrize(
     ("args", "message"),
     [
