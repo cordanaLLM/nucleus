@@ -17,10 +17,11 @@
 A requirement is an ``aegis.p01-nucleus.kernel-requirement.v1`` document. cordanaLLM/Aegis-OS
 owns that contract: its normative definition is the Rust crate ``crates/aegis-fabrica-defs``
 (``src/kernel.rs``, ``src/field.rs``, ``src/payload.rs``), and this parser follows it field
-for field, with two deliberate divergences: a wider ``required-by`` (see ``_REQUIRED_BY``),
-and a document written as a JSON array is refused, where serde's derived decoder accepts it.
-versions.json ``downstream.requirements`` declares where each document lives and which
-streams its consumer is bound to.
+for field. The two divergences docs/adr/0007 recorded, a wider ``required-by`` (see
+``_REQUIRED_BY``) and a refused JSON array form, are closed at the owner since Aegis-OS#167
+(docs/adr/0010), which also publishes the JSON Schema that scripts/check_requirement_schema.py
+compares this parser with. versions.json ``downstream.requirements`` declares where each
+document lives and which streams its consumer is bound to.
 
 The policy is docs/adr/0007-document-driven-kernel-requirements.md:
 
@@ -102,10 +103,11 @@ _RELEASE = re.compile(r"[0-9][0-9A-Za-z._+-]*")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _SIGNATURE = re.compile(r"(?:[0-9a-f]{2})+")
 _REVISION = re.compile(r"[0-9a-f]{40}")
-# The one deliberate divergence from field.rs RequirementId, an open question to Aegis-OS
-# (docs/adr/0007): Aegis demands a REQ- prefix, and imago's live document names its flavors
-# (FLAVOR-BASE, FLAVOR-K8S-NODE). Accepted here, for every source: an upper-case identifier
-# of [A-Z0-9-]. The bare prefix REQ- is refused, as the owner refuses it.
+# An upper-case identifier of [A-Z0-9-] for every source; imago's live document names its
+# flavors (FLAVOR-BASE, FLAVOR-K8S-NODE). docs/adr/0007 recorded this as a divergence from
+# field.rs RequirementId, which demanded a REQ- prefix; the owner made it schema-generic in
+# Aegis-OS#167 (decision D103), and the schema's pattern is the same set (docs/adr/0010). The
+# bare prefix REQ- is refused, as the owner refuses it.
 _REQUIRED_BY = re.compile(r"(?!REQ-$)[A-Z][A-Z0-9-]*")
 
 _DOCUMENT_KEYS = frozenset(

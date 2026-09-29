@@ -99,7 +99,7 @@
     },
     "downstream": {
       "type": "object",
-      "required": ["repository", "sync_event", "requirements"],
+      "required": ["repository", "sync_event", "requirements", "requirement_schema"],
       "properties": {
         "repository": {"type": "string"},
         "sync_event": {"type": "string"},
@@ -127,6 +127,27 @@
                 "uniqueItems": true,
                 "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
               }
+            }
+          }
+        },
+        "requirement_schema": {
+          "description": "The JSON Schema (draft 2020-12) the contract owner publishes for the requirement documents, pinned by commit and sha256, and the copy vendored for the offline tests. It applies to every row of requirements. verify-requirements.yml fetches it at the commit, checks the digest and validates each fetched document against it before the verifier runs (docs/adr/0010). To refresh it, see docs/streams.md.",
+          "type": "object",
+          "required": ["repository", "path", "commit", "sha256", "vendored"],
+          "additionalProperties": false,
+          "properties": {
+            "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+            "path": {
+              "description": "Repository-relative path in the owner's repository, by the same grammar as the paths of requirements.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*[.]json$"
+            },
+            "commit": {"description": "The full commit the schema is read at.", "type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "sha256": {"description": "The digest of the schema file at that commit.", "type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "vendored": {
+              "description": "This repository's copy of the schema, byte-identical to the pinned file (tests/test_requirement_schema.py).",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*[.]json$"
             }
           }
         }

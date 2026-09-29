@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KernelRequirement",
+  "description": "The kernel requirement payload.",
+  "type": "object",
+  "properties": {
+    "abi": {
+      "description": "The version and ABI bounds.",
+      "$ref": "#/$defs/KernelAbi"
+    },
+    "architectures": {
+      "description": "The architectures a conforming kernel must be built for: all of them.\n\nAll-of and fail-closed (D104). A kernel conforms only when it is built\nfor every listed architecture and each of those builds provides every\nfeature; no listed architecture is optional. A repeated architecture is\none promise, evaluated once.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Architecture"
+      },
+      "maxItems": 4,
+      "minItems": 1
+    },
+    "artifact": {
+      "description": "What a conforming artifact must hash and be signed to, when known.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactExpectation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "correlation-id": {
+      "description": "The identifier threading this requirement and its result together.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "features": {
+      "description": "The features a conforming kernel must provide, on every architecture.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FeatureRequirement"
+      },
+      "maxItems": 64,
+      "minItems": 1
+    },
+    "schema": {
+      "description": "The contract version this payload claims.",
+      "$ref": "#/$defs/KernelRequirementVersion"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "correlation-id",
+    "architectures",
+    "abi",
+    "features"
+  ],
+  "$defs": {
+    "Architecture": {
+      "description": "The architectures a kernel requirement may accept.\n\nThe spellings are mkosi's own `Architecture=` values, so the same word\ntravels from the product input manifest into the image configuration\nwithout translation. An architecture outside this list does not decode.",
+      "oneOf": [
+        {
+          "description": "64-bit x86, spelled `x86-64`.",
+          "type": "string",
+          "const": "x86-64"
+        },
+        {
+          "description": "64-bit Arm, spelled `arm64`.",
+          "type": "string",
+          "const": "arm64"
+        }
+      ]
+    },
+    "ArtifactExpectation": {
+      "description": "The digest and signature a conforming artifact is expected to carry.\n\nThe digest is mandatory inside this object, so a payload cannot promise a\nsignature over nothing; a requirement that expects neither omits the object\nentirely. Both are field encodings: this crate produces and verifies\nneither.",
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "The sha256 the produced artifact must hash to.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "description": "The signature over that digest, when one is expected.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "maxLength": 256,
+          "pattern": "^(?:[0-9a-f]{2})+$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "digest"
+      ]
+    },
+    "FeatureRequirement": {
+      "description": "One required kernel feature.",
+      "type": "object",
+      "properties": {
+        "probe": {
+          "description": "How the claim is checked on a running system.",
+          "$ref": "#/$defs/ProbeSource"
+        },
+        "required-by": {
+          "description": "The requirement this row comes from.\n\nSchema-generic (D103): any identifier [`RequirementId`] admits, such as\na producer's `FLAVOR-BASE`. A payload Aegis issues names a recorded\nrequirement, which [`RequirementId::is_aegis_requirement`] tells apart.",
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:[A-Z][A-Z0-9-]{0,2}|[A-Z][A-Z0-9-]{4,}|[A-QS-Z][A-Z0-9-]{3}|R[A-DF-Z0-9-][A-Z0-9-]{2}|RE[A-PR-Z0-9-][A-Z0-9-]|REQ[A-Z0-9])$"
+        },
+        "state": {
+          "description": "The state that symbol must be in.",
+          "$ref": "#/$defs/RequiredState"
+        },
+        "symbol": {
+          "description": "The Kconfig symbol the requirement is about.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^CONFIG_[A-Z0-9_]+$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "state",
+        "probe",
+        "required-by"
+      ]
+    },
+    "KernelAbi": {
+      "description": "The kernel version and module ABI the requirement is bounded by.",
+      "type": "object",
+      "properties": {
+        "minimum-release": {
+          "description": "The oldest release the requirement admits. A hard floor.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[0-9][0-9A-Za-z._+-]*$"
+        },
+        "module-abi": {
+          "description": "The exact module ABI a conforming artifact reports, when one is fixed.\n\n`None` while the artifact does not exist yet: a kernel that has not\nbeen built has no ABI to demand.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "maxLength": 64,
+          "pattern": "^[0-9][0-9A-Za-z._+-]*$"
+        },
+        "target-release": {
+          "description": "The release the requirement aims at, when one is named.\n\nRecorded, never checked against a profile. The M01 drift register's\n`target kernel floor` row states that the target version named by the\nsources is not a released version, so a check against it would refuse\nevery kernel that exists.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "maxLength": 64,
+          "pattern": "^[0-9][0-9A-Za-z._+-]*$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "minimum-release"
+      ]
+    },
+    "KernelRequirementVersion": {
+      "description": "The contract versions of the kernel requirement this build admits.",
+      "oneOf": [
+        {
+          "description": "Version 1, tagged `aegis.p01-nucleus.kernel-requirement.v1`.",
+          "type": "string",
+          "const": "aegis.p01-nucleus.kernel-requirement.v1"
+        }
+      ]
+    },
+    "ProbeSource": {
+      "description": "How a feature claim is checked on a running system.\n\nEach variant names one interface, and [`Self::path`] is the exact path the\nprobe reads. A row therefore carries its own falsification recipe: a\nreviewer runs [`FeatureRequirement::probe_command`] and compares.",
+      "oneOf": [
+        {
+          "description": "The kernel's own compiled-in configuration, `/proc/config.gz`.",
+          "type": "string",
+          "const": "kernel-config"
+        },
+        {
+          "description": "The active LSM list, `/sys/kernel/security/lsm`.",
+          "type": "string",
+          "const": "lsm-list"
+        },
+        {
+          "description": "The kernel BTF blob CO-RE eBPF programs compile against.",
+          "type": "string",
+          "const": "btf-vmlinux"
+        },
+        {
+          "description": "The powercap tree the RAPL energy counters appear under.",
+          "type": "string",
+          "const": "powercap"
+        },
+        {
+          "description": "The IOMMU group tree VFIO passthrough needs.",
+          "type": "string",
+          "const": "iommu-groups"
+        }
+      ]
+    },
+    "RequiredState": {
+      "description": "The state a requirement row demands of its symbol.",
+      "oneOf": [
+        {
+          "description": "The symbol must be compiled in; a module does not satisfy it.",
+          "type": "string",
+          "const": "built-in"
+        },
+        {
+          "description": "The symbol must be a loadable module; built-in does not satisfy it.",
+          "type": "string",
+          "const": "module"
+        },
+        {
+          "description": "The symbol must be available either way.",
+          "type": "string",
+          "const": "present"
+        },
+        {
+          "description": "The symbol must not be enabled at all.",
+          "type": "string",
+          "const": "absent"
+        }
+      ]
+    }
+  }
+}

@@ -3,6 +3,11 @@
 # this forge declares for the streams each consumer is bound to. Sources and bindings are
 # declared in versions.json downstream.requirements; the policy is docs/adr/0007.
 #
+# Before the verifier runs, every fetched document is read through the JSON Schema its owner
+# publishes, fetched at the commit versions.json pins and refused unless its sha256 is the
+# pinned one, and through the verifier's parser; a document the two read differently fails
+# the job, in either direction (docs/adr/0010).
+#
 # Two evidence levels, one job each (docs/adr/0008):
 # verify           declared: the fragments as scripts/merge-config.sh merges them.
 # resolve          per stream, the signed source is fetched and verified, and the fragments
@@ -31,9 +36,11 @@ on:
       - "scripts/merge-config.sh"
       - "scripts/fetch-kernel-requirements.sh"
       - "scripts/fetch-kernel-source.sh"
+      - "scripts/check_requirement_schema.py"
       - "scripts/kconfig_survival.py"
       - "scripts/versions_query.py"
       - "scripts/verify_kernel_requirement.py"
+      - "tests/test_requirement_schema.py"
       - "tests/test_verify_kernel_requirement.py"
       - "tests/test_fetch_kernel_requirements.py"
       - "tests/test_fetch_kernel_source.py"
@@ -50,9 +57,11 @@ on:
       - "scripts/merge-config.sh"
       - "scripts/fetch-kernel-requirements.sh"
       - "scripts/fetch-kernel-source.sh"
+      - "scripts/check_requirement_schema.py"
       - "scripts/kconfig_survival.py"
       - "scripts/versions_query.py"
       - "scripts/verify_kernel_requirement.py"
+      - "tests/test_requirement_schema.py"
       - "tests/test_verify_kernel_requirement.py"
       - "tests/test_fetch_kernel_requirements.py"
       - "tests/test_fetch_kernel_source.py"
@@ -110,7 +119,8 @@ jobs:
         run: |
           set -euo pipefail
           pytest tests/test_verify_kernel_requirement.py tests/test_fetch_kernel_requirements.py \
-            tests/test_kconfig_survival.py tests/test_fetch_kernel_source.py -v
+            tests/test_kconfig_survival.py tests/test_fetch_kernel_source.py \
+            tests/test_requirement_schema.py -v
 
       # Every client_payload field arrives from another repository, so each is passed through
       # env and validated by the script; none is interpolated into a run: block.
@@ -127,6 +137,24 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/fetch-kernel-requirements.sh --out=requirements
+
+      # The owner's schema at the pinned commit; scripts/check_requirement_schema.py refuses any
+      # bytes whose sha256 is not the pinned one, and every document is then read through it and
+      # through the verifier's parser. The job stops here, before the verifier's verdict, at a
+      # document the two readings do not both accept.
+      - name: Fetch the Owner Schema
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check_requirement_schema.py fetch --out=requirements/schema.json
+
+      - name: Validate the Documents Against the Owner Schema
+        run: |
+          set -euo pipefail
+          mapfile -t documents < <(grep '^--requirement=' requirements/args)
+          python3 scripts/check_requirement_schema.py check --schema=requirements/schema.json \
+            "${documents[@]}" | tee requirements/schema-report.txt
 
       - name: Verify Requirements Against the Declared KConfig
         env:
@@ -167,6 +195,14 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          if [[ -f requirements/schema-report.txt ]]; then
+            {
+              echo '### Downstream kernel requirements, owner schema'
+              echo '```'
+              cat requirements/schema-report.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
           if [[ -f requirements/report.txt ]]; then
             {
               echo '### Downstream kernel requirements'
@@ -184,6 +220,7 @@ jobs:
           path: |
             requirements/report.json
             requirements/report.txt
+            requirements/schema-report.txt
           if-no-files-found: ignore
           retention-days: 30
 

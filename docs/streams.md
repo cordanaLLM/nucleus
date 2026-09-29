@@ -165,3 +165,48 @@ from the verified source; a missing resolved `.config` is an error, not a pass. 
 `.config` is accepted only for the leg its Kconfig header names (`# Linux/<ARCH> <release>
 Kernel Configuration`); `mainstream` and `realtime` share a release, so the header cannot tell
 those two apart. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).
+
+### 5.1 The owner's JSON Schema
+
+Aegis-OS publishes a JSON Schema for the document (`build/kernel-requirement.schema.json`, draft
+2020-12, generated from the owner's Rust types). `versions.json` `downstream.requirement_schema`
+pins it by repository, path, commit and sha256, and
+`tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json` is the pinned file. It
+applies to every row of `downstream.requirements`. Nothing else records the commit or the digest.
+
+Before the verifier's verdict, `verify-requirements.yml` fetches the schema at the pinned commit
+and refuses it unless its sha256 is the pinned one. `scripts/check_requirement_schema.py check`
+then reads each fetched document twice, through the schema and through the verifier's parser.
+Only a document both accept passes. A document one accepts and the other refuses fails the run,
+and the report says which way. Three rules of the owner's decoder are outside what JSON Schema can
+state, so the schema accepts and the verifier refuses a document that breaks one, and the report
+names the rule: the 16384-byte bound, a `symbol` listed twice, and a `target-release` older than
+`minimum-release`. The decision is [ADR-0010](adr/0010-owner-json-schema-for-requirement-documents.md).
+
+To check documents against the pinned schema without the network:
+
+```bash
+python3 scripts/check_requirement_schema.py check \
+  --requirement imago=tests/fixtures/kernel-requirement/imago.json \
+  --requirement aegis-os=tests/fixtures/kernel-requirement/aegis-os.json
+```
+
+`make test` holds the rest offline: the vendored file's digest equals the pin, both committed
+documents validate, the schema's names and bounds equal the verifier's constants, and a corpus of
+documents runs through both readings and fails on any disagreement, listing each case.
+
+**Refreshing the pin.** It moves when Aegis-OS changes the contract, in a reviewed change:
+
+```bash
+sha="$(gh api repos/cordanaLLM/Aegis-OS/commits/main --jq .sha)"
+file=tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json
+gh api -H "Accept: application/vnd.github.raw+json" \
+  "repos/cordanaLLM/Aegis-OS/contents/build/kernel-requirement.schema.json?ref=${sha}" > "${file}"
+sha256sum "${file}"
+```
+
+Put the commit and the digest in `downstream.requirement_schema`, then run `make lint-manifest`
+and `pytest tests/test_requirement_schema.py`. When the file did not change, only `commit` moves.
+When it did, a failing test is the signal: a name or bound the verifier's constants do not carry,
+or a corpus case on which the two readings split, is a change of the contract that
+`scripts/verify_kernel_requirement.py` must follow in the same change.
