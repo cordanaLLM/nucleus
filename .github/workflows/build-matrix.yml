@@ -37,7 +37,9 @@ jobs:
     permissions:
       contents: read
     container:
-      image: ubuntu:26.04
+      # One digest for every workflow that runs ubuntu:26.04, publish-release.yml's build
+      # included, so a release compiles in the userland this matrix proved (tests/test_workflows.py).
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
       volumes:
         - /mnt:/mnt
     strategy:
@@ -104,12 +106,15 @@ jobs:
           base="$(./scripts/probe-build-space.sh --need-gib="${NEED_GIB}" "${GITHUB_WORKSPACE}" /mnt)"
           echo "work_dir=${base}/nucleus-build" >> "${GITHUB_OUTPUT}"
 
+      # The resolved configuration's digest is known only after the build, so the cache is
+      # restored by prefix, the leg's newest entry first, and every run saves a new entry under
+      # that digest and the run's id; the repository's cache evicts the least recently used.
       - name: Restore the Compiler Cache
         if: env.DRY_RUN != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-${{ hashFiles('versions.json', 'kconfig/**') }}
+          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-restore-${{ github.run_id }}
           restore-keys: |
             ccache-${{ matrix.stream }}-${{ matrix.arch }}-
 
@@ -152,7 +157,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-${{ steps.build.outputs.config_sha256 }}
+          key: ccache-${{ matrix.stream }}-${{ matrix.arch }}-${{ steps.build.outputs.config_sha256 }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # TCG, not KVM: the container has no /dev/kvm, and a boot to userspace takes seconds.
       - name: Boot the Kernel to Userspace

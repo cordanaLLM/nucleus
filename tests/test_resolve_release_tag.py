@@ -85,7 +85,7 @@ def test_the_release_builds_the_revision_the_tag_names():
         (REPO_ROOT / ".github" / "workflows" / "publish-release.yml").read_text(encoding="utf-8")
     )
     build = {step.get("name"): step for step in workflow["jobs"]["publish"]["steps"]}[
-        "Build the Tagged Stream"
+        "Build and Boot the Tagged Stream"
     ]
     assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
     assert '--revision="${REVISION}"' in build["run"]

@@ -11,6 +11,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+BUILD_IMAGE = re.compile(r"ubuntu:26\.04(@sha256:[0-9a-f]{64})?")
 
 
 def test_workflows_count():
@@ -42,7 +43,7 @@ def test_publish_release_ships_kernel_artifact_manifest():
     steps = parsed["jobs"]["publish"]["steps"]
     names = [step.get("name", "") for step in steps]
 
-    build = names.index("Build the Tagged Stream")
+    build = names.index("Build and Boot the Tagged Stream")
     gate = names.index("Gate the Kernel Artifacts")
     sign = names.index("Checksum and Sign the Release")
     manifest = names.index("Generate Kernel Artifact Manifest")
@@ -64,14 +65,16 @@ def test_publish_release_ships_kernel_artifact_manifest():
 def test_publish_release_builds_gates_and_records_what_it_built():
     """Issue #18: a real build of the tagged stream, gated, with the measured release in the manifest."""
     steps, names = _publish_release_steps()
-    build = steps[names.index("Build the Tagged Stream")]
+    build = steps[names.index("Build and Boot the Tagged Stream")]
     assert "./scripts/build_kernel.sh" in build["run"] and "--arch=x86_64" in build["run"]
     assert '--revision="${REVISION}"' in build["run"]
     assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
-    assert "ubuntu:26.04" in build["run"] and "install-build-toolchain.sh" in build["run"]
+    assert BUILD_IMAGE.fullmatch(build["env"]["BUILD_IMAGE"]) and '"${BUILD_IMAGE}"' in build["run"]
+    assert "install-build-toolchain.sh --with-qemu" in build["run"]
     assert "-e GITHUB_TOKEN" not in build["run"] and "ACTIONS_ID_TOKEN" not in build["run"]
     gate = steps[names.index("Gate the Kernel Artifacts")]
     assert "scripts/check_kernel_artifacts.py --dir=output" in gate["run"]
+    assert "--cross" not in gate["run"], "the release builds natively and must ship its headers package"
     sign = steps[names.index("Checksum and Sign the Release")]["run"]
     assert sign.index("publish_release.sh") < sign.index("cosign sign-blob")
     assert "OUTPUT_DIR=output" in sign and "|| true" not in sign
@@ -100,7 +103,7 @@ def test_build_matrix_compiles_twelve_legs_with_least_privilege():
     runners = {entry["arch"]: entry["runner"] for entry in matrix["include"]}
     assert runners == {"x86_64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm", "riscv64": "ubuntu-24.04"}
     assert job["runs-on"] == "${{ matrix.runner }}"
-    assert job["container"]["image"] == "ubuntu:26.04"
+    assert BUILD_IMAGE.fullmatch(job["container"]["image"])
     assert job["timeout-minutes"] == "${{ matrix.timeout }}"
     for entry in matrix["include"]:
         assert 30 <= entry["timeout"] <= 240 and 8 <= entry["disk_gib"] <= 30, entry
@@ -130,6 +133,60 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     assert restore["uses"].startswith("actions/cache/restore@") and save["uses"].startswith("actions/cache/save@")
     assert "${{ steps.build.outputs.config_sha256 }}" in save["with"]["key"]
     assert "${{ matrix.stream }}-${{ matrix.arch }}" in save["with"]["key"]
+
+
+def test_build_matrix_compiler_cache_is_restored_by_prefix_and_saved_under_a_new_key():
+    """The save key must never equal an existing entry, or the cache is frozen at its first save."""
+    steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}
+    restore, save = steps["Restore the Compiler Cache"]["with"], steps["Save the Compiler Cache"]["with"]
+    prefix = "ccache-${{ matrix.stream }}-${{ matrix.arch }}-"
+    assert restore["restore-keys"].strip() == prefix
+    assert save["key"].startswith(prefix) and restore["key"].startswith(prefix)
+    assert "${{ github.run_id }}-${{ github.run_attempt }}" in save["key"]
+    assert "hashFiles" not in restore["key"], "the restore key and the save key use one scheme"
+
+
+def test_publish_release_container_cannot_rewrite_what_the_host_runs_next():
+    """The checkout is read-only in the build container; only output/, records/ and work dirs are not."""
+    steps, names = _publish_release_steps()
+    run = steps[names.index("Build and Boot the Tagged Stream")]["run"]
+    mounts = re.findall(r'-v "?([^"\s)]+)"?', run)
+    assert '${GITHUB_WORKSPACE}:/forge:ro' in mounts
+    writable = [m for m in mounts if not m.endswith(":ro")]
+    assert sorted(writable) == sorted([
+        "${GITHUB_WORKSPACE}/output:/forge/output",
+        "${GITHUB_WORKSPACE}/records:/forge/records",
+        "${RUNNER_TEMP}/nucleus-build:/work/temp",
+        "/mnt/nucleus-build:/work/mnt",
+    ]), writable
+    assert "/var/run/docker.sock" not in run and "--privileged" not in run
+
+
+def test_publish_release_boots_the_kernel_before_anything_is_signed():
+    steps, names = _publish_release_steps()
+    run = steps[names.index("Build and Boot the Tagged Stream")]["run"]
+    assert run.index("./scripts/build_kernel.sh") < run.index("python3 scripts/boot_smoke.py")
+    assert '--log="records/boot-${STREAM}-x86_64.log"' in run
+    assert 'exit "${status}"' in run and "|| status=$?" in run
+    assert names.index("Build and Boot the Tagged Stream") < names.index("Checksum and Sign the Release")
+    keep = steps[names.index("Keep the Build Record and Boot Log")]
+    assert keep["if"] == "always()" and keep["with"]["path"] == "records/"
+
+
+def test_every_ubuntu_26_04_container_is_pinned_to_one_digest():
+    """A release must compile in the userland the matrix proved; a tag can move, a digest cannot."""
+    found: dict[str, list[str]] = {}
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for line in wf.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("#"):
+                continue
+            for match in BUILD_IMAGE.finditer(line):
+                found.setdefault(match.group(0), []).append(wf.name)
+    assert len(found) == 1, found
+    image, users = next(iter(found.items()))
+    assert "@sha256:" in image
+    for name in ("build-matrix.yml", "publish-release.yml", "ci.yml", "verify-requirements.yml"):
+        assert name in users, name
 
 
 def test_no_run_block_interpolates_event_data():
@@ -231,7 +288,7 @@ def test_publish_release_stops_before_building_or_publishing_without_the_token()
     """A missing credential must publish nothing: the guard runs before every other step."""
     _, names, _ = _guard_step()
     guard = names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")
-    for later in ("Build the Tagged Stream", "Publish to GitHub Release"):
+    for later in ("Build and Boot the Tagged Stream", "Publish to GitHub Release"):
         assert guard < names.index(later), f"the guard must run before {later!r}"
 
 
@@ -269,7 +326,7 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
         "Plan the Resolved Evidence"
     ]["run"]
     resolve = jobs["resolve"]
-    assert resolve["needs"] == "verify" and resolve["container"]["image"] == "ubuntu:26.04"
+    assert resolve["needs"] == "verify" and BUILD_IMAGE.fullmatch(resolve["container"]["image"])
     assert resolve["strategy"]["matrix"] == "${{ fromJSON(needs.verify.outputs.plan) }}"
     steps = {step.get("name", ""): step for step in resolve["steps"]}
     install = steps["Install the Resolution Toolchain"]["run"]

@@ -194,7 +194,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: ubuntu:26.04
+      # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.verify.outputs.plan) }}

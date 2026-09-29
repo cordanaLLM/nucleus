@@ -85,32 +85,56 @@ jobs:
           fi
           echo "revision=${built}" >> "${GITHUB_OUTPUT}"
 
-      # The kernel compiles in the Ubuntu 26.04 userland build-matrix.yml proves, in a container
-      # that sees neither the job's token nor its OIDC credentials. The v1 artifact contract
-      # (imago.nucleus.kernel-artifact.v1) has no architecture field, so a release is x86_64.
-      - name: Build the Tagged Stream
+      # The kernel compiles in the pinned Ubuntu 26.04 image build-matrix.yml proves, in a
+      # container that sees neither the job's token nor its OIDC credentials. The container
+      # cannot change what the later steps of this job run: the checkout is mounted read-only,
+      # and only output/, records/ and two build directories outside the checkout are writable.
+      # Inside, build_kernel.sh passes the kernel through the artifact gate, and the kernel then
+      # boots to userspace under QEMU (scripts/boot_smoke.py) before this step succeeds; the
+      # console goes to records/. The v1 artifact contract (imago.nucleus.kernel-artifact.v1)
+      # has no architecture field, so a release is x86_64.
+      - name: Build and Boot the Tagged Stream
         env:
           STREAM: ${{ steps.meta.outputs.stream }}
           REVISION: ${{ steps.meta.outputs.rev }}
+          # One digest for every workflow that runs ubuntu:26.04 (tests/test_workflows.py).
+          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
         run: |
           set -euo pipefail
-          docker run --rm -v "${GITHUB_WORKSPACE}:/forge" -v /mnt:/mnt -w /forge \
-            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" ubuntu:26.04 bash -c '
+          mkdir -p output records "${RUNNER_TEMP}/nucleus-build"
+          mounts=(-v "${GITHUB_WORKSPACE}:/forge:ro" -v "${GITHUB_WORKSPACE}/output:/forge/output"
+            -v "${GITHUB_WORKSPACE}/records:/forge/records" -v "${RUNNER_TEMP}/nucleus-build:/work/temp")
+          # The hosted runners keep a larger scratch disk at /mnt; the build may use a directory there.
+          if [[ -d /mnt ]]; then
+            sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/nucleus-build
+            mounts+=(-v /mnt/nucleus-build:/work/mnt)
+          fi
+          docker run --rm "${mounts[@]}" -w /forge \
+            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
               set -euo pipefail
-              bash ./scripts/install-build-toolchain.sh
-              base="$(./scripts/probe-build-space.sh /forge /mnt)"
+              bash ./scripts/install-build-toolchain.sh --with-qemu
+              candidates=(/work/temp)
+              if [[ -d /work/mnt ]]; then candidates+=(/work/mnt); fi
+              base="$(./scripts/probe-build-space.sh "${candidates[@]}")"
               status=0
               ./scripts/build_kernel.sh --stream="${STREAM}" --arch=x86_64 --revision="${REVISION}" \
                 --work-dir="${base}/nucleus-build" --output-dir=output || status=$?
-              mkdir -p output records
               if [[ -f "${base}/nucleus-build/${STREAM}-x86_64/build.json" ]]; then
                 cp "${base}/nucleus-build/${STREAM}-x86_64/build.json" records/build.json
+              fi
+              if [[ "${status}" -eq 0 ]]; then
+                # The gate has passed, so output/ holds exactly one vmlinuz-<kernelrelease>.
+                kernels=(output/vmlinuz-*)
+                python3 scripts/boot_smoke.py --kernel="${kernels[0]}" \
+                  --kernelrelease="${kernels[0]#output/vmlinuz-}" --timeout=300 \
+                  --log="records/boot-${STREAM}-x86_64.log" || status=$?
               fi
               chown -R "${HOST_UID}:${HOST_GID}" output records
               exit "${status}"'
 
       # The gate runs again, on this host, over exactly the directory that is checksummed and
-      # signed next: every package opened, its version, architecture, kernel and config checked.
+      # signed next: every package opened, its version, architecture, kernel image and config
+      # checked. The build is native (x86_64 on x86_64), so the headers package is required.
       - name: Gate the Kernel Artifacts
         id: gate
         env:
@@ -118,10 +142,23 @@ jobs:
           REVISION: ${{ steps.meta.outputs.rev }}
         run: |
           set -euo pipefail
+          if [[ -L records/build.json || ! -f records/build.json ]]; then
+            echo "::error title=No build record::records/build.json is missing or not a regular file" >&2
+            exit 1
+          fi
           kernelrelease="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["kernelrelease"])' records/build.json)"
           python3 scripts/check_kernel_artifacts.py --dir=output --stream="${STREAM}" --arch=x86_64 \
             --revision="${REVISION}" --kernelrelease="${kernelrelease}"
           echo "kernelrelease=${kernelrelease}" >> "${GITHUB_OUTPUT}"
+
+      - name: Keep the Build Record and Boot Log
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: release-records
+          path: records/
+          if-no-files-found: ignore
+          retention-days: 90
 
       - name: Checksum and Sign the Release
         env:
