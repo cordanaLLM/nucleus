@@ -27,7 +27,8 @@ MARKER = f"NUCLEUS-BOOT-SMOKE release={KR}\n"
 def _read_newc(data: bytes) -> list[tuple[str, int, bytes, tuple[int, int]]]:
     """Parse a newc archive independently of the writer."""
     entries, offset = [], 0
-    while True:
+    # Every entry, the trailer included, takes at least its 110-byte header.
+    for _ in range(len(data) // 110):
         assert data[offset : offset + 6] == b"070701", offset
         fields = [int(data[offset + 6 + 8 * i : offset + 14 + 8 * i], 16) for i in range(13)]
         mode, size, rdev, namesize = fields[1], fields[6], (fields[9], fields[10]), fields[11]
@@ -42,6 +43,7 @@ def _read_newc(data: bytes) -> list[tuple[str, int, bytes, tuple[int, int]]]:
             assert offset == len(data)
             return entries
         entries.append((name, mode, body, rdev))
+    pytest.fail("the archive ends without a TRAILER!!! entry")
 
 
 def test_initramfs_holds_the_init_and_a_console_node():
