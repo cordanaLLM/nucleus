@@ -125,6 +125,20 @@ at the output path nor in the build directory. The kernel
 release each resolved tree reports (`make kernelrelease`) is `7.3.0-rc5` for `bleeding`,
 `7.2.8` for `mainstream` and `realtime`, and `6.18.54` for `lts`.
 
+The build (`scripts/build_kernel.sh`, [packaging section 2](packaging.md)) adds the localversion
+`-lusoris<N>-<stream>`, so every stream's kernel names itself, and `mainstream` and `realtime`,
+built from the same tree, do not share a release or a package name:
+
+| Stream | Kernel release (`uname -r`) | Package version | x86_64 boot to userspace |
+| :--- | :--- | :--- | :--- |
+| `bleeding` | `7.3.0-rc5-lusoris1-bleeding` | `7.3-rc5-lusoris1` | booted |
+| `mainstream` | `7.2.8-lusoris1-mainstream` | `7.2.8-lusoris1` | booted |
+| `lts` | `6.18.54-lusoris1-lts` | `6.18.54-lusoris1` | booted |
+| `realtime` | `7.2.8-lusoris1-realtime` | `7.2.8-lusoris1` | booted |
+
+`build-matrix.yml` compiles every stream for x86_64, arm64 and riscv64, opens every package with
+the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages.
+
 ---
 
 ## 5. Consumer Bindings

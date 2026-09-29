@@ -6,23 +6,22 @@
 
 ## 0. Start here
 
-**This forge does not compile a kernel yet.** `scripts/build_kernel.sh` refuses on its
-production path and exits 1; only `--dry-run` produces output. Everything around the
-compile is implemented: the manifest, the kconfig merge, the packaging scripts, the
-release pipeline with SBOM and cosign signature, and the downstream dispatch to
-`cordanaLLM/imago`.
+**This forge compiles kernels, and refuses to emit anything it did not compile.**
+`scripts/build_kernel.sh` fetches a stream's signed source, resolves the kconfig fragments
+against it, runs `bindeb-pkg`, and passes the packages through an artifact gate that opens every
+one of them before anything is checksummed (`docs/adr/0009-kernel-compilation-and-artifact-gate.md`).
+`build-matrix.yml` compiles all four streams for `x86_64`, `arm64` and `riscv64` and boots every
+x86_64 kernel under QEMU; `publish-release.yml` builds, gates, signs and publishes the tagged
+stream for x86_64.
 
-It refuses because it used to fabricate. The production path touched two empty `.deb`
-files and exited 0, the release workflow added sixteen megabytes of `/dev/urandom` named
-as a Unified Kernel Image, and cosign signed the result. Imago verifies these artifacts
-by digest and provenance before an image consumes them, and that verification would have
-passed on empty files.
+The refusals are deliberate, and they stay. The production path once touched two empty `.deb`
+files and exited 0, the release workflow added sixteen megabytes of `/dev/urandom` named as a
+Unified Kernel Image, and cosign signed the result. Imago verifies these artifacts by digest and
+provenance before an image consumes them, and that verification would have passed on empty
+files. Never make a build green by writing a placeholder.
 
-The work is issue #18. Its first part is done: `scripts/fetch-kernel-source.sh` fetches the
-pinned source and verifies its signature, and `scripts/merge-config.sh --source-tree` resolves
-the kconfig fragments against it and refuses a value `olddefconfig` dropped. What remains is to
-run `bindeb-pkg` and cross-compile for `arm64` and `riscv64`. `AGENTS.md` section 1 has the
-stage-by-stage state and the contract with imago.
+Issue #18 (the build) and #31 (the packaging scripts) are the history; `AGENTS.md` section 1 has
+the stage-by-stage state and the contract with imago.
 
 ---
 
@@ -39,7 +38,7 @@ sequenceDiagram
     participant GH as GitHub Releases & Apt Repository
     participant CI as imago (Image Forge)
 
-    Note over KF: Kernel source fetched, patched, compiled
+    Note over KF: Kernel source fetched, verified, compiled
     KF->>KF: make bindeb-pkg (linux-image, linux-headers)
     KF->>GH: Upload signed .deb packages & SHA256 checksums
     KF->>CI: repository_dispatch (kernel_release_published)
@@ -85,12 +84,19 @@ Verify the target kernel streams:
 ## 3. Operational Recipes
 
 ### Recipe A: Compiling a Kernel Locally
+Run it in `ubuntu:26.04` with `scripts/install-build-toolchain.sh`, the toolchain the workflows
+use; a leg needs 8 to 16 GiB of disk, depending on the architecture
+(`scripts/probe-build-space.sh`, and `disk_gib` in `build-matrix.yml`).
 ```bash
-# Dry-run validation of download and config merge:
+# State the fetch, the resolution, the make command and the expected kernel release:
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run
 
-# Full compilation (utilizes all available CPU threads):
+# Full compilation (all CPU threads); writes output/mainstream-x86_64/ and build/mainstream-x86_64/
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64
+
+# Boot the result to userspace under QEMU
+python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstream \
+  --kernelrelease=7.2.8-lusoris1-mainstream
 ```
 
 ### Recipe B: Adding a Curated Kernel Patch
