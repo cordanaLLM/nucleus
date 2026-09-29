@@ -22,13 +22,22 @@ directory unless all of these hold:
 - it holds only non-empty regular files: Debian packages, ``vmlinuz-<kernelrelease>`` and
   ``kernel-<stream>-<arch>.config``, and nothing else;
 - every package names itself, in ``dpkg-deb -f``, as ``linux-image-<kernelrelease>``,
-  ``linux-headers-<kernelrelease>`` or ``linux-libc-dev``, at version ``<version>-lusoris<N>``
-  and the architecture's Debian architecture from versions.json, under the file name
-  ``<Package>_<Version>_<Architecture>.deb``; the image package is present, and no package twice;
+  ``linux-headers-<kernelrelease>`` or ``linux-libc-dev``, at version
+  ``<debian_version>-lusoris<N>`` (``7.3~rc5`` for ``7.3-rc5``, so dpkg orders a release
+  candidate before its release) and the architecture's Debian architecture from versions.json,
+  under the file name ``<Package>_<Version>_<Architecture>.deb`` with ``~`` spelled ``.``
+  (GitHub renames ``~`` in a release asset, and imago refuses it in an artifact name); no
+  package appears twice, and the image and libc-dev packages are present, and the headers
+  package too unless ``--cross`` says the build was a cross build, which makes none;
 - the kernelrelease starts with the stream's kernel version and ends with ``-lusoris<N>-<stream>``;
 - the image package carries ``./boot/vmlinuz-<kernelrelease>``, byte-identical to the
   ``vmlinuz-<kernelrelease>`` beside it, and ``./boot/config-<kernelrelease>``, byte-identical
-  to the resolved ``kernel-<stream>-<arch>.config``.
+  to the resolved ``kernel-<stream>-<arch>.config``;
+- that kernel image is a kernel of this release for this architecture: on x86 a bzImage whose
+  setup header (``HdrS`` at 0x202) points at a version string that starts with
+  ``<kernelrelease> ``; on arm64 and riscv a gzip-compressed ``Image`` with the architecture's
+  header magic at 0x38 and the banner ``Linux version <kernelrelease> `` inside. Any other
+  kernel architecture is refused, since no check is known for it.
 
 Exit status 0 when the directory passes, 1 when it is refused (every finding is listed), and 2
 when the request itself cannot be evaluated (unknown stream or architecture, no dpkg-deb).
@@ -43,6 +52,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +63,12 @@ import versions_query  # noqa: E402
 
 PACKAGE_FIELDS = ("Package", "Version", "Architecture")
 _KERNELRELEASE = re.compile(r"[0-9][0-9A-Za-z.+_-]{0,63}")
+# The header magic of an arm64 and a riscv Image, at offset 0x38 (Documentation/arch/arm64/
+# booting.rst, Documentation/arch/riscv/boot-image-header.rst).
+IMAGE_MAGIC = {"arm64": b"ARM\x64", "riscv": b"RSC\x05"}
+IMAGE_MAGIC_OFFSET = 0x38
+# A decompressed arm64 Image of this forge is about 50 MB; anything past this bound is refused.
+MAX_IMAGE_BYTES = 256 * 1024 * 1024
 
 
 class GateError(RuntimeError):
@@ -65,11 +81,13 @@ class Expectation:
 
     stream: str
     arch: str
+    kernel_arch: str
     kernelversion: str
     package_version: str
     debian_arch: str
     localversion: str
     kernelrelease: str
+    cross: bool = False
 
     @property
     def config_name(self) -> str:
@@ -83,6 +101,17 @@ class Expectation:
     def packages(self) -> tuple[str, ...]:
         kr = self.kernelrelease
         return (f"linux-image-{kr}", f"linux-headers-{kr}", "linux-libc-dev")
+
+    @property
+    def required(self) -> tuple[str, ...]:
+        """The packages the build must have produced: a cross build makes no headers package."""
+        image, headers, libc = self.packages
+        return (image, libc) if self.cross else (image, headers, libc)
+
+
+def package_file_name(package: str, version: str, arch: str) -> str:
+    """The file name of a package: dpkg's, with ``~`` spelled ``.``."""
+    return f"{package}_{version}_{arch}.deb".replace("~", ".")
 
 
 def expectation(versions_path: Path, args: argparse.Namespace) -> Expectation:
@@ -98,11 +127,13 @@ def expectation(versions_path: Path, args: argparse.Namespace) -> Expectation:
     return Expectation(
         stream=args.stream,
         arch=args.arch,
+        kernel_arch=arch["kernel_arch"],
         kernelversion=source["kernelversion"],
-        package_version=f"{source['version']}-lusoris{args.revision}",
+        package_version=f"{source['debian_version']}-lusoris{args.revision}",
         debian_arch=arch["debian_arch"],
         localversion=f"-lusoris{args.revision}-{args.stream}",
         kernelrelease=args.kernelrelease,
+        cross=bool(getattr(args, "cross", False)),
     )
 
 
@@ -176,8 +207,9 @@ def check_package(path: Path, exp: Expectation) -> tuple[list[str], str | None]:
         problems.append(f"{path.name}: version {version}, expected {exp.package_version}")
     if arch != exp.debian_arch:
         problems.append(f"{path.name}: architecture {arch}, expected {exp.debian_arch}")
-    if path.name != f"{package}_{version}_{arch}.deb":
-        problems.append(f"{path.name}: file name does not match {package}_{version}_{arch}.deb")
+    expected_name = package_file_name(package, version, arch)
+    if path.name != expected_name:
+        problems.append(f"{path.name}: file name does not match {expected_name}")
     return problems, package
 
 
@@ -193,20 +225,24 @@ def check_packages(debs: Sequence[Path], exp: Expectation) -> tuple[list[str], P
         if package in seen:
             problems.append(f"{path.name}: package {package} also in {seen[package].name}")
         seen.setdefault(package, path)
-    image = seen.get(exp.packages[0])
-    if image is None:
-        problems.append(f"no {exp.packages[0]} package")
-    return problems, image
+    for package in exp.required:
+        if package not in seen:
+            problems.append(f"no {package} package")
+    return problems, seen.get(exp.packages[0])
 
 
-def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes]:
-    """Read the wanted regular files out of a package's data archive, streaming it once."""
+def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes] | None:
+    """Read the wanted regular files out of a package's data archive, streaming it once.
+
+    None when dpkg-deb or the archive fails, even after the wanted members streamed through.
+    """
     found: dict[str, bytes] = {}
     with subprocess.Popen(
         ["dpkg-deb", "--fsys-tarfile", str(image)],
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     ) as proc:
+        readable = True
         try:
             with tarfile.open(fileobj=proc.stdout, mode="r|*") as archive:
                 for member in archive:
@@ -214,11 +250,61 @@ def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes]:
                         handle = archive.extractfile(member)
                         found[member.name] = handle.read() if handle else b""
         except tarfile.TarError:
-            found.clear()
+            readable = False
         finally:
             if proc.stdout is not None:
                 proc.stdout.read()
-    return found
+        if proc.wait() != 0:
+            readable = False
+    return found if readable else None
+
+
+def _bzimage_version(data: bytes) -> str | None:
+    """The version string an x86 bzImage's setup header points at, or None if it has none."""
+    if len(data) < 0x210 or data[0x202:0x206] != b"HdrS":
+        return None
+    offset = 0x200 + int.from_bytes(data[0x20E:0x210], "little")
+    end = data.find(b"\0", offset, offset + 512)
+    if end < 0:
+        return None
+    return data[offset:end].decode("ascii", "replace")
+
+
+def _gunzip(data: bytes) -> bytes | None:
+    """One complete gzip stream, decompressed, or None if it is not one or exceeds the bound."""
+    if data[:2] != b"\x1f\x8b":
+        return None
+    inflater = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+    try:
+        image = inflater.decompress(data, MAX_IMAGE_BYTES)
+    except zlib.error:
+        return None
+    if inflater.unconsumed_tail or not inflater.eof:
+        return None
+    return image
+
+
+def check_kernel_image(data: bytes, exp: Expectation) -> list[str]:
+    """The kernel image must be a kernel of this release for this architecture."""
+    name, kr = exp.vmlinuz_name, exp.kernelrelease
+    if exp.kernel_arch == "x86_64":
+        version = _bzimage_version(data)
+        if version is None:
+            return [f"{name}: not a bzImage (no setup header with a kernel version string)"]
+        if not version.startswith(f"{kr} "):
+            return [f"{name}: the bzImage reports {version.split(' ', 1)[0]!r}, not {kr}"]
+        return []
+    magic = IMAGE_MAGIC.get(exp.kernel_arch)
+    if magic is None:
+        return [f"{name}: no image check is known for kernel architecture {exp.kernel_arch}"]
+    image = _gunzip(data)
+    if image is None:
+        return [f"{name}: not a complete gzip-compressed Image within {MAX_IMAGE_BYTES} bytes"]
+    if image[IMAGE_MAGIC_OFFSET : IMAGE_MAGIC_OFFSET + len(magic)] != magic:
+        return [f"{name}: the decompressed image has no {exp.kernel_arch} Image header"]
+    if f"Linux version {kr} ".encode() not in image:
+        return [f"{name}: the decompressed image has no 'Linux version {kr} ' banner"]
+    return []
 
 
 def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
@@ -226,6 +312,8 @@ def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
     vmlinuz = f"./boot/vmlinuz-{exp.kernelrelease}"
     config = f"./boot/config-{exp.kernelrelease}"
     members = image_members(image, (vmlinuz, config))
+    if members is None:
+        return [f"{image.name}: dpkg-deb cannot read its data archive"]
     problems = []
     for member, beside in ((vmlinuz, exp.vmlinuz_name), (config, exp.config_name)):
         data = members.get(member)
@@ -235,6 +323,8 @@ def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
         path = directory / beside
         if path.is_file() and path.read_bytes() != data:
             problems.append(f"{beside}: differs from {member} in {image.name}")
+    if members.get(vmlinuz):
+        problems.extend(check_kernel_image(members[vmlinuz], exp))
     return problems
 
 
@@ -257,6 +347,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--arch", required=True)
     parser.add_argument("--kernelrelease", required=True, help="make -s kernelrelease of the build")
     parser.add_argument("--revision", type=int, default=1, help="the forge revision N")
+    parser.add_argument(
+        "--cross",
+        action="store_true",
+        help="the build ran on another architecture, so it made no headers package",
+    )
     parser.add_argument("--versions", type=Path, default=Path("versions.json"))
     return parser
 

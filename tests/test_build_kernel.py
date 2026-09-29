@@ -40,6 +40,11 @@ def _dirs(tmp_path: Path) -> tuple[str, str]:
     return f"--work-dir={tmp_path / 'build'}", f"--output-dir={tmp_path / 'out'}"
 
 
+def _debian_version(stream: str) -> str:
+    """The Debian upstream version: a release candidate's -rc<N> is ~rc<N>, as mkdebian spells it."""
+    return VERSIONS["streams"][stream]["version"].replace("-rc", "~rc")
+
+
 def _kernelversion(stream: str) -> str:
     version = VERSIONS["streams"][stream]["version"]
     base, _, rc = version.partition("-")
@@ -54,7 +59,7 @@ def test_dry_run_states_the_exact_build_and_writes_nothing(tmp_path, stream, arc
     result = _run(BUILD, f"--stream={stream}", f"--arch={arch}", "--dry-run", *_dirs(tmp_path))
     assert result.returncode == 0, result.stderr
     data = VERSIONS["architectures"][arch]
-    version = VERSIONS["streams"][stream]["version"]
+    version = _debian_version(stream)
     out = result.stdout
     assert f"ARCH={data['kernel_arch']} CROSS_COMPILE={data['cross_compile']}" in out
     assert f"bindeb-pkg LOCALVERSION=-lusoris1-{stream} KDEB_PKGVERSION={version}-lusoris1" in out
@@ -65,6 +70,20 @@ def test_dry_run_states_the_exact_build_and_writes_nothing(tmp_path, stream, arc
     assert f"{data['debian_arch']} packages at {version}-lusoris1" in out
     assert "[DRY-RUN] Nothing was fetched, compiled or written." in out
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_release_candidate_package_version_sorts_before_the_release(tmp_path):
+    """bleeding 7.3-rc5 packages as 7.3~rc5: dpkg orders it before 7.3, where 7.3-rc5 sorts after."""
+    result = _run(BUILD, "--stream=bleeding", "--arch=x86_64", "--dry-run", *_dirs(tmp_path))
+    assert result.returncode == 0, result.stderr
+    assert VERSIONS["streams"]["bleeding"]["version"] == "7.3-rc5"
+    assert "LOCALVERSION=-lusoris1-bleeding KDEB_PKGVERSION=7.3~rc5-lusoris1" in result.stdout
+    assert "expected 7.3.0-rc5-lusoris1-bleeding" in result.stdout, "the kernelrelease keeps -rc5"
+    assert "<package>_7.3.rc5-lusoris1_amd64.deb" in result.stdout, "GitHub renames ~ in an asset"
+    if shutil.which("dpkg"):
+        compare = ["dpkg", "--compare-versions"]
+        assert subprocess.run([*compare, "7.3~rc5-lusoris1", "lt", "7.3-lusoris1"], check=False).returncode == 0
+        assert subprocess.run([*compare, "7.3-rc5-lusoris1", "lt", "7.3-lusoris1"], check=False).returncode != 0
 
 
 def test_revision_is_threaded_into_localversion_and_package_version(tmp_path):
@@ -178,6 +197,22 @@ def test_a_uutils_install_is_shadowed_by_gnuinstall_for_the_build(tmp_path):
     assert "install is not GNU coreutils; the build uses" in result.stdout, result.stderr
     assert shim.is_symlink() and Path(os.readlink(shim)).name == "gnuinstall"
     assert result.returncode == 1, "the stand-in tree cannot be resolved, so the build stops there"
+
+
+def test_a_stale_build_record_is_removed_before_the_build(tmp_path):
+    """A failed rebuild must not leave the earlier build's record claiming a gated kernel."""
+    env = _uutils_bin(tmp_path, with_gnuinstall=True)
+    tree = tmp_path / "tree"
+    (tree / "scripts" / "package").mkdir(parents=True)
+    (tree / "Makefile").write_text("VERSION = 7\n", encoding="utf-8")
+    (tree / "scripts" / "package" / "builddeb").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tree / "scripts" / "package" / "builddeb").chmod(0o755)
+    record = tmp_path / "build" / "mainstream-x86_64" / "build.json"
+    record.parent.mkdir(parents=True)
+    record.write_text('{"kernelrelease": "7.2.8-lusoris1-mainstream"}\n', encoding="utf-8")
+    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", f"--source-tree={tree}", *_dirs(tmp_path), env=env)
+    assert result.returncode == 1, "the stand-in tree cannot be resolved, so the build stops there"
+    assert not record.exists()
 
 
 def test_no_placeholder_artifact_survives_in_the_build_script():

@@ -21,9 +21,11 @@
 #      --source-tree names a tree that script already wrote;
 #   2. resolve the kconfig fragments against it with scripts/merge-config.sh --source-tree;
 #   3. make bindeb-pkg with LOCALVERSION=-lusoris<N>-<stream> and KDEB_PKGVERSION=
-#      <version>-lusoris<N>, without the debug-symbol package, in a fixed build environment;
-#   4. record `make -s kernelrelease` and extract ./boot/vmlinuz-<kernelrelease> from the image
-#      package;
+#      <debian_version>-lusoris<N> (7.3-rc5 is 7.3~rc5, which dpkg orders before 7.3), without
+#      the debug-symbol package, in a fixed build environment;
+#   4. record `make -s kernelrelease`, spell `~` as `.` in the package file names (GitHub
+#      renames `~` in a release asset), and extract ./boot/vmlinuz-<kernelrelease> from the
+#      image package;
 #   5. pass what it produced through the artifact gate, scripts/check_kernel_artifacts.py.
 # The output directory then holds exactly the packages, vmlinuz-<kernelrelease> and
 # kernel-<stream>-<arch>.config, and <work-dir>/<stream>-<arch>/build.json records the build.
@@ -52,7 +54,7 @@ Usage: build_kernel.sh --stream=<stream> --arch=<arch> [options]
   --stream=<stream>     a stream of versions.json [default: mainstream]
   --arch=<arch>         an architecture of versions.json [default: x86_64]
   --revision=<N>        the forge revision, a positive integer: LOCALVERSION -lusoris<N>-<stream>,
-                        package version <version>-lusoris<N> [default: 1]
+                        package version <debian_version>-lusoris<N> [default: 1]
   --source-tree=<dir>   a tree scripts/fetch-kernel-source.sh verified; fetched when omitted
   --work-dir=<dir>      source, object tree, log and build record [default: build]
   --output-dir=<dir>    where the artifacts go; must not exist or be empty
@@ -127,7 +129,7 @@ detect_host() {
 
 derive_names() {
   LOCAL_VERSION="-lusoris${REVISION}-${STREAM}"
-  PACKAGE_VERSION="${SRC[version]}-lusoris${REVISION}"
+  PACKAGE_VERSION="${SRC[debian_version]}-lusoris${REVISION}"
   OUTPUT_DIR="${OUTPUT_DIR:-output/${STREAM}-${ARCH}}"
   LEG_DIR="${WORK_DIR}/${STREAM}-${ARCH}"
   KBUILD_DIR="${LEG_DIR}/kbuild"
@@ -147,7 +149,8 @@ state_plan() {
   echo "    build:   DEB_BUILD_PROFILES='${PROFILES}' make O=${KBUILD_DIR} ARCH=${ARC[kernel_arch]} CROSS_COMPILE=${ARC[cross_compile]} -j${JOBS} bindeb-pkg LOCALVERSION=${LOCAL_VERSION} KDEB_PKGVERSION=${PACKAGE_VERSION}"
   echo "    env:     SOURCE_DATE_EPOCH and KBUILD_BUILD_TIMESTAMP from the source release, KBUILD_BUILD_USER=nucleus, KBUILD_BUILD_HOST=forge"
   echo "    record:  make -s kernelrelease (expected ${SRC[kernelversion]}${LOCAL_VERSION}), ${LEG_DIR}/build.json"
-  echo "    gate:    scripts/check_kernel_artifacts.py over ${OUTPUT_DIR}: ${ARC[debian_arch]} packages at ${PACKAGE_VERSION}, ./boot/vmlinuz-<kernelrelease>, /boot/config == the resolved config"
+  echo "    names:   <package>_${PACKAGE_VERSION//\~/.}_${ARC[debian_arch]}.deb (a '~' in the version is spelled '.')"
+  echo "    gate:    scripts/check_kernel_artifacts.py over ${OUTPUT_DIR}: ${ARC[debian_arch]} packages at ${PACKAGE_VERSION}, ./boot/vmlinuz-<kernelrelease> a ${ARC[kernel_arch]} kernel of that release, /boot/config == the resolved config"
 }
 
 check_tools() {
@@ -202,8 +205,9 @@ prepare_dirs() {
   OUTPUT_DIR="$(realpath "${OUTPUT_DIR}")"
   LEG_DIR="$(realpath "${LEG_DIR}")"
   KBUILD_DIR="${LEG_DIR}/kbuild"
-  # Packages of an earlier build of this leg would otherwise be collected with this one.
-  rm -f "${LEG_DIR}"/*.deb "${LEG_DIR}"/*.buildinfo "${LEG_DIR}"/*.changes
+  # Packages of an earlier build of this leg would otherwise be collected with this one, and its
+  # record would still claim a gated kernel if this build fails.
+  rm -f "${LEG_DIR}"/*.deb "${LEG_DIR}"/*.buildinfo "${LEG_DIR}"/*.changes "${LEG_DIR}/build.json"
 }
 
 obtain_source() {
@@ -214,8 +218,10 @@ obtain_source() {
   SOURCE_TREE="$(realpath "${SOURCE_TREE}")"
 }
 
-# The build carries no clock and no builder identity: the timestamp is the release commit's,
-# which git archive gives every file in the tree, the Makefile included.
+# The kernel image carries no clock and no builder identity: its timestamp is the release
+# commit's, which git archive gives every file in the tree, the Makefile included. The packages
+# still carry the wall clock: scripts/package/mkdebian dates debian/changelog with `date -R`, and
+# every package ships that as changelog.Debian.gz (docs/adr/0009, Consequences).
 fixed_environment() {
   local epoch
   epoch="$(stat -c %Y "${SOURCE_TREE}/Makefile")"
@@ -254,7 +260,11 @@ collect_artifacts() {
   local -a debs=() images=()
   mapfile -t debs < <(find "${LEG_DIR}" -maxdepth 1 -type f -name '*.deb' | sort)
   [[ "${#debs[@]}" -gt 0 ]] || refuse "make bindeb-pkg wrote no package into ${LEG_DIR}"
-  mv -- "${debs[@]}" "${OUTPUT_DIR}/"
+  local deb name
+  for deb in "${debs[@]}"; do
+    name="${deb##*/}"
+    mv -- "${deb}" "${OUTPUT_DIR}/${name//\~/.}"
+  done
   mapfile -t images < <(find "${OUTPUT_DIR}" -maxdepth 1 -type f -name "linux-image-${KERNELRELEASE}_*.deb")
   [[ "${#images[@]}" -eq 1 ]] || refuse "expected one linux-image-${KERNELRELEASE} package, found ${#images[@]}"
   local vmlinuz="${OUTPUT_DIR}/vmlinuz-${KERNELRELEASE}"
@@ -292,8 +302,10 @@ write_record() {
 }
 
 run_gate() {
+  local -a cross=()
+  [[ "${HOST_ARCH}" == "${ARCH}" ]] || cross=(--cross)
   python3 scripts/check_kernel_artifacts.py --dir="${OUTPUT_DIR}" --stream="${STREAM}" --arch="${ARCH}" \
-    --revision="${REVISION}" --kernelrelease="${KERNELRELEASE}"
+    --revision="${REVISION}" --kernelrelease="${KERNELRELEASE}" "${cross[@]}"
 }
 
 main() {

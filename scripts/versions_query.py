@@ -17,7 +17,8 @@
 The shell scripts that fetch and configure a kernel read versions.json through this module,
 so every value they place on a command line has been checked against its shape first:
 
-    versions_query.py source <stream>   the stream's source and the kernelversion it carries
+    versions_query.py source <stream>   the stream's source, the kernelversion it carries and
+                                        the Debian upstream version its packages carry
     versions_query.py arch <arch>       the architecture's ARCH, base defconfig, toolchain and
                                         Debian architecture
 
@@ -42,6 +43,7 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 _FINGERPRINT = re.compile(r"[0-9A-F]{40}")
 _TAG = re.compile(r"v[0-9][0-9A-Za-z.-]*")
 _VERSION = re.compile(r"([0-9]+)[.]([0-9]+)(?:[.]([0-9]+))?(-rc[0-9]+)?")
+_RC = re.compile(r"-(rc[1-9])")
 _NAME = re.compile(r"[a-z0-9_]+")
 _DEFCONFIG = re.compile(r"[a-z0-9_]*defconfig")
 _PREFIX = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)*-")
@@ -78,6 +80,17 @@ def kernelversion(version: str) -> str:
     return f"{major}.{minor}.{sublevel or 0}{rc or ''}"
 
 
+def debian_version(version: str) -> str:
+    """The Debian upstream version of a stream version: 7.3-rc5 reads 7.3~rc5.
+
+    A tilde sorts before anything, so dpkg orders 7.3~rc5 before 7.3; 7.3-rc5 would sort after
+    it. The kernel's scripts/package/mkdebian applies the same mapping, -rc<N> to ~rc<N>, when it
+    derives a package version itself.
+    """
+    kernelversion(version)
+    return _RC.sub(r"~\1", version, count=1)
+
+
 def _signers(source: Mapping[str, object], where: str) -> str:
     signers = source.get("signers")
     if not isinstance(signers, list) or not signers:
@@ -105,6 +118,7 @@ def source_fields(versions: Mapping[str, object], stream: str) -> list[tuple[str
         raise QueryError(f"{where}.kind: {kind!r} is neither tarball nor git-tag")
     fields = [("kind", kind), ("version", str(entry.get("version")))]
     fields.append(("kernelversion", kernelversion(str(entry.get("version")))))
+    fields.append(("debian_version", debian_version(str(entry.get("version")))))
     for name in names:
         fields.append((name, _shaped(source.get(name), _SHAPES[name], f"{where}.{name}")))
     fields.append(("signers", _signers(source, where)))
