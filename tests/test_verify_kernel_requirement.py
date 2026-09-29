@@ -2,8 +2,8 @@
 
 Fixtures under tests/fixtures/kernel-requirement are byte-identical copies of the live
 documents: imago.json is cordanaLLM/imago kernel/requirement.json at 16f964b4dafa, and
-aegis-os.json is cordanaLLM/Aegis-OS build/kernel-requirement.json at 54c710c (unchanged
-since 5148ab2). The workflow verifies the live documents; these pin the parser, the
+aegis-os.json is cordanaLLM/Aegis-OS build/kernel-requirement.json at 4acc511 (Aegis-OS
+#177, decision D107, which adds the CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS row). The workflow verifies the live documents; these pin the parser, the
 evaluation and the policy of docs/adr/0007.
 
 Tests marked "Aegis" port a vector of Aegis-OS crates/aegis-fabrica-defs/tests/
@@ -962,3 +962,12 @@ def test_the_plan_does_not_depend_on_the_documents(tmp_path, capsys):
     """A refused document narrows nothing: the declared run has already failed on it."""
     refused = _plan(tmp_path / "refused", imago=_altered("features", [], name="imago.json"))
     assert refused == _plan(tmp_path / "fixtures")
+
+
+def test_the_aegis_fixture_requires_the_bpf_trampoline():
+    """D107: BPF LSM attach needs the ftrace direct-call trampoline, and the fragments set it."""
+    requirement = vkr.parse_requirement((FIXTURES / "aegis-os.json").read_bytes())
+    rows = {feature.symbol: feature for feature in requirement.features}
+    row = rows["CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS"]
+    assert row.state == "built-in"
+    assert row.required_by == "REQ-P06-05"

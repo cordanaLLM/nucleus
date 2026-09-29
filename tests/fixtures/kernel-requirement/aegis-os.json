@@ -34,6 +34,12 @@
       "required-by": "REQ-P06-05"
     },
     {
+      "symbol": "CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "REQ-P06-05"
+    },
+    {
       "symbol": "CONFIG_BPF_SYSCALL",
       "state": "built-in",
       "probe": "kernel-config",
