@@ -131,13 +131,17 @@ built from the same tree, do not share a release or a package name:
 
 | Stream | Kernel release (`uname -r`) | Package version | x86_64 boot to userspace |
 | :--- | :--- | :--- | :--- |
-| `bleeding` | `7.3.0-rc5-lusoris1-bleeding` | `7.3-rc5-lusoris1` | booted |
+| `bleeding` | `7.3.0-rc5-lusoris1-bleeding` | `7.3~rc5-lusoris1` | booted |
 | `mainstream` | `7.2.8-lusoris1-mainstream` | `7.2.8-lusoris1` | booted |
 | `lts` | `6.18.54-lusoris1-lts` | `6.18.54-lusoris1` | booted |
 | `realtime` | `7.2.8-lusoris1-realtime` | `7.2.8-lusoris1` | booted |
 
+A release candidate's package version spells `-rc5` as `~rc5`, so dpkg orders it before the
+final release, and its package files spell that `~` as `.` ([packaging section 2.2](packaging.md)).
+
 `build-matrix.yml` compiles every stream for x86_64, arm64 and riscv64, opens every package with
-the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages.
+the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages;
+`publish-release.yml` boots the release kernel the same way before it signs anything.
 
 ---
 

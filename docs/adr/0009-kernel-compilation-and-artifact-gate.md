@@ -49,6 +49,21 @@ What the kernel's own packaging does was read in the 7.2.8 tree rather than assu
   `libcrypto`. A cross-compiled headers package therefore needs `libssl-dev` of the target
   architecture; `scripts/package/mkdebian` expresses this as
   `libssl-dev <!pkg.linux-upstream.nokernelheaders>`.
+- `scripts/package/mkdebian`: without `KDEB_PKGVERSION` it spells a release candidate's version
+  `7.3~rc5`, because dpkg sorts `~` before anything and so orders `7.3~rc5` before `7.3`, where
+  `7.3-rc5` sorts after it. It dates `debian/changelog` with `$(date -R)`, the wall clock of the
+  build, and every package ships that file as `changelog.Debian.gz`.
+
+What a kernel image is, per architecture, is in the tree's documentation: an x86 bzImage has the
+setup-header signature `HdrS` at 0x202 and at 0x20E a pointer to its version string, which starts
+with the kernel release (`Documentation/arch/x86/boot.rst`); the arm64 and riscv kernels install
+`Image.gz`, whose decompressed header carries `ARM\x64` (`Documentation/arch/arm64/booting.rst`)
+or `RSC\x05` (`Documentation/arch/riscv/boot-image-header.rst`) at 0x38, and whose body carries
+the banner `Linux version <kernelrelease>` followed by a space.
+
+GitHub renames a release asset whose name holds `~` (to `.`, per the REST documentation "Upload a
+release asset" and softprops/action-gh-release#159), and imago's artifact name pattern
+(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`, `pkg/kernel/artifact.go`) refuses `~` outright.
 
 Ubuntu 26.04's `/usr/bin/install` is uutils coreutils 0.8.0, and its `install -D` fails with
 "cannot create directory" when parallel calls create the same parent directory. The kernel's
@@ -104,10 +119,15 @@ The output directory must be empty: a forge does not mix the artifacts of two bu
 that can be refused without writing (unknown stream, non-empty output directory, a source tree
 that is not a kernel, a missing tool) is refused before anything is written.
 
-The build carries no clock and no builder identity. `SOURCE_DATE_EPOCH` is the modification time
-of the tree's `Makefile`, which `git archive` sets to the release commit's time, in kernel.org's
-tarballs and in the git-tag export alike; `KBUILD_BUILD_TIMESTAMP` is that time as a `date`
-string; `KBUILD_BUILD_USER=nucleus`, `KBUILD_BUILD_HOST=forge`, `LC_ALL=C`, `TZ=UTC`.
+The kernel image carries no clock and no builder identity. `SOURCE_DATE_EPOCH` is the
+modification time of the tree's `Makefile`, which `git archive` sets to the release commit's
+time, in kernel.org's tarballs and in the git-tag export alike; `KBUILD_BUILD_TIMESTAMP` is that
+time as a `date` string; `KBUILD_BUILD_USER=nucleus`, `KBUILD_BUILD_HOST=forge`, `LC_ALL=C`,
+`TZ=UTC`. The packages still carry the wall clock, in the `debian/changelog` date that
+`mkdebian` writes (section Context; Consequences).
+
+A failed rebuild in the same work directory leaves no record behind: the build removes the
+earlier `build.json` before it starts.
 
 ### 2. Release and package names
 
@@ -115,10 +135,16 @@ string; `KBUILD_BUILD_USER=nucleus`, `KBUILD_BUILD_HOST=forge`, `LC_ALL=C`, `TZ=
 | :--- | :--- | :--- |
 | `LOCALVERSION` | `-lusoris<N>-<stream>` | `-lusoris1-mainstream` |
 | kernelrelease (`uname -r`) | `<kernelversion>-lusoris<N>-<stream>` | `7.2.8-lusoris1-mainstream` |
-| `KDEB_PKGVERSION` | `<version>-lusoris<N>` | `7.2.8-lusoris1` |
-| image package | `linux-image-<kernelrelease>_<pkgversion>_<debian_arch>.deb` | `linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb` |
+| `KDEB_PKGVERSION` | `<debian_version>-lusoris<N>` | `7.2.8-lusoris1` |
+| image package | `linux-image-<kernelrelease>_<pkgversion>_<debian_arch>.deb`, `~` spelled `.` | `linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb` |
 
-The other streams are `7.3.0-rc5-lusoris1-bleeding`, `6.18.54-lusoris1-lts` and
+`<debian_version>` is the stream's version with a release candidate's `-rc<N>` spelled `~rc<N>`,
+as `mkdebian` spells it (`scripts/versions_query.py`, field `debian_version`), so a `bleeding`
+package at `7.3~rc5-lusoris1` is replaced by the final `7.3-lusoris1`; `linux-libc-dev` has one
+name for every release, so the order decides whether it is upgraded at all. The file name spells
+that `~` as `.` (`linux-libc-dev_7.3.rc5-lusoris1_amd64.deb`), since GitHub and imago do not
+accept it (section Context). The tag, the manifest's `version` and the kernelrelease keep
+`-rc5`. The other streams are `7.3.0-rc5-lusoris1-bleeding`, `6.18.54-lusoris1-lts` and
 `7.2.8-lusoris1-realtime`. `<N>` is `--revision` (default 1); the release workflow passes the
 revision its tag names, and `scripts/resolve_release_tag.py` accepts only 1 for now.
 
@@ -141,16 +167,27 @@ does not.
 - it holds only non-empty regular files: packages, `vmlinuz-<kernelrelease>` and
   `kernel-<stream>-<arch>.config`;
 - every package reads, with `dpkg-deb -f`, as `linux-image-<kernelrelease>`,
-  `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<version>-lusoris<N>` and the
-  architecture's `debian_arch`, under the file name `<Package>_<Version>_<Architecture>.deb`,
-  with the image package present and no package twice;
+  `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<debian_version>-lusoris<N>` and the
+  architecture's `debian_arch`, under the file name `<Package>_<Version>_<Architecture>.deb`
+  with `~` spelled `.`, and no package twice;
+- the image and `linux-libc-dev` packages are present, and the headers package too unless
+  `--cross` says the build ran on another architecture (section 3); `build_kernel.sh` passes
+  `--cross` exactly when it added `nokernelheaders`, and the release, which builds natively,
+  never does;
 - the kernelrelease starts with the stream's kernel version and ends with `-lusoris<N>-<stream>`;
 - the image package carries `./boot/vmlinuz-<kernelrelease>`, byte-identical to the extracted
   `vmlinuz-<kernelrelease>`, and `./boot/config-<kernelrelease>`, byte-identical to the resolved
-  configuration.
+  configuration, and `dpkg-deb` exits 0 after streaming that archive;
+- that kernel image is a kernel of that release for the architecture (section Context): on
+  x86_64 a bzImage whose setup-header version string starts with `<kernelrelease>` and a space;
+  on arm64 and riscv64 a complete gzip stream of at most 256 MiB whose decompressed header
+  carries the architecture's magic and whose body carries `Linux version <kernelrelease>` and a
+  space. A kernel architecture without such a check, or an image in another format
+  (`CONFIG_EFI_ZBOOT`, another compression), is refused until the gate learns it.
 
 It runs at the end of every build and again in `publish-release.yml`, on the release host, before
-the SBOMs, `SHA256SUMS` and the signature.
+the SBOMs, `SHA256SUMS` and the signature. The image check does not prove that the kernel runs;
+section 8 does, where QEMU is available.
 
 ### 5. Checksums cover exactly what is published
 
@@ -164,9 +201,15 @@ without `--source-tree`.
 ### 6. The release is the tagged stream, built in the matrix's userland
 
 `publish-release.yml` builds the tagged stream for x86_64 with `build_kernel.sh` inside an
-`ubuntu:26.04` container that is given neither the job's token nor its OIDC credentials (the
-checkout does not persist credentials), then gates, generates the SBOMs, checksums and signs. It
-publishes the packages, `vmlinuz-<kernelrelease>` (the image Aegis-OS M10 boots),
+`ubuntu:26.04` container, pinned to the digest `build-matrix.yml` uses, that is given neither the
+job's token nor its OIDC credentials (the checkout does not persist credentials). The container
+sees the checkout read-only, so nothing that runs in it (Kbuild, the packages' maintainer
+scripts) can change the scripts or `versions.json` that the job runs next beside those
+credentials; only `output/`, `records/` and two build directories outside the checkout are
+writable, and the gate refuses a symlink in `output/`. In the container the kernel passes the
+gate and then boots to userspace (section 8), with the console kept in `records/` and uploaded
+with the build record. The job then gates again on the host, generates the SBOMs, checksums and
+signs. It publishes the packages, `vmlinuz-<kernelrelease>` (the image Aegis-OS M10 boots),
 `kernel-<stream>-x86_64.config`, the SBOMs, `SHA256SUMS`, its bundle and the manifest. The
 manifest's `kernel.release` is the recorded kernelrelease, `kernel.config_digest` the digest of
 the resolved configuration (the one the gate compared with `/boot/config-<kernelrelease>`), and
@@ -174,18 +217,23 @@ the resolved configuration (the one the gate compared with `/boot/config-<kernel
 
 ### 7. The matrix compiles all twelve legs
 
-`build-matrix.yml` runs four streams by three architectures in `ubuntu:26.04`: x86_64 and
+`build-matrix.yml` runs four streams by three architectures in `ubuntu:26.04`, pinned by digest
+(every workflow that runs that image pins the same digest; `tests/test_workflows.py`): x86_64 and
 riscv64 on `ubuntu-24.04`, arm64 on `ubuntu-24.04-arm`. The job may read the repository and
 nothing else. It installs the toolchain with `scripts/install-build-toolchain.sh` (the list the
 release installs too; `build_kernel.sh` puts GNU `install`, which Ubuntu keeps as `gnuinstall`,
 first on the build's `PATH` when `install` is not GNU, and refuses when neither is there), refuses a runner without room for the leg (10 GiB for x86_64, 16 GiB
 for arm64, 8 GiB for riscv64, from the measured object trees) in its first minute
 (`scripts/probe-build-space.sh`, which also uses the runner's `/mnt` disk when that has more
-room), restores a compiler cache keyed by stream, architecture and the inputs' digest and saves
-it under the resolved configuration's digest, boots every x86_64 kernel (section 8), and
+room), restores the leg's newest compiler cache by prefix and saves a new entry under the
+resolved configuration's digest and the run's id (a save under an existing key is refused, so a
+fixed key would freeze the cache at its first save), boots every x86_64 kernel (section 8), and
 checksums and uploads each leg's directory with its build record.
 
 ### 8. Every x86_64 kernel boots to userspace before it is kept
+
+This holds for every matrix leg and for the release: the matrix boots after the build step, and
+`publish-release.yml` boots in its build container, before anything is checksummed or signed.
 
 `scripts/boot_smoke.py` compiles a static `init` that prints the running release and powers the
 machine off, packs it with a `/dev/console` node into a newc initramfs, and boots the kernel with
@@ -206,12 +254,19 @@ line within the timeout; a panic ends QEMU at once, a hang is killed at the time
 
 ### Negative
 
-- `CONFIG_MODULE_SIG_ALL` signs the modules with a key generated for each build, which the build
-  tree keeps and the workflow discards; two builds of one tag produce different module
-  signatures, so the packages are not bit-for-bit reproducible.
+- The packages are not bit-for-bit reproducible, for two known reasons. `CONFIG_MODULE_SIG_ALL`
+  signs the modules with a key generated for each build, which the build tree keeps and the
+  workflow discards, so two builds of one tag produce different module signatures. And every
+  package, `linux-libc-dev` included, carries `changelog.Debian.gz` dated by `mkdebian` with the
+  wall clock of the build (the bleeding/x86_64 build of 2026-09-29 dates it
+  `Tue, 29 Sep 2026 02:23:03 +0000`; its `SOURCE_DATE_EPOCH` is 2026-09-27). The kernel image
+  itself carries only the release commit's time.
 - riscv64 packages have no headers package, so out-of-tree modules cannot be built against them.
 - The compiler cache takes up to 700 MB per leg, about 8.4 GB of the repository's 10 GB cache
-  allowance for twelve legs; older entries are evicted first.
+  allowance for twelve legs; the least recently used entries are evicted first. A cold arm64
+  build fills 1.5 GB, so its cache is cut to 700 MB; a larger allowance for arm64 is a budget
+  decision, not made here.
+- The release container installs QEMU as well, and the boot adds seconds to minutes under TCG.
 - A release compiles the kernel again instead of reusing a matrix artifact, so it takes one leg's
   build time.
 
@@ -236,8 +291,12 @@ line within the timeout; a panic ends QEMU at once, a hang is killed at the time
 2. **`tests/test_check_kernel_artifacts.py`**: packages built with `dpkg-deb`; a correct layout
    passes, and a zero-byte file, a text file named `.deb`, a wrong version, a wrong architecture,
    a debug package, a duplicate package, a changed configuration, a changed kernel image, a
-   stranger, a missing kernel in the image package, a missing image package and a mismatching
-   kernelrelease are refused.
+   stranger, a missing kernel in the image package, a missing image package, a missing headers
+   package on a native build, a missing `linux-libc-dev`, a `dpkg-deb` that fails after
+   streaming, a `~` in a file name and a mismatching kernelrelease are refused; a kernel image
+   that is not a bzImage (the non-empty fake that used to pass), a bzImage of another release,
+   and an arm64 or riscv image that is not complete gzip, lacks the header magic or the banner of
+   this release, or exceeds the bound, are refused.
 3. **`tests/test_publish_release.py`**: `OUTPUT_DIR` is honoured, the checksums cover exactly
    the files, and an empty directory, a directory without a package, a zero-byte file, a
    stranger, an existing `SHA256SUMS` and a failing `sha256sum` are refused with no
@@ -248,6 +307,10 @@ line within the timeout; a panic ends QEMU at once, a hang is killed at the time
    release's build, gate and manifest fields.
 6. **`build-matrix.yml`**: every leg compiles, gates and, on x86_64, boots; run 36507112520
    passed on all twelve legs.
+7. **`tests/test_workflows.py`**: the release container mounts the checkout read-only and only
+   `output/`, `records/` and the build directories writable, boots before signing, and every
+   `ubuntu:26.04` in the workflows is one pinned digest; the compiler cache restores by prefix
+   and saves under a new key.
 
 ---
 

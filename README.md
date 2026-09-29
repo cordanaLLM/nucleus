@@ -103,8 +103,10 @@ make resolve-config STREAM=realtime ARCH=arm64
 
 # Compile a stream into Debian packages: fetch, resolve, bindeb-pkg, then the artifact gate opens
 # every package before anything is checksummed. Writes output/<stream>-<arch>/ (packages,
-# vmlinuz-<kernelrelease>, kernel-<stream>-<arch>.config); DRY_RUN=true only states the plan
+# vmlinuz-<kernelrelease>, kernel-<stream>-<arch>.config), which must be empty or absent, so run
+# one of the two commands below, not both; DRY_RUN=true only states the plan
 make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=false
+# ...or the same build from a tree scripts/fetch-kernel-source.sh already verified
 make package-deb STREAM=mainstream ARCH=x86_64 DRY_RUN=false SOURCE_TREE=build/linux-mainstream
 
 # Boot a built x86_64 kernel to userspace under QEMU

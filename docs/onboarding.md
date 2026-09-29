@@ -11,8 +11,8 @@
 against it, runs `bindeb-pkg`, and passes the packages through an artifact gate that opens every
 one of them before anything is checksummed (`docs/adr/0009-kernel-compilation-and-artifact-gate.md`).
 `build-matrix.yml` compiles all four streams for `x86_64`, `arm64` and `riscv64` and boots every
-x86_64 kernel under QEMU; `publish-release.yml` builds, gates, signs and publishes the tagged
-stream for x86_64.
+x86_64 kernel under QEMU; `publish-release.yml` builds, gates, boots, signs and publishes the
+tagged stream for x86_64.
 
 The refusals are deliberate, and they stay. The production path once touched two empty `.deb`
 files and exited 0, the release workflow added sixteen megabytes of `/dev/urandom` named as a

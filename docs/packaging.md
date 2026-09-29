@@ -93,7 +93,7 @@ make -C build/linux-mainstream O=build/mainstream-x86_64/kbuild \
   -j"$(nproc)" bindeb-pkg
 ```
 
-The build carries no clock and no builder identity:
+The kernel image carries no clock and no builder identity:
 
 | Variable | Value | Why |
 | :--- | :--- | :--- |
@@ -115,9 +115,15 @@ of every arm64 and riscv64 build does. Ubuntu keeps GNU `install` as `gnuinstall
 build's `PATH`; with neither, it refuses. Replacing uutils altogether is not an option there:
 `build-essential` depends on it, and `bindeb-pkg` checks the build dependencies.
 
-The modules are signed at build time with a key generated for that build
-(`CONFIG_MODULE_SIG_ALL`); the key stays in the build tree, which CI discards. Two builds of one
-tag therefore differ in their module signatures.
+The packages are not bit-for-bit reproducible, for two known reasons:
+
+- The modules are signed at build time with a key generated for that build
+  (`CONFIG_MODULE_SIG_ALL`); the key stays in the build tree, which CI discards. Two builds of one
+  tag therefore differ in their module signatures.
+- The kernel's `scripts/package/mkdebian` dates `debian/changelog` with `$(date -R)`, the wall
+  clock of the build, and every package, `linux-libc-dev` included, ships it as
+  `usr/share/doc/<package>/changelog.Debian.gz`. The bleeding/x86_64 build of 2026-09-29 dates it
+  `Tue, 29 Sep 2026 02:23:03 +0000`, while its `SOURCE_DATE_EPOCH` is 2026-09-27.
 
 ### 2.2 Localversion & Package Naming Contract
 
@@ -125,10 +131,28 @@ tag therefore differ in their module signatures.
 | :--- | :--- | :--- |
 | `LOCALVERSION` | `-lusoris<N>-<stream>` | `-lusoris1-mainstream` |
 | kernelrelease (`uname -r`) | `<kernelversion>-lusoris<N>-<stream>` | `7.2.8-lusoris1-mainstream` |
-| package version (`KDEB_PKGVERSION`) | `<version>-lusoris<N>` | `7.2.8-lusoris1` |
-| image package file | `linux-image-<kernelrelease>_<package version>_<debian arch>.deb` | `linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb` |
+| package version (`KDEB_PKGVERSION`) | `<debian_version>-lusoris<N>` | `7.2.8-lusoris1` |
+| image package file | `linux-image-<kernelrelease>_<package version>_<debian arch>.deb`, `~` spelled `.` | `linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb` |
 
-The other streams are `7.3.0-rc5-lusoris1-bleeding` (package version `7.3-rc5-lusoris1`),
+`<debian_version>` is the stream's version with a release candidate's `-rc<N>` spelled `~rc<N>`
+(`scripts/versions_query.py source <stream>`, field `debian_version`), the spelling the kernel's
+own `mkdebian` uses. dpkg sorts `~` before anything, so `7.3~rc5-lusoris1` is older than the final
+`7.3-lusoris1`, while `7.3-rc5-lusoris1` would be newer and would never be upgraded; that matters
+most for `linux-libc-dev`, which has one package name for every release:
+
+```bash
+dpkg --compare-versions 7.3~rc5-lusoris1 lt 7.3-lusoris1 && echo older   # older
+dpkg --compare-versions 7.3-rc5-lusoris1 lt 7.3-lusoris1 || echo newer   # newer
+```
+
+The file names spell that `~` as `.`: GitHub renames `~` in a release asset to `.`, and imago's
+artifact name pattern refuses `~`, so `SHA256SUMS` and the manifest name the files as they are
+served. The `bleeding` packages are therefore `linux-libc-dev_7.3.rc5-lusoris1_amd64.deb` and so on,
+with `Version: 7.3~rc5-lusoris1` inside. The release tag (`v7.3-rc5-bleeding-lusoris1`), the
+manifest's `version` (`7.3-rc5-lusoris1`) and the kernelrelease (`7.3.0-rc5-lusoris1-bleeding`)
+keep `-rc5`.
+
+The other streams are `7.3.0-rc5-lusoris1-bleeding` (package version `7.3~rc5-lusoris1`),
 `6.18.54-lusoris1-lts` and `7.2.8-lusoris1-realtime`. The Debian architecture comes from
 `architectures.<arch>.debian_arch` in `versions.json` (`amd64`, `arm64`, `riscv64`). `<N>` is the
 forge revision, `--revision`; the release workflow passes the one its tag names (section 5.4).
@@ -177,17 +201,34 @@ signature, and refuses the directory unless:
 - it holds only non-empty regular files: packages, `vmlinuz-<kernelrelease>` and
   `kernel-<stream>-<arch>.config`;
 - `dpkg-deb -f` reads every package as `linux-image-<kernelrelease>`,
-  `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<version>-lusoris<N>` and the
-  architecture's `debian_arch`, under the file name `<Package>_<Version>_<Architecture>.deb`; the
-  image package is present, and no package appears twice;
+  `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<debian_version>-lusoris<N>` and the
+  architecture's `debian_arch`, under the file name `<Package>_<Version>_<Architecture>.deb` with
+  `~` spelled `.`, and no package appears twice;
+- the image and `linux-libc-dev` packages are present, and so is the headers package, unless
+  `--cross` says the build ran on another architecture (section 2.3); `build_kernel.sh` passes
+  `--cross` for a cross build, and `publish-release.yml`, which builds natively, never does;
 - the kernelrelease starts with the stream's kernel version and ends with `-lusoris<N>-<stream>`;
 - the image package carries `./boot/vmlinuz-<kernelrelease>`, byte-identical to the
   `vmlinuz-<kernelrelease>` beside it, and `./boot/config-<kernelrelease>`, byte-identical to
-  `kernel-<stream>-<arch>.config`.
+  `kernel-<stream>-<arch>.config`, and `dpkg-deb` exits 0 after streaming the archive;
+- the kernel image is a kernel of that release for the architecture:
+
+  | Architecture | What the gate reads |
+  | :--- | :--- |
+  | x86_64 | a bzImage: `HdrS` at 0x202, and the version string the setup header points at (0x200 plus the 16-bit value at 0x20E) starts with `<kernelrelease>` and a space (`Documentation/arch/x86/boot.rst`) |
+  | arm64 | `Image.gz`: one complete gzip stream of at most 256 MiB; the decompressed header has `ARM\x64` at 0x38, and the body the banner `Linux version <kernelrelease>` followed by a space |
+  | riscv64 | the same, with `RSC\x05` at 0x38 |
+
+  Any other kernel architecture, and another image format (`CONFIG_EFI_ZBOOT`, another
+  compression), is refused until the gate learns it. The check says what the file is, not that
+  it runs; section 2.5 boots it.
 
 ```bash
 python3 scripts/check_kernel_artifacts.py --dir=output/mainstream-x86_64 --stream=mainstream \
   --arch=x86_64 --kernelrelease=7.2.8-lusoris1-mainstream
+# A cross build (arm64 or riscv64 compiled on x86_64) makes no headers package:
+python3 scripts/check_kernel_artifacts.py --dir=output/mainstream-riscv64 --stream=mainstream \
+  --arch=riscv64 --kernelrelease=7.2.8-lusoris1-mainstream --cross
 ```
 
 Exit status 0 passes, 1 refuses and lists every finding, 2 means the request cannot be evaluated
@@ -195,7 +236,9 @@ Exit status 0 passes, 1 refuses and lists every finding, 2 means the request can
 
 ### 2.5 Boot Smoke Test
 
-Every x86_64 kernel the matrix builds is booted to userspace before it is kept.
+Every x86_64 kernel is booted to userspace before it is kept: each x86_64 leg of the matrix
+after its build, and the release kernel in `publish-release.yml`'s build container, before
+anything is checksummed or signed.
 `scripts/boot_smoke.py` compiles a static `init` that prints the running kernel's release and
 powers the machine off, packs it with a `/dev/console` node into a newc initramfs, and boots:
 
@@ -402,13 +445,19 @@ Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming se
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
 `publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4). It builds
-the tagged stream for x86_64 with `scripts/build_kernel.sh`, in an `ubuntu:26.04` container that
-is given neither the job's token nor its OIDC credentials, runs the artifact gate (section 2.4)
-on the result, and then generates the SBOMs, `SHA256SUMS` (`scripts/publish_release.sh`) and the
-keyless cosign bundle. The release carries:
+the tagged stream for x86_64 with `scripts/build_kernel.sh`, in an `ubuntu:26.04` container pinned
+to the digest `build-matrix.yml` uses, that is given neither the job's token nor its OIDC
+credentials. The container sees the checkout read-only, so nothing that runs in it (Kbuild, the
+packages' maintainer scripts) can change the scripts or `versions.json` the job runs afterwards
+beside those credentials; only `output/`, `records/` and two build directories outside the
+checkout (under `RUNNER_TEMP` and `/mnt`) are writable. In the container the kernel passes the
+artifact gate (section 2.4) and boots to userspace under QEMU (section 2.5), with the console
+written to `records/boot-<stream>-x86_64.log`; `records/` is uploaded as the run's
+`release-records` artifact. The job then runs the gate again on the host and generates the SBOMs,
+`SHA256SUMS` (`scripts/publish_release.sh`) and the keyless cosign bundle. The release carries:
 
 - the packages: `linux-image-<kernelrelease>`, `linux-headers-<kernelrelease>` and
-  `linux-libc-dev`, each `_<version>-lusoris<N>_amd64.deb`;
+  `linux-libc-dev`, each `_<package version>_amd64.deb` (section 2.2);
 - `vmlinuz-<kernelrelease>`, the kernel image from the image package, which Aegis-OS boots
   directly under QEMU;
 - `kernel-<stream>-x86_64.config`, the resolved configuration, byte-identical to
