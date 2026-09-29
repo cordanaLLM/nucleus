@@ -5,9 +5,10 @@
 #
 # Two evidence levels, one job each (docs/adr/0008):
 # verify           declared: the fragments as scripts/merge-config.sh merges them.
-# resolve          per bound stream, the signed source is fetched and verified, and the
-#                  fragments are resolved against it (defconfig, merge_config.sh, olddefconfig,
-#                  survival check) for every architecture a document lists. Nothing compiles.
+# resolve          per stream, the signed source is fetched and verified, and the fragments
+#                  are resolved against it (defconfig, merge_config.sh, olddefconfig, survival
+#                  check) for every architecture: all twelve legs, whichever a document reads,
+#                  because the survival check proves the fragments themselves. Nothing compiles.
 # verify-resolved  resolved: the documents against those .config files.
 #
 # repository_dispatch  a consumer sends kernel_requirements_updated with the commit, sha256
@@ -87,8 +88,11 @@ jobs:
       plan: ${{ steps.plan.outputs.plan }}
       resolve: ${{ steps.plan.outputs.resolve }}
     steps:
+      # No job pushes, so the token is not written into .git/config.
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -134,9 +138,9 @@ jobs:
             --nucleus-revision="${NUCLEUS_REVISION}" \
             --report-json=requirements/report.json | tee requirements/report.txt
 
-      # The stream and architecture pairs the resolved level needs: every bound stream, on every
-      # architecture a document lists. The plan is computed from versions.json and documents
-      # that decoded; the resolve job still passes it to its scripts through env only.
+      # The legs to resolve: every stream on every architecture versions.json builds. The plan
+      # is computed from versions.json alone; the resolve job still passes it to its scripts
+      # through env only.
       - name: Plan the Resolved Evidence
         id: plan
         run: |
@@ -197,6 +201,7 @@ jobs:
     steps:
       # pahole (dwarves) is required: DEBUG_INFO_BTF depends on it, and SCHED_CLASS_EXT on BTF.
       # The cross compilers resolve arm64 and riscv64 against the compiler that builds them.
+      # zstd lets actions/cache compress the source download quickly.
       - name: Install the Resolution Toolchain
         run: |
           set -eu
@@ -204,10 +209,38 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             bash ca-certificates curl git gpg gpgv xz-utils python3 make gcc libc6-dev \
-            flex bison bc dwarves gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
+            flex bison bc dwarves gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu zstd
 
+      # No job pushes, so the token is not written into .git/config.
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # The download is cached, keyed on its pin (the sha256 of a tarball, the commit of a tag);
+      # the tree is not. fetch-kernel-source.sh verifies a reused download exactly like a fresh
+      # one, so a cache entry saves a transfer and is never trusted: one that fails verification
+      # fails the job, and `gh cache delete <key>` clears it. The cache lives in --work, never in
+      # --dest, and under the workspace, because in a container job runner.temp names a host
+      # path the container does not see.
+      - name: Key the Source Cache
+        id: source
+        shell: bash
+        env:
+          STREAM: ${{ matrix.stream }}
+        run: |
+          set -euo pipefail
+          pin="$(python3 scripts/versions_query.py source "${STREAM}" |
+            awk -F= '$1 == "sha256" || $1 == "commit" { print $2 }')"
+          [[ -n "${pin}" ]]
+          echo "key=kernel-source-${pin}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore the Source Download
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kernel-source-work
+          key: ${{ steps.source.outputs.key }}
 
       - name: Fetch and Verify the Kernel Source
         shell: bash
@@ -215,7 +248,16 @@ jobs:
           STREAM: ${{ matrix.stream }}
         run: |
           set -euo pipefail
-          ./scripts/fetch-kernel-source.sh --stream="${STREAM}" --dest="${RUNNER_TEMP}/linux-${STREAM}"
+          ./scripts/fetch-kernel-source.sh --stream="${STREAM}" --dest="${RUNNER_TEMP}/linux-${STREAM}" \
+            --work=.kernel-source-work
+
+      # Saved as soon as the source verified, so a failing resolution does not discard it.
+      - name: Save the Source Download
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kernel-source-work
+          key: ${{ steps.source.outputs.key }}
 
       - name: Resolve the Configuration
         shell: bash
@@ -248,8 +290,11 @@ jobs:
       run:
         shell: bash
     steps:
+      # No job pushes, so the token is not written into .git/config.
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0

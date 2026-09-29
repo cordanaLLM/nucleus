@@ -82,8 +82,8 @@ only prints a warning for a value that did not survive.
 - `git-tag`: the `repository`, the `tag`, the `commit` it points at, and `signers`.
 
 `signers` lists the primary-key fingerprints whose signature is accepted for that source.
-`scripts/fetch-kernel-source.sh --stream=<stream> --dest=<dir>` proves the source and then writes
-the tree; any failure refuses with exit status 1 and writes nothing:
+`scripts/fetch-kernel-source.sh --stream=<stream> --dest=<dir>` proves the source, writes the tree,
+and checks the tree's release; any failure refuses with exit status 1 and leaves no tree behind:
 
 - `tarball`: the `.tar.xz` matches the pinned `sha256`, then
   `xz -cd <tar.xz> | gpgv --keyring <keyring> <tar.sign> -` succeeds. Both are required: the
@@ -148,11 +148,15 @@ since Linux 7.2.
 ### 6. The requirement verifier gains the `resolved` evidence level
 
 `verify-requirements.yml` keeps the declared check, then resolves: `verify_kernel_requirement.py
---plan` lists every bound stream with every architecture its documents list, a job per stream
-fetches and verifies the source in an `ubuntu:26.04` container and resolves each architecture,
-and the verifier decides each document again with `--resolved-config STREAM:ARCH=PATH`. At this
+--plan` lists every stream with every architecture `versions.json` builds, all twelve legs, a
+job per stream fetches and verifies the source in an `ubuntu:26.04` container and resolves each
+architecture, and the verifier decides each document again with `--resolved-config
+STREAM:ARCH=PATH`. The plan does not depend on the documents: resolving is also the survival
+check of the fragments, and a leg no document binds or lists still ships a kernel. At this
 level a bound stream is judged on its resolved `.config`; a bound stream and listed architecture
-without one is an error, not a pass. Unbound streams stay declared, as information. Nothing is
+without one is an error, not a pass. A resolved `.config` is accepted only for the leg its
+Kconfig header names (`# Linux/<ARCH> <release> Kernel Configuration`, `ARCH` being the make
+`ARCH`); the header does not tell `mainstream` from `realtime`, which share a release. Unbound streams stay declared, as information. Nothing is
 compiled; `abi.module-abi` still fails closed until a kernel is built.
 
 ### 7. The toolchain is part of the resolution
@@ -180,8 +184,11 @@ BTF.
 
 - Bumping a stream now takes a `sha256` or a commit and, for a new signer, a key; `tests/test_manifest.py`
   checks the source against the version, not against kernel.org.
-- The `bleeding` fetch transfers about 290 MB of git objects per resolution job; a release
-  candidate has no smaller signed form.
+- The `bleeding` fetch transfers about 290 MB of git objects, and each tarball about 150 MB; a
+  release candidate has no smaller signed form. `verify-requirements.yml` caches the download
+  (`fetch-kernel-source.sh --work`, never the tree), keyed on the pinned `sha256` or commit, and
+  the script verifies a reused download exactly like a fresh one, so the cache saves the transfer
+  and is never trusted. A cache entry that fails verification fails the job until it is deleted.
 - `mainstream` and `realtime` resolve to the same `make kernelrelease` (7.2.8). The build must set
   a localversion per stream before both are packaged.
 
@@ -200,16 +207,18 @@ BTF.
    with signed tags; a good tarball and a good tag are written, and a wrong `sha256`, a signature
    over other content, a missing signature, a signature by an unlisted key, a key file holding
    another key, a tree of another release, an unknown stream, a tag at another commit, a tag
-   signed by an unlisted key and an unsigned tag are refused with no tree left behind.
+   signed by an unlisted key, an unsigned tag and a ref pointing at the signed tag object of
+   another tag are refused with no tree left behind.
 2. **`tests/test_kconfig_survival.py`**: the survival rules on synthetic configurations, and
    `scripts/merge-config.sh --source-tree` against a stand-in tree, including the refusal of a
-   dropped request and of a tree of another release.
+   dropped request and of a tree of another release, each of which removes the configuration
+   an earlier run wrote.
 3. **`tests/test_manifest.py`**: every source names its stream's release, every signer has a key,
    a release candidate comes from a tag; no kernel version is written in a test.
 4. **`tests/test_verify_kernel_requirement.py`**: the resolved level, missing resolved evidence,
-   and the plan.
-5. **`.github/workflows/verify-requirements.yml`**: resolves every bound stream on every listed
-   architecture from its verified source on each pull request and push that touches the
+   a resolved `.config` whose header names another leg, and the plan of all twelve legs.
+5. **`.github/workflows/verify-requirements.yml`**: resolves all twelve stream and architecture
+   legs from their verified sources on each pull request and push that touches the
    fragments, the scripts, `keys/` or `versions.json`, and weekly.
 
 ---

@@ -109,7 +109,7 @@ Verify the target kernel streams:
 2. Prove it: `make fetch-source STREAM=<stream>`, then `make resolve-config STREAM=<stream> ARCH=<arch>` for each architecture. A symbol the new release dropped fails the survival check; fix the fragment, never the check.
 3. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/cordanaLLM/nucleus/blob/main/README.md) in the exact same commit.
 4. Validate schema: `make lint && make test`.
-5. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`); `verify-requirements.yml` resolves every bound stream again.
+5. Submit PR via short-lived branch (`chore/bump-<stream>-kernel`); `verify-requirements.yml` resolves all twelve stream and architecture legs again.
 
 ---
 

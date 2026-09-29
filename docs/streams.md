@@ -58,7 +58,9 @@ authority, and section 3 says how each source is proven.
 
 Every stream names its source in `versions.json` `streams.<stream>.source`, and
 `scripts/fetch-kernel-source.sh --stream=<stream> --dest=<dir>` fetches it and proves it before
-anything reads it. A failed check refuses with exit status 1 and writes no tree.
+anything reads it. A failed check refuses with exit status 1 and leaves no tree behind: the
+signature and the pin are checked before the tree is written, the release after, and a tree
+that fails that last check is removed.
 
 | Stream | Kind | Proof |
 | :--- | :--- | :--- |
@@ -115,7 +117,11 @@ make fetch-source STREAM=realtime
 make resolve-config STREAM=realtime ARCH=arm64
 ```
 
-All twelve stream and architecture legs resolve with every requested value intact. The kernel
+All twelve stream and architecture legs resolve with every requested value intact, and
+`verify-requirements.yml` resolves all twelve on every pull request and push that touches the
+fragments, the scripts, `keys/` or `versions.json`, whether or not a requirement document binds
+the stream or lists the architecture. A failed resolution leaves no `.config` behind, neither
+at the output path nor in the build directory. The kernel
 release each resolved tree reports (`make kernelrelease`) is `7.3.0-rc5` for `bleeding`,
 `7.2.8` for `mainstream` and `realtime`, and `6.18.54` for `lts`.
 
@@ -137,4 +143,7 @@ release is below `abi.minimum-release`, or a required symbol is not in its exact
 architecture the document lists. Streams a consumer is not bound to are reported as information
 and never gate. It checks twice: against the declared fragments, then against the resolved
 `.config` of every bound stream on every architecture the document lists (section 4), fetched
-from the verified source; a missing resolved `.config` is an error, not a pass. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).
+from the verified source; a missing resolved `.config` is an error, not a pass. A resolved
+`.config` is accepted only for the leg its Kconfig header names (`# Linux/<ARCH> <release>
+Kernel Configuration`); `mainstream` and `realtime` share a release, so the header cannot tell
+those two apart. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).

@@ -40,7 +40,9 @@ Two evidence levels (docs/adr/0008-signed-kernel-sources-and-resolved-configurat
   ``--resolved-config STREAM:ARCH=PATH``. A bound stream and listed architecture without one
   fails closed. Unbound streams stay at the declared level, as information.
 
-``--plan`` prints which stream and architecture pairs the resolved level needs.
+``--plan`` prints the legs to resolve: every stream on every architecture versions.json builds.
+A resolved .config must name, in its Kconfig header, the architecture and release of the leg it
+is given for.
 """
 
 from __future__ import annotations
@@ -53,6 +55,8 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+import versions_query
 
 SCHEMA = "aegis.p01-nucleus.kernel-requirement.v1"
 REPORT_SCHEMA = "nucleus.kernel-requirement-report.v1"
@@ -1069,8 +1073,8 @@ def _parser() -> argparse.ArgumentParser:
         "--plan",
         type=Path,
         metavar="PATH",
-        help="write the stream and architecture pairs the resolved level needs, as a GitHub "
-        "Actions matrix, and verify nothing",
+        help="write every stream and architecture pair versions.json builds, the legs the "
+        "resolve job resolves, as a GitHub Actions matrix, and verify nothing",
     )
     add("--kconfig-dir", type=Path, default=Path("kconfig"))
     add("--versions", type=Path, default=Path("versions.json"))
@@ -1080,6 +1084,40 @@ def _parser() -> argparse.ArgumentParser:
 
 
 _RESOLVED_KEY = re.compile(r"([a-z][a-z0-9-]*):([a-z0-9_]+)")
+# The Kconfig main menu title, which every .config Kconfig writes records near its top:
+# "# Linux/$(ARCH) $(KERNELVERSION) Kernel Configuration", ARCH being the make ARCH.
+_CONFIG_HEADER = re.compile(r"# Linux/(\S+) (\S+) Kernel Configuration")
+_HEADER_LINES = 5
+
+
+def resolved_header(path: Path) -> tuple[str, str]:
+    """The make ARCH and the kernelversion a resolved .config names in its Kconfig header."""
+    with path.open(encoding="utf-8") as handle:
+        head = [handle.readline().strip(" \t\r\n") for _ in range(_HEADER_LINES)]
+    for line in head:
+        match = _CONFIG_HEADER.fullmatch(line)
+        if match is not None:
+            return match.group(1), match.group(2)
+    raise ValueError(f"{path}: no '# Linux/<ARCH> <release> Kernel Configuration' header")
+
+
+def _check_resolved_header(key: str, path: Path, versions: Mapping[str, object]) -> None:
+    """Refuses a resolved .config whose header names another architecture or release.
+
+    The label is only what the caller says the file is; the header is what Kconfig wrote.
+    mainstream and realtime share a release, so the header cannot tell those two apart.
+    """
+    stream, arch = key.split(":")
+    expected = (
+        str(versions["architectures"][arch]["kernel_arch"]),
+        versions_query.kernelversion(str(versions["streams"][stream]["version"])),
+    )
+    named = resolved_header(path)
+    if named != expected:
+        raise ValueError(
+            f"--resolved-config {key}: {path} is a Linux/{named[0]} {named[1]} configuration; "
+            f"{key} is Linux/{expected[0]} {expected[1]}"
+        )
 
 
 def _resolved_configs(
@@ -1096,6 +1134,7 @@ def _resolved_configs(
         stream, arch = match.groups()
         if stream not in versions["streams"] or arch not in versions["architectures"]:
             raise ValueError(f"--resolved-config {key}: versions.json builds no such kernel")
+        _check_resolved_header(key, Path(path), versions)
         configs[(stream, arch)] = read_config(Path(path))
     return configs
 
@@ -1163,28 +1202,18 @@ def _run_document(label: str, options: Options) -> Outcome:
         return Outcome(source, "ERROR", error_kind=type(exc).__name__, error=str(exc))
 
 
-def resolve_plan(options: Options) -> dict[str, list[dict[str, str]]]:
-    """The pairs the resolved level needs, over every document that decodes, as a matrix.
+def resolve_plan(versions: Mapping[str, object]) -> dict[str, list[dict[str, str]]]:
+    """Every stream on every architecture versions.json builds, as a GitHub Actions matrix.
 
-    One entry per bound stream, in versions.json order, carrying the architectures to
-    resolve for it, space-separated. A document that is refused adds nothing: the declared
-    run has already failed on it.
+    One entry per stream, in versions.json order, carrying every architecture, space-separated.
+    The documents do not narrow it: resolving is also the survival check of the fragments
+    (docs/adr/0008), and a fragment line that configures nothing fails on its leg whether or
+    not a document binds that stream or lists that architecture. The verdict still reads only
+    a bound stream on a listed architecture (evaluate_streams); the other resolved
+    configurations are checked for their header and otherwise not consulted.
     """
-    wanted: set[tuple[str, str]] = set()
-    for label, path in options.documents.items():
-        try:
-            raw = Path(path).read_bytes()
-            requirement = parse_requirement(raw, options.digests.get(label))
-        except (OSError, RequirementError):
-            continue
-        bound = tuple(options.rows[label]["streams"])
-        wanted.update(required_evidence(requirement, options.versions, bound))
-    include = []
-    for stream in options.versions["streams"]:
-        arches = [arch for arch in options.versions["architectures"] if (stream, arch) in wanted]
-        if arches:
-            include.append({"stream": stream, "arches": " ".join(arches)})
-    return {"include": include}
+    arches = " ".join(versions["architectures"])
+    return {"include": [{"stream": stream, "arches": arches} for stream in versions["streams"]]}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1195,7 +1224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ValueError, OSError, KeyError) as exc:
         parser.error(str(exc))
     if options.plan is not None:
-        plan = json.dumps(resolve_plan(options), separators=(",", ":"))
+        plan = json.dumps(resolve_plan(options.versions), separators=(",", ":"))
         options.plan.write_text(plan + "\n", encoding="utf-8")
         print(plan)
         return 0

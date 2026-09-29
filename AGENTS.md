@@ -28,9 +28,9 @@ implemented; the compile step itself refuses.
 | Stage | State |
 | :--- | :--- |
 | `versions.json` stream and architecture manifest | real: each stream names a signed `source` (a tarball with its `sha256` and signers, or a git tag with its commit and signers); each architecture its `ARCH`, base defconfig and toolchain prefix |
-| `scripts/fetch-kernel-source.sh` | real: fetches a stream's source and proves it (pinned `sha256` and `gpgv` over the uncompressed tar, or `git verify-tag` and the pinned commit) against `keys/`; refuses otherwise and writes no tree |
+| `scripts/fetch-kernel-source.sh` | real: fetches a stream's source and proves it (pinned `sha256` and `gpgv` over the uncompressed tar, or `git verify-tag` and the pinned commit) against `keys/`, then checks the tree's release; refuses otherwise and leaves no tree behind |
 | `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp. With `--source-tree` it resolves them against a verified tree (defconfig, the kernel's `merge_config.sh -m`, `olddefconfig`) and refuses when a requested value did not survive (`scripts/kconfig_survival.py`); all twelve legs survive |
-| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to (first green run 36493866531), then against the resolved `.config` of each bound stream on each listed architecture |
+| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to (first green run 36493866531), then resolves all twelve stream and architecture legs from their verified sources with the survival check, and checks each document against the resolved `.config` of each bound stream on each listed architecture |
 | `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
 | `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
 | `scripts/package-deb.sh` | implemented, but never fed a real kernel |
