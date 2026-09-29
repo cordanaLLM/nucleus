@@ -22,6 +22,7 @@ the report shape for an accepted document, a correlated refusal and an empty fea
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -98,3 +99,27 @@ def test_an_empty_feature_list_is_rejected_not_passed(tmp_path):
     assert rejected["status"] == "REJECTED"
     assert rejected["rejection"]["kind"] == "NoFeatures"
     assert rejected["rejection"]["message"]
+
+
+def test_an_isolated_run_leaves_no_bytecode_in_the_checkout(tmp_path):
+    """A pinned consumer checkout stays clean: the sibling import writes no __pycache__."""
+    checkout = tmp_path / "checkout"
+    (checkout / "scripts").mkdir(parents=True)
+    for name in ("verify_kernel_requirement.py", "versions_query.py"):
+        shutil.copy2(REPO_ROOT / "scripts" / name, checkout / "scripts" / name)
+    shutil.copytree(REPO_ROOT / "kconfig", checkout / "kconfig")
+    shutil.copy2(REPO_ROOT / "versions.json", checkout / "versions.json")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "scripts/verify_kernel_requirement.py",
+            f"--requirement=aegis-os={FIXTURE}",
+        ],
+        cwd=checkout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not list(checkout.rglob("__pycache__")), "the run wrote bytecode into the checkout"
