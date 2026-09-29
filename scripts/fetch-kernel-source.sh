@@ -25,8 +25,9 @@
 #            exported with `git archive`.
 #
 # Either way the signature must be good and made by a key the stream lists in signers, read
-# from keys/<FINGERPRINT>.asc. Any other outcome is refused with exit status 1, and no tree
-# is written before every check has passed.
+# from keys/<FINGERPRINT>.asc, and the tree's top-level Makefile must name the release. Any
+# other outcome is refused with exit status 1. The signature and the pin are checked before
+# the tree is written, the release after it; no tree is left behind unless every check passed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

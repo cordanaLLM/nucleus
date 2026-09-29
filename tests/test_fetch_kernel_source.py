@@ -300,6 +300,22 @@ def test_an_unsigned_tag_is_refused(tmp_path, forge):
     _refused(result, dest, "tag v1.3-rc3: no good signature")
 
 
+def test_a_ref_that_names_another_signed_tag_object_is_refused(tmp_path, forge):
+    """A signed tag object is proof only for the tag it names, not for a ref pointing at it.
+
+    Here refs/tags/v1.3-rc4 points at the tag object of v1.3-rc1: the signature is good, by a
+    listed signer, and the tag points at the pinned commit, so only the name check refuses it.
+    """
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
+    moved = tmp_path / "moved.git"
+    _run(["git", "clone", "-q", "--bare", str(forge["repo"]), str(moved)], env=env)
+    signed = _git(moved, "rev-parse", "refs/tags/v1.3-rc1", env=env)
+    _git(moved, "update-ref", "refs/tags/v1.3-rc4", signed, env=env)
+    source = _tag_source(forge, repository=moved.as_uri(), tag="v1.3-rc4")
+    result, dest = _fetch(tmp_path, forge, source, version="1.3-rc4")
+    _refused(result, dest, "the signed tag object names 'v1.3-rc1', not v1.3-rc4")
+
+
 # --- versions_query ----------------------------------------------------------------------------
 
 
