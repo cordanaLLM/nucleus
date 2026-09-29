@@ -57,7 +57,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Downstream contract gates run this script with python3 -I, which keeps the script's own
-# directory off sys.path; the sibling module is therefore located explicitly.
+# directory off sys.path; the sibling module is therefore located explicitly. -I also ignores
+# PYTHONDONTWRITEBYTECODE, so the import is kept from writing scripts/__pycache__ into the
+# consumer's pinned checkout.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import versions_query  # noqa: E402
