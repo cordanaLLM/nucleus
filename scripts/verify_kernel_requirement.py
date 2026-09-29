@@ -56,7 +56,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import versions_query
+# Downstream contract gates run this script with python3 -I, which keeps the script's own
+# directory off sys.path; the sibling module is therefore located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import versions_query  # noqa: E402
 
 SCHEMA = "aegis.p01-nucleus.kernel-requirement.v1"
 REPORT_SCHEMA = "nucleus.kernel-requirement-report.v1"
