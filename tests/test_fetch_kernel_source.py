@@ -329,6 +329,7 @@ def test_the_committed_streams_and_architectures_query_cleanly():
             "kernel_arch",
             "base_config",
             "cross_compile",
+            "debian_arch",
         ]
 
 
@@ -338,6 +339,17 @@ def test_the_committed_streams_and_architectures_query_cleanly():
 )
 def test_kernelversion_is_what_make_prints(version, expected):
     assert vq.kernelversion(version) == expected
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("7.3-rc5", "7.3~rc5"), ("7.3-rc12", "7.3~rc12"), ("7.2.8", "7.2.8"), ("6.18", "6.18")],
+)
+def test_debian_version_orders_a_release_candidate_before_its_release(version, expected):
+    assert vq.debian_version(version) == expected
+    versions = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
+    fields = dict(vq.source_fields(versions, "bleeding"))
+    assert fields["debian_version"] == vq.debian_version(fields["version"])
 
 
 @pytest.mark.parametrize(

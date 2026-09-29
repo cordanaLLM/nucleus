@@ -81,11 +81,10 @@ The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); 
 ## 3. Quickstart & Local Building
 
 ### Prerequisites
-- Debian/Ubuntu host with kernel build dependencies:
+- An Ubuntu 26.04 host or container with the kernel build toolchain; the build workflows install
+  it with the same script:
   ```bash
-  sudo apt-get update && sudo apt-get install -y \
-      build-essential libncurses-dev bison flex libssl-dev libelf-dev \
-      bc git fakeroot rsync debhelper kmod
+  sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
 
 ### Build & Packaging Recipes
@@ -102,8 +101,17 @@ make merge-config ARCH=x86_64 STREAM=realtime
 make fetch-source STREAM=realtime
 make resolve-config STREAM=realtime ARCH=arm64
 
-# Package native Debian packages (.deb) with headers
-make package-deb STREAM=mainstream ARCH=x86_64
+# Compile a stream into Debian packages: fetch, resolve, bindeb-pkg, then the artifact gate opens
+# every package before anything is checksummed. Writes output/<stream>-<arch>/ (packages,
+# vmlinuz-<kernelrelease>, kernel-<stream>-<arch>.config), which must be empty or absent, so run
+# one of the two commands below, not both; DRY_RUN=true only states the plan
+make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=false
+# ...or the same build from a tree scripts/fetch-kernel-source.sh already verified
+make package-deb STREAM=mainstream ARCH=x86_64 DRY_RUN=false SOURCE_TREE=build/linux-mainstream
+
+# Boot a built x86_64 kernel to userspace under QEMU
+make boot-smoke KERNEL=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstream \
+  KERNELRELEASE=7.2.8-lusoris1-mainstream
 
 # Simulate Unified Kernel Image (UKI) synthesis: DRY_RUN=true is the Makefile default. It writes a
 # marked text file under output/<stream>-<arch>-dry-run/, never a .efi.
@@ -113,14 +121,16 @@ make package-uki STREAM=mainstream ARCH=x86_64
 # Run reproducible build attestation
 make verify-reproducibility
 
-# Execute sub-second QEMU microVM cold boot test
+# Run the hermetic tests of the boot smoke test
 make test-boot
 
 # Build hermetic multi-architecture container
 make docker-builder
 ```
 
-Output `.deb` packages and `.efi` UKI binaries are staged under `output/<stream>-<arch>/`.
+Output `.deb` packages, the kernel image and the resolved configuration are staged under
+`output/<stream>-<arch>/`; the build record and log stay in `build/<stream>-<arch>/`
+([`docs/packaging.md`](docs/packaging.md), section 2).
 
 ---
 

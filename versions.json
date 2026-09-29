@@ -71,17 +71,20 @@
     "x86_64": {
       "kernel_arch": "x86_64",
       "base_config": "x86_64_defconfig",
-      "cross_compile": "x86_64-linux-gnu-"
+      "cross_compile": "x86_64-linux-gnu-",
+      "debian_arch": "amd64"
     },
     "arm64": {
       "kernel_arch": "arm64",
       "base_config": "defconfig",
-      "cross_compile": "aarch64-linux-gnu-"
+      "cross_compile": "aarch64-linux-gnu-",
+      "debian_arch": "arm64"
     },
     "riscv64": {
       "kernel_arch": "riscv",
       "base_config": "defconfig",
-      "cross_compile": "riscv64-linux-gnu-"
+      "cross_compile": "riscv64-linux-gnu-",
+      "debian_arch": "riscv64"
     }
   },
   "downstream": {

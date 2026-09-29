@@ -47,14 +47,15 @@ jobs:
         run: make lint-pins
 
   # The job above runs without ukify, so it can only prove refusals. This one builds a real
-  # UKI with package-uki.sh, which is the positive case of issue #21. No nucleus kernel exists
-  # until issue #18, so the input is Ubuntu's own kernel image; the result is never published.
+  # UKI with package-uki.sh, which is the positive case of issue #21. The input is Ubuntu's own
+  # kernel image, so the job needs no kernel build; the result is never published.
   uki-real-ukify:
     name: UKI Real ukify Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: ubuntu:26.04
+      # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
     defaults:
       run:
         shell: bash
@@ -98,7 +99,7 @@ jobs:
         run: |
           stream="$(python3 -c 'import json; print(next(iter(json.load(open("versions.json"))["streams"])))')"
           # The architecture of this runner, which must be a target of versions.json; the stock
-          # kernel is built for it. The build is not a nucleus kernel (issue #18).
+          # kernel is built for it. The kernel is Ubuntu's, not one this forge built.
           case "$(uname -m)" in
             x86_64) arch=x86_64 ;;
             aarch64) arch=arm64 ;;

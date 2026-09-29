@@ -18,12 +18,11 @@ A kernel release tag has the form ``v<version>-<stream>-lusoris<N>``:
 
 - ``<stream>`` is a key of ``streams`` in versions.json;
 - ``<version>`` equals that stream's ``version`` exactly;
-- ``<N>`` is the forge revision. Only ``1`` is accepted for now: the package
-  build writes ``-lusoris1`` into the kernel release and the package version
-  and does not read the revision yet, so a higher one would put a version in
-  the manifest that the forge never built. Issue #18 threads the revision
-  through the build; this check relaxes to integers of at least 1 (without
-  leading zeros) with it.
+- ``<N>`` is the forge revision. The release workflow passes it to
+  ``scripts/build_kernel.sh --revision``, which writes ``-lusoris<N>`` into the
+  kernel release and the package version. Only ``1`` is accepted for now: no
+  release has needed a second revision yet, and accepting integers of at
+  least 1 (without leading zeros) is a change to ``SUPPORTED_REVISION`` alone.
 
 The stream is spelled out because two streams may carry the same upstream
 version. There is no fallback: a tag that does not name exactly one stream at
@@ -130,7 +129,7 @@ def split_revision(tag: str) -> tuple[str, int]:
     if rev != SUPPORTED_REVISION:
         raise TagError(
             f"tag {tag!r} carries revision {rev!r}; only revision {SUPPORTED_REVISION} is "
-            "released until the package build reads the revision (issue #18)"
+            "released for now"
         )
     return shape.group("body"), int(rev)
 

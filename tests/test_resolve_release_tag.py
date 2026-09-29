@@ -73,18 +73,23 @@ def test_each_stream_tag_resolves_to_that_stream(stream):
 
 
 @pytest.mark.parametrize("rev", [2, 3, 12])
-def test_revision_above_one_is_refused_until_the_build_reads_it(rev):
-    """package-deb.sh builds every kernel as -lusoris1; issue #18 threads the revision through."""
+def test_revision_above_one_is_refused_for_now(rev):
+    """Only revision 1 is released until a second revision of a release is wanted."""
     with pytest.raises(resolver.TagError, match=f"revision '{rev}'.*only revision 1"):
         resolver.resolve(_tag(STREAMS[FIRST], FIRST, rev), STREAMS)
 
 
-def test_the_build_still_writes_revision_one():
-    """The resolver may accept a higher revision only once the packaging consumes it."""
-    packaging = (REPO_ROOT / "scripts" / "package-deb.sh").read_text(encoding="utf-8")
-    assert "-lusoris1" in packaging, (
-        "package-deb.sh reads the revision now: relax SUPPORTED_REVISION"
+def test_the_release_builds_the_revision_the_tag_names():
+    """The build takes the revision from the resolver, so relaxing it needs no other change."""
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "publish-release.yml").read_text(encoding="utf-8")
     )
+    build = {step.get("name"): step for step in workflow["jobs"]["publish"]["steps"]}[
+        "Build and Boot the Tagged Stream"
+    ]
+    assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
+    assert '--revision="${REVISION}"' in build["run"]
+    assert "-lusoris1" not in (REPO_ROOT / "scripts" / "build_kernel.sh").read_text(encoding="utf-8")
     assert resolver.SUPPORTED_REVISION == "1"
 
 

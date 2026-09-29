@@ -22,8 +22,10 @@ These rules apply to ALL agents, ALL tools, and ALL commits — without exceptio
 
 ## 1. State of the forge — read this before planning anything
 
-This repository does not compile a kernel yet. Everything around the compile step is
-implemented; the compile step itself refuses.
+This repository compiles kernels: four streams for three architectures, each build opened by an
+artifact gate before anything is checksummed, and every x86_64 kernel booted under QEMU before it
+is kept ([ADR-0009](docs/adr/0009-kernel-compilation-and-artifact-gate.md)). What it does not do
+yet is said in the table as plainly as what it does.
 
 | Stage | State |
 | :--- | :--- |
@@ -31,26 +33,33 @@ implemented; the compile step itself refuses.
 | `scripts/fetch-kernel-source.sh` | real: fetches a stream's source and proves it (pinned `sha256` and `gpgv` over the uncompressed tar, or `git verify-tag` and the pinned commit) against `keys/`, then checks the tree's release; refuses otherwise and leaves no tree behind |
 | `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp. With `--source-tree` it resolves them against a verified tree (defconfig, the kernel's `merge_config.sh -m`, `olddefconfig`) and refuses when a requested value did not survive (`scripts/kconfig_survival.py`); all twelve legs survive |
 | `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to (first green run 36493866531), then resolves all twelve stream and architecture legs from their verified sources with the survival check, and checks each document against the resolved `.config` of each bound stream on each listed architecture |
-| `scripts/build_kernel.sh` **production path** | **refuses with exit 1** (issue #18) |
-| `scripts/build_kernel.sh --dry-run` | real: states what a build would do |
-| `scripts/package-deb.sh` | implemented, but never fed a real kernel |
+| `scripts/build_kernel.sh` production path | real: fetch and verify, resolve, `make bindeb-pkg` with `LOCALVERSION=-lusoris<N>-<stream>` and `KDEB_PKGVERSION=<debian_version>-lusoris<N>` in a fixed environment (`SOURCE_DATE_EPOCH` from the release commit; the packages are still not reproducible, since module signatures and the `debian/changelog` date differ per build), record `make -s kernelrelease`, extract `vmlinuz-<kernelrelease>`, run the gate. A release candidate's package version is `7.3~rc5-lusoris1` (dpkg orders it before `7.3`), and its file names spell `~` as `.`, which GitHub and imago require. Built locally for all four streams on x86_64 and for `mainstream` on arm64 and riscv64 (cross); a cross build ships no headers package. Refuses a non-empty output directory, a tree that is not a kernel and a missing tool before writing anything |
+| `scripts/build_kernel.sh --dry-run` | real: states the fetch, the resolution, the make command and the expected kernel release; writes nothing |
+| `scripts/check_kernel_artifacts.py` | real: the artifact gate. Opens every package with `dpkg-deb`; refuses empty files, strangers, a wrong package name, version or Debian architecture, a missing image or `linux-libc-dev` package, a missing headers package on a native build, a kernel release that is not the stream's, a `vmlinuz` or `/boot/config` that differs from the files beside it, a `dpkg-deb` that fails, and a `vmlinuz` that is not a kernel of that release for that architecture (x86_64: the bzImage setup header's version string; arm64 and riscv64: the decompressed `Image` header and its `Linux version` banner) |
+| `scripts/boot_smoke.py` | real: boots an x86_64 kernel with a static-init initramfs under QEMU (TCG) and requires `Linux version <kernelrelease>` and the init's line; all four x86_64 kernels boot locally |
+| `scripts/package-deb.sh` | real: a wrapper over `build_kernel.sh`; **refuses** a production run without `--source-tree` (issue #31) |
+| `patches/` | **not applied** by the build. The one patch there, `common/0001-sched-ext-tuning.patch`, changes a license identifier and does not apply to 7.2.8 (`patch -p1 --dry-run`) |
 | `scripts/package-uki.sh` | real, unsigned: `ukify` build, then `package-uki.sh` deletes any output that `scripts/check_uki.py` refuses (not a PE with the UKI sections it wires) before it is checksummed; CI builds one from Ubuntu's kernel, never yet from a nucleus kernel; no release workflow publishes a UKI; **refuses** without a kernel or `ukify` (issue #21) |
-| `scripts/publish_release.sh`, `publish-release.yml` | real: SBOM, checksums, keyless cosign signature |
-| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures, Ubuntu 26.04 container |
+| `scripts/publish_release.sh` | real: `SHA256SUMS` over exactly the files in `OUTPUT_DIR`; **refuses** an empty directory, a zero-byte file, a file that is not a publishable artifact, a directory without a package, and a `sha256sum` failure, writing nothing (issue #31) |
+| `publish-release.yml` | real, has never run: builds the tagged stream for x86_64 in the pinned `ubuntu:26.04` image with the checkout mounted read-only, gates, boots it under QEMU, gates again on the host, SBOM, checksums, keyless cosign signature; publishes the packages, `vmlinuz-<kernelrelease>` and `kernel-<stream>-x86_64.config`. The manifest's `kernel.release` is the recorded kernel release, `config_digest` the resolved configuration's digest, `revision` the tag's commit; imago's verifier (16f964b) accepts a release assembled this way locally and refuses one flipped bit |
+| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures in `ubuntu:26.04` (pinned by digest, the one every workflow uses), arm64 natively on `ubuntu-24.04-arm`, riscv64 cross-compiled; disk probe, compiler cache, gate, x86_64 boot, checksums; job permissions `contents: read`. Run 36507112520 compiled and gated all twelve legs, booted the four x86_64 kernels, and built the arm64 headers packages natively. An earlier run lost a riscv64 leg to a race in the uutils `install -D` that Ubuntu 26.04 ships; the build now uses GNU `install` (`gnuinstall`) |
 | downstream dispatch to `cordanaLLM/imago` | wired, has never run: `publish-release.yml` has no runs yet. `kernel_release_published` carries stream, version and tag, and needs the `KERNEL_FORGE_TOKEN` secret, which is not configured; without it the run stops with an error naming the secret |
 
 The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
 reported success on all twelve legs in under three minutes, and `publish-release` would
 have packaged those empty files with sixteen megabytes of `/dev/urandom` named as a UKI,
-generated an SBOM for them, and signed the result with cosign. That is why it refuses
-now: **a forge that cannot compile must not report that it did.** Do not restore a
-placeholder to make the build green.
+generated an SBOM for them, and signed the result with cosign. It refused from #19 until the
+real build replaced it (issue #18), and the packaging scripts that still fabricated, text files
+named `.deb` and an empty `SHA256SUMS`, now refuse too (issue #31): **a forge that cannot
+compile must not report that it did.** Do not restore a placeholder to make a build green; the
+artifact gate exists so that one cannot pass.
 
-Implementing the real build is issue #18. Its first part is in place: the signed source is
-fetched and verified, and the kconfig is resolved against it with the survival check
-(docs/adr/0008). What remains is the compile: `bindeb-pkg` in the resolved build directory,
-cross-compiled for `arm64` and `riscv64` with the toolchain `versions.json` names, and a
-localversion per stream, since `mainstream` and `realtime` share the 7.2.8 tree.
+What is not done: no UKI is built from a nucleus kernel yet (`package-uki.sh` needs an initramfs
+and per-architecture stubs); arm64 and riscv64 kernels are compiled and gated but not booted;
+riscv64 kernels carry no debug information and therefore no BTF, because
+`kconfig/riscv64.config` does not request it; a release is x86_64 only, because
+`imago.nucleus.kernel-artifact.v1` has no architecture field; and `verify_kernel_requirement.py`
+still reports the module ABI as unverifiable, since it reads configurations, not build records.
 
 `scripts/package-uki.sh` had two placeholders of the same class, both removed under
 issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
@@ -119,10 +128,12 @@ Key capabilities:
 1. **Inspect Authority**: Read `docs/principles.md` and `versions.json` before touching build scripts or kconfigs.
 2. **Smallest Coherent Patch**: Make the minimal changes necessary. Do not rewrite nearby build scripts or kconfigs for style alone.
 3. **Run Local Checks**: Execute `make lint` and `make test` before pushing or creating a pull request.
-   `make build-kernel STREAM=<stream> ARCH=<arch> DRY_RUN=true` exercises the pipeline without
-   producing an artifact; without `DRY_RUN` it refuses, by design (section 1).
-4. **Prove it in CI, not only locally**: `gh workflow run build-matrix.yml -R cordanaLLM/nucleus -f dry_run=true`
-   runs all twelve legs. A change to the build path that has not been run there has not been tested.
+   `make build-kernel STREAM=<stream> ARCH=<arch> DRY_RUN=true` states the plan without
+   producing an artifact; `DRY_RUN=false` compiles, in `ubuntu:26.04` with
+   `scripts/install-build-toolchain.sh` (3 to 9 minutes and 8 to 16 GiB per leg at 32 threads).
+4. **Prove it in CI, not only locally**: `gh workflow run build-matrix.yml -R cordanaLLM/nucleus --ref <branch> -f dry_run=false`
+   compiles all twelve legs; `-f dry_run=true` only states each leg's plan. A change to the build
+   path that has not been compiled there has not been tested.
 
 ### Working on Windows
 
