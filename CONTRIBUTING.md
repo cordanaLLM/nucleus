@@ -100,6 +100,11 @@ waived for it, and only for it. Both the author and the branch prefix must match
 alone does not waive anything, since a contributor can label their own pull request. The
 code gates (`ci`, `codeql`, `security-scans`) are never waived.
 
+**Keeping a branch up to date.** `main` requires signed commits and an up-to-date branch. Do not
+use GitHub's rebase-mode Update branch button: it rewrites the commits without a signature and
+the pull request is then blocked. Rebase locally with signing enabled and push with a lease; see
+[Repository Governance](docs/repository-governance.md#applying-the-ruleset).
+
 ### Release Tags
 
 Merging the release pull request tags the repository's release `nucleus-v<X.Y.Z>` and
