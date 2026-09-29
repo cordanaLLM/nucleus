@@ -149,6 +149,22 @@ only `required-checks`, was removed on 2026-09-29. Under the ruleset:
 - Review threads must be resolved before a merge.
 - No role bypasses the ruleset; the ruleset declares no bypass actors.
 
+The signature rule has one trap. The ruleset also requires an up-to-date branch, and GitHub's
+**Update branch** button in rebase mode (`gh pr update-branch --rebase`) rewrites the pull
+request's commits without a signature, so the pull request is then blocked. That happened to the
+release pull request of 0.2.0. Bring a branch up to date locally instead, with signing enabled:
+
+```sh
+git fetch origin main <branch>
+git switch --detach origin/<branch>
+git rebase origin/main          # commit.gpgsign=true signs every rewritten commit
+git push --force-with-lease=<branch>:$(git rev-parse origin/<branch>) origin HEAD:<branch>
+```
+
+A release pull request that is only behind can also wait: release-please rebuilds it on the next
+push to `main`. To re-sign a single rewritten release commit, `git commit --amend --no-edit -S`
+keeps `github-actions[bot]` as its author.
+
 ## 5. The praetor pin
 
 `PRAETOR_COMMIT` in `.github/workflows/ci.yml` is the one place the pin lives: a full commit
