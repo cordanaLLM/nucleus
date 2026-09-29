@@ -205,3 +205,14 @@ repository does not satisfy, the managed README governance block. The gates afte
 documentation gate, agent-harness and Paperclip checks, agent-definition layout and git
 hooks) belong to a full adoption and are not run in CI. `praetorctl flavor audit .` finds no
 matching flavor for a kernel forge, and praetor's HISS scanners read Python but no shell.
+
+The pinned `praetorctl` reads a job's matrix only as literal `include` legs. It refuses a
+matrix written as a single expression (`matrix: ${{ fromJSON(...) }}`) with a parse error,
+even in a workflow that is never a required check, and that error fails `make ruleset` and
+the `praetorctl sync` step of the governance job. The `resolve` job of
+`verify-requirements.yml` therefore reads its plan through one matrix variable,
+`leg: ${{ fromJSON(needs.verify.outputs.plan).include }}`, which runs the same legs, and
+`codeql.yml` writes its languages as `include` legs. From praetor commit `9a00443c086a` on,
+`praetorctl` expands a literal axis in a required job and parses a single-expression matrix
+in a job that is not required; after a move of the pin past it, both workflows may return to
+the plain form.
