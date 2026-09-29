@@ -83,6 +83,15 @@ def test_live_dispatch_sends_stream_version_and_tag(gh_log):
         assert field in call
 
 
+def test_a_second_revision_dispatches_its_own_version_and_tag(gh_log):
+    """A -lusoris2 release carries -lusoris2 downstream, the way publish-release.yml sends it."""
+    tag, version = f"v{VERSION}-{STREAM}-lusoris2", f"{VERSION}-lusoris2"
+    result = _run(STREAM, version, gh_log=gh_log, tag=tag, token="dummy")
+    assert result.returncode == 0, result.stderr
+    (call,) = _dispatches(gh_log)
+    assert f"client_payload[version]={version}" in call and f"client_payload[tag]={tag}" in call
+
+
 def test_live_dispatch_without_a_token_fails_and_sends_nothing(gh_log):
     """A missing credential is an error, not a warning that exits 0."""
     result = _run(STREAM, RELEASE_VERSION, gh_log=gh_log)
@@ -103,7 +112,8 @@ def test_release_tag_has_no_default(gh_log):
     [
         pytest.param("v0.2.0", id="repository-version-tag"),
         pytest.param(f"v{RELEASE_VERSION}", id="tag-without-a-stream"),
-        pytest.param(f"v{VERSION}-{STREAM}-lusoris2", id="unsupported-revision"),
+        pytest.param(f"v{VERSION}-{STREAM}-lusoris0", id="revision-zero"),
+        pytest.param(f"v{VERSION}-{STREAM}-lusoris02", id="revision-with-a-leading-zero"),
     ],
 )
 def test_a_tag_the_resolver_refuses_is_refused(gh_log, tag):

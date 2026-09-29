@@ -81,6 +81,14 @@ CONFIG_STRICT_DEVMEM=y
 CONFIG_IO_STRICT_DEVMEM=y
 ```
 
+The same file also requests the function tracing chain that BPF trampolines need (`FTRACE`,
+`FUNCTION_TRACER`, `DYNAMIC_FTRACE`, `DYNAMIC_FTRACE_WITH_DIRECT_CALLS`). That is attack surface
+kernel-hardening-checker recommends cutting; it is compiled in so that BPF LSM programs can attach,
+stays off at boot, and is root only.
+[eBPF & sched-ext Containment](ebpf-sched-ext.md#6-bpf-trampolines-and-function-tracing),
+section 6, and [ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md) give the
+reason and the bounds.
+
 ---
 
 ## 3. Deep Dive into Defensive Controls

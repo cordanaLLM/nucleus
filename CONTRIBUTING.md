@@ -110,7 +110,8 @@ the pull request is then blocked. Rebase locally with signing enabled and push w
 Merging the release pull request tags the repository's release `nucleus-v<X.Y.Z>` and
 writes that version into `VERSION`. A kernel is released by a different tag,
 `v<version>-<stream>-lusoris<N>`, whose `<version>` must equal the stream's version in
-`versions.json`; only `N=1` is accepted until the kernel build reads the revision. Only
+`versions.json`, and whose `N` is the forge revision, 1 to 9999 without leading zeros: a
+second revision releases the same upstream version again with a new kernel release. Only
 the kernel tag starts `publish-release.yml`, a manual run must start from that tag
 (`--ref`), and the downstream dispatch needs the `KERNEL_FORGE_TOKEN` secret, checked
 before anything is built. [`docs/packaging.md`](docs/packaging.md) sections 5.4 and 5.5

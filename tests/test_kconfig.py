@@ -93,3 +93,37 @@ def test_a_built_in_virtio_fs_is_declared_with_a_built_in_fuse():
         config = vkr.read_config(KCONFIG / f"{arch}.config")
         if config.get("CONFIG_VIRTIO_FS") == "y":
             assert config.get("CONFIG_FUSE_FS") == "y", arch
+
+
+# --- BPF trampolines (docs/adr/0011) ---------------------------------------------------------
+TRAMPOLINE_CHAIN = ("FTRACE", "FUNCTION_TRACER", "DYNAMIC_FTRACE", "DYNAMIC_FTRACE_WITH_DIRECT_CALLS")
+
+
+def _layers() -> list[Path]:
+    """Every fragment merge-config.sh can merge: baseline, architectures, streams."""
+    layers = [KCONFIG / "security-hardened.config"]
+    layers += [KCONFIG / f"{arch}.config" for arch in VERSIONS["architectures"]]
+    return layers + sorted((KCONFIG / "streams").glob("*.config"))
+
+
+def test_the_bpf_trampoline_chain_is_in_the_baseline_and_no_layer_drops_it():
+    """BPF LSM, fentry and fexit attach through ftrace direct calls; without them attach fails."""
+    baseline = vkr.read_config(KCONFIG / "security-hardened.config")
+    for symbol in TRAMPOLINE_CHAIN:
+        assert baseline.get(f"CONFIG_{symbol}") == "y", symbol
+    for layer in _layers()[1:]:
+        config = vkr.read_config(layer)
+        for symbol in TRAMPOLINE_CHAIN:
+            assert config.get(f"CONFIG_{symbol}") in (None, "y"), (layer.name, symbol)
+
+
+def test_no_fragment_declares_a_tracer_beyond_the_trampoline_chain():
+    """Function tracing is compiled in for the trampolines only; no tracer is added or started."""
+    declared = set()
+    for layer in _layers():
+        declared |= {
+            symbol.removeprefix("CONFIG_")
+            for symbol, value in vkr.read_config(layer).items()
+            if value != "n" and ("TRAC" in symbol or "FTRACE" in symbol)
+        }
+    assert declared == set(TRAMPOLINE_CHAIN)

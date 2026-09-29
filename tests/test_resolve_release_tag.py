@@ -72,25 +72,83 @@ def test_each_stream_tag_resolves_to_that_stream(stream):
     assert resolution.release_version == f"{version}-lusoris1"
 
 
-@pytest.mark.parametrize("rev", [2, 3, 12])
-def test_revision_above_one_is_refused_for_now(rev):
-    """Only revision 1 is released until a second revision of a release is wanted."""
-    with pytest.raises(resolver.TagError, match=f"revision '{rev}'.*only revision 1"):
-        resolver.resolve(_tag(STREAMS[FIRST], FIRST, rev), STREAMS)
+@pytest.mark.parametrize("rev", [2, 3, 12, 9999])
+def test_a_revision_above_one_resolves(rev):
+    """A second revision releases the same upstream version again (ADR-0011)."""
+    version = STREAMS[FIRST]
+    resolution = resolver.resolve(_tag(version, FIRST, rev), STREAMS)
+    assert (resolution.stream, resolution.version, resolution.rev) == (FIRST, version, rev)
+    assert resolution.release_version == f"{version}-lusoris{rev}"
 
 
-def test_the_release_builds_the_revision_the_tag_names():
-    """The build takes the revision from the resolver, so relaxing it needs no other change."""
+def _publish_steps() -> dict:
     workflow = yaml.safe_load(
         (REPO_ROOT / ".github" / "workflows" / "publish-release.yml").read_text(encoding="utf-8")
     )
-    build = {step.get("name"): step for step in workflow["jobs"]["publish"]["steps"]}[
-        "Build and Boot the Tagged Stream"
-    ]
-    assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
-    assert '--revision="${REVISION}"' in build["run"]
+    return {step.get("name"): step for step in workflow["jobs"]["publish"]["steps"]}
+
+
+def test_the_release_builds_gates_and_names_the_revision_the_tag_names():
+    """Build, gate and manifest all take the revision from the resolver, never from a literal."""
+    steps = _publish_steps()
+    for name in ("Build and Boot the Tagged Stream", "Gate the Kernel Artifacts"):
+        assert steps[name]["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}", name
+        assert '--revision="${REVISION}"' in steps[name]["run"], name
+    manifest = steps["Generate Kernel Artifact Manifest"]["env"]
+    assert manifest["VERSION"] == "${{ steps.meta.outputs.release_version }}"
+    assert manifest["KERNELRELEASE"] == "${{ steps.gate.outputs.kernelrelease }}"
     assert "-lusoris1" not in (REPO_ROOT / "scripts" / "build_kernel.sh").read_text(encoding="utf-8")
-    assert resolver.SUPPORTED_REVISION == "1"
+
+
+def _dry_run(stream: str, rev: str, tmp_path: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "build_kernel.sh"), f"--stream={stream}",
+         "--arch=x86_64", f"--revision={rev}", "--dry-run",
+         f"--work-dir={tmp_path / 'build'}", f"--output-dir={tmp_path / 'out'}"],
+        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+    )
+
+
+def _debian_version(stream: str) -> str:
+    return STREAMS[stream].replace("-rc", "~rc")
+
+
+def _kernelversion(stream: str) -> str:
+    base, _, rc = STREAMS[stream].partition("-")
+    parts = base.split(".") + ["0"] * (3 - len(base.split(".")))
+    return ".".join(parts) + (f"-{rc}" if rc else "")
+
+
+@pytest.mark.parametrize("stream", sorted(STREAMS))
+def test_a_revision_two_tag_builds_lusoris2(tmp_path, stream):
+    """The tag's rev, as the resolver writes it, is the build's --revision: -lusoris2 throughout."""
+    tag = _tag(STREAMS[stream], stream, 2)
+    output = tmp_path / "github_output"
+    result = _run_cli("--tag", tag, "--github-output", str(output))
+    assert result.returncode == 0, result.stderr
+    outputs = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert outputs["rev"] == "2"
+    assert outputs["release_version"] == f"{STREAMS[stream]}-lusoris2"
+    plan = _dry_run(stream, outputs["rev"], tmp_path)
+    assert plan.returncode == 0, plan.stderr
+    assert (
+        f"LOCALVERSION=-lusoris2-{stream} KDEB_PKGVERSION={_debian_version(stream)}-lusoris2"
+        in plan.stdout
+    )
+    assert f"expected {_kernelversion(stream)}-lusoris2-{stream}" in plan.stdout
+    assert "-lusoris1" not in plan.stdout
+
+
+@pytest.mark.parametrize(("rev", "accepted"), [("1", True), ("9999", True), ("10000", False)])
+def test_the_resolver_accepts_exactly_the_revisions_the_build_accepts(tmp_path, rev, accepted):
+    """A tag the resolver accepts must not be refused by build_kernel.sh --revision, and back."""
+    try:
+        resolver.resolve(_tag(STREAMS[FIRST], FIRST, rev), STREAMS)
+        resolved = True
+    except resolver.TagError:
+        resolved = False
+    built = _dry_run(FIRST, rev, tmp_path).returncode == 0
+    assert (resolved, built) == (accepted, accepted)
 
 
 def test_streams_sharing_a_version_resolve_by_name():
@@ -107,7 +165,10 @@ NEGATIVE_TAGS = [
     pytest.param(f"v{STREAMS[FIRST]}-{FIRST}", id="missing-lusoris-revision"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, 0), id="revision-zero"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, "01"), id="revision-leading-zero"),
-    pytest.param(_tag(STREAMS[FIRST], FIRST, 2), id="revision-two"),
+    pytest.param(_tag(STREAMS[FIRST], FIRST, "02"), id="revision-two-leading-zero"),
+    pytest.param(_tag(STREAMS[FIRST], FIRST, "00"), id="revision-double-zero"),
+    pytest.param(_tag(STREAMS[FIRST], FIRST, 10000), id="revision-above-the-build-range"),
+    pytest.param(_tag(STREAMS[FIRST], FIRST, "-2"), id="revision-negative"),
     pytest.param(_tag(STREAMS[FIRST], FIRST, "1x"), id="revision-trailing-text"),
     pytest.param(f"v{STREAMS[FIRST]}-lusoris1", id="stream-omitted"),
     pytest.param(f"{STREAMS[FIRST]}-{FIRST}-lusoris1", id="missing-v-prefix"),
