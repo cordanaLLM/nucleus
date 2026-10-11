@@ -22,9 +22,9 @@ graph TD
     KCONF_MERGE --> ARM_CONF["arm64 Hardened Config"]
     KCONF_MERGE --> RISCV_CONF["riscv64 Hardened Config"]
 
-    X86_CONF --> TOOL_X86["LLVM/Clang 20 (Native/Cross)"]
-    ARM_CONF --> TOOL_ARM["LLVM/Clang 20 + aarch64-linux-gnu-binutils"]
-    RISCV_CONF --> TOOL_RISCV["LLVM/Clang 20 + riscv64-linux-gnu-binutils"]
+    X86_CONF --> TOOL_X86["GCC (Native / x86_64-linux-gnu-gcc)"]
+    ARM_CONF --> TOOL_ARM["GCC (Native / aarch64-linux-gnu-gcc)"]
+    RISCV_CONF --> TOOL_RISCV["GCC (riscv64-linux-gnu-gcc Cross)"]
 
     TOOL_X86 --> OUT_X86["linux-image-*_amd64.deb / BOOTX64.EFI"]
     TOOL_ARM --> OUT_ARM["linux-image-*_arm64.deb / BOOTAA64.EFI"]
@@ -33,19 +33,9 @@ graph TD
 
 ---
 
-## 2. Toolchain Selection: LLVM/Clang 20 vs. GNU GCC 15
+## 2. Toolchain Selection: GNU GCC
 
-All kernels in `cordanaLLM/nucleus` default to the **LLVM/Clang 20** toolchain via `LLVM=1`:
-
-```bash
-make ARCH=arm64 LLVM=1 -j"$(nproc)" bindeb-pkg
-```
-
-### Advantages of LLVM=1:
-1. **ThinLTO (Link-Time Optimization)**: Whole-program cross-translation unit optimization (`CONFIG_LTO_CLANG_THIN=y`), generating 8–12% higher throughput on IPC-bound database workloads and tighter kernel text layout.
-2. **CFI (Control Flow Integrity)**: Forward-edge control flow integrity (`CONFIG_CFI_CLANG=y`) stops Return-Oriented Programming (ROP) and Jump-Oriented Programming (JOP) attacks by validating indirect call targets at runtime.
-3. **Single Cross-Target Binary**: A single Clang binary (`clang-20`) can compile for `x86_64`, `aarch64`, and `riscv64` simply by supplying `--target=...`, avoiding fragmented GNU cross-compilers.
-4. **Integrated LLVM Utilities**: Build scripts utilize `llvm-ar`, `llvm-nm`, `llvm-objcopy`, `llvm-strip`, and `lld` (the LLVM linker), ensuring 3x faster link times compared to GNU `ld.bfd`.
+All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collection (GCC) toolchain via the architecture-specific cross-compiler prefixes declared in `versions.json` (`scripts/install-build-toolchain.sh`, `versions.json`). Native `x86_64` builds use `x86_64-linux-gnu-gcc`, native `arm64` builds use `aarch64-linux-gnu-gcc`, and `riscv64` targets are cross-compiled using `riscv64-linux-gnu-gcc`. Build scripts invoke `make bindeb-pkg` with `CROSS_COMPILE` set to the declared triplet and do not pass `LLVM=1`.
 
 ---
 
@@ -92,58 +82,38 @@ make docker-builder
 docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
 ```
 
-The container provides LLVM/Clang, cross-compilers (`gcc-aarch64-linux-gnu`, `gcc-riscv64-linux-gnu`), `systemd-ukify`, `dracut`, `diffoscope`, and QEMU emulators:
+The container provides LLVM/Clang, cross-compilers (`gcc-aarch64-linux-gnu`, `gcc-riscv64-linux-gnu`), `systemd-ukify`, `dracut`, `diffoscope`, and QEMU emulators.
+
+Kernel compilation for target architectures is orchestrated using `make build-kernel` or directly via `scripts/build_kernel.sh`:
 
 ```bash
-#!/usr/bin/env bash
-# scripts/cross-compile-arm64.sh
-set -euo pipefail
+# State the compilation plan without compiling:
+make build-kernel STREAM=mainstream ARCH=arm64 DRY_RUN=true
 
-TARGET_ARCH="arm64"
-CROSS_COMPILE="aarch64-linux-gnu-"
-KERNEL_OUT="/opt/lusoris/build/mainstream-${TARGET_ARCH}"
+# Compile kernel and generate Debian packages (DRY_RUN defaults to true):
+make build-kernel STREAM=mainstream ARCH=arm64 DRY_RUN=false
+```
 
-# Fetch the mainstream source and prove it: pinned sha256 and kernel.org signature
-./scripts/fetch-kernel-source.sh --stream=mainstream --dest=/usr/src/linux
-
-# Resolve the configuration: the arm64 defconfig, the fragments through the kernel's
-# merge_config.sh, make olddefconfig, then the survival check. The ARCH, the defconfig and
-# the CROSS_COMPILE prefix come from versions.json architectures.arm64.
-./scripts/merge-config.sh --arch="${TARGET_ARCH}" --stream=mainstream \
-  --source-tree=/usr/src/linux --build-dir="${KERNEL_OUT}"
-
-# Compile kernel, modules, and generate Debian packages
-make -C /usr/src/linux \
-  O="${KERNEL_OUT}" \
-  ARCH="${TARGET_ARCH}" \
-  CC="clang" \
-  CROSS_COMPILE="${CROSS_COMPILE}" \
-  LLVM=1 \
-  -j"$(nproc)" \
-  bindeb-pkg
+Or directly via the build script:
+```bash
+./scripts/build_kernel.sh --stream=mainstream --arch=arm64 --dry-run
+./scripts/build_kernel.sh --stream=mainstream --arch=arm64
 ```
 
 ---
 
 ## 5. MicroVM Boot Verification Matrix
 
-To ensure build integrity before pushing to release registries, each compiled kernel undergoes an automated headless QEMU microVM boot verification test:
+Automated microVM boot testing under QEMU is implemented for `x86_64` kernels only (`scripts/boot_smoke.py`). In CI (`.github/workflows/build-matrix.yml`), `x86_64` builds boot a static init in QEMU (TCG) and require the kernel banner and init marker within the timeout. Target `arm64` builds run natively on hosted ARM runners (`ubuntu-24.04-arm`) and are verified by the artifact gate (`scripts/check_kernel_artifacts.py`) without QEMU boot testing; `riscv64` targets are cross-compiled and artifact-gated without QEMU boot testing.
 
 ```bash
-# Automated verification test (tests/test_qemu_boot.py)
-# Boot timeout: 3.0 seconds max; asserts sub-second cold boot to init
-qemu-system-aarch64 \
-  -M virt,gic-version=3 \
-  -cpu max \
-  -m 512M \
-  -kernel /opt/lusoris/build/mainstream-arm64/arch/arm64/boot/Image \
-  -initrd /opt/lusoris/build/test-initramfs.img \
-  -append "console=ttyAMA0 earlycon panic=1" \
-  -nographic \
-  -no-reboot
+# Automated x86_64 boot smoke test (scripts/boot_smoke.py)
+python3 scripts/boot_smoke.py \
+  --kernel=output/mainstream-x86_64/vmlinuz-<kernelrelease> \
+  --kernelrelease=<kernelrelease>
 ```
 
-Each architecture must verify:
-1. Zero kernel panics or unhandled IRQ traps.
-2. Clean initialization of VirtIO block and network devices.
-3. Successful invocation of `/sbin/init` or `/init` test harness in $\le 650$ ms.
+The smoke test verifies:
+1. Detection of `Linux version <kernelrelease>` from the serial console.
+2. The static `/init` printed its `NUCLEUS-BOOT-SMOKE release=<kernelrelease>` line.
+3. QEMU exited before the timeout: the init powers the machine off with `reboot(RB_POWER_OFF)`, and a run killed at the timeout fails.

@@ -63,7 +63,7 @@ graph TD
 
 ## 3. Kernel Configuration Fragment (`cis-l2.config`)
 
-The following fragment defines the explicit CIS Level 2 rules merged into production builds:
+Not implemented: no `cis-l2.config` fragment exists in `kconfig/`, and no build merges one. The block below is the intended content, kept as the specification for that work:
 
 ```ini
 # CIS Domain 1: Obsolete Filesystem Drivers
@@ -117,6 +117,8 @@ sets `CONFIG_BPF_LSM`. `CONFIG_LSM` is set explicitly because it is a string: on
 leave AppArmor built but off the list and inactive. An LSM the list names but the kernel does
 not build, such as `landlock` or `yama` today, is skipped at boot.
 
+No fragment requests the other symbols of the block, so the architecture's defconfig decides them. The `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
+
 ---
 
 ## 4. Kernel Lockdown LSM Explained
@@ -137,38 +139,4 @@ In `cordanaLLM/nucleus`, the kernel supports runtime transition to `lockdown=int
 
 ## 5. Automated Compliance Audit
 
-CIS Level 2 compliance is continuously verified in CI using `tests/test_kconfig.py`:
-
-```bash
-# Verify CIS Level 2 options against merged .config:
-python3 -c "
-import sys
-
-required = {
-    'CONFIG_AUDIT': 'y',
-    'CONFIG_AUDITSYSCALL': 'y',
-    'CONFIG_SECURITY_LOCKDOWN_LSM': 'y',
-    'CONFIG_IP_DCCP': 'n',
-    'CONFIG_RDS': 'n',
-    'CONFIG_TIPC': 'n',
-    'CONFIG_CRAMFS': 'n'
-}
-
-with open('/opt/lusoris/build/mainstream-x86_64/.config') as f:
-    config_text = f.read()
-
-failed = []
-for sym, val in required.items():
-    if val == 'n':
-        if f'{sym}=y' in config_text or f'{sym}=m' in config_text:
-            failed.append(f'{sym} should be disabled')
-    elif val == 'y':
-        if f'{sym}=y' not in config_text:
-            failed.append(f'{sym} should be enabled')
-
-if failed:
-    print('CIS L2 Audit Failed:\n' + '\n'.join(failed))
-    sys.exit(1)
-print('CIS L2 Audit Passed: All mandatory controls verified.')
-"
-```
+Not implemented: full CIS Level 2 compliance verification is not automated in CI today. Existing test gates (`tests/test_kconfig.py`) verify kernel configuration baseline properties such as KSPP options and BPF trampoline requirements, but do not assert the full CIS Level 2 suite.

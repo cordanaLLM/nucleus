@@ -178,3 +178,108 @@ def test_install_page_matches_release_workflow():
     m_readme = version_regex.search(readme_install_section)
     assert m_readme is None, f"Kernel version literal '{m_readme.group(0) if m_readme else ''}' found in README.md install section"
 
+
+PATH_MENTION_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_/.-])(?:\./)?((?:scripts|kconfig|patches|tests|docker)/[^\s`"\'\)\]>]+|\.github/workflows/[^\s`"\'\)\]>]+\.ya?ml)'
+)
+
+ALLOW_LIST_ABSENT_PATHS = [
+    ("docs/principles.md", "kconfig/base.config", "document explicitly states there is no kconfig/base.config"),
+    ("docs/principles.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
+    ("docs/streams.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
+    ("docs/packaging.md", "scripts/package/mkdebian", "upstream kernel source tree packaging script"),
+    ("docs/packaging.md", "scripts/package/builddeb", "upstream kernel source tree packaging script"),
+    ("docs/patches.md", "scripts/checkpatch.pl", "upstream kernel source tree coding style checker"),
+    ("docs/hardware/amd-rocm.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
+    ("docs/hardware/nvidia-blackwell.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
+]
+
+
+def test_documented_paths_exist():
+    """Ensure documented filesystem and workflow paths in non-ADR docs exist on disk."""
+    allow_set = {(doc, path) for doc, path, _ in ALLOW_LIST_ABSENT_PATHS}
+    docs_files = [REPO_ROOT / "README.md", REPO_ROOT / "CONTRIBUTING.md"] + sorted(
+        [p for p in (REPO_ROOT / "docs").rglob("*.md") if not p.is_relative_to(REPO_ROOT / "docs" / "adr")]
+    )
+
+    missing = []
+    used = set()
+    for doc in docs_files:
+        rel_doc = str(doc.relative_to(REPO_ROOT))
+        for line_no, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
+            for match in PATH_MENTION_PATTERN.finditer(line):
+                candidate = match.group(1).rstrip(".,;:)\"\'`>?]")
+                candidate = re.sub(r":\d+(?::\d+)?$", "", candidate)
+                if "::" in candidate:
+                    candidate = candidate.split("::")[0]
+                if "#" in candidate:
+                    candidate = candidate.split("#")[0]
+                candidate = candidate.rstrip("/")
+                if any(char in candidate for char in ("<", "*", "{", "}", ">")):
+                    continue
+                if (rel_doc, candidate) in allow_set:
+                    used.add((rel_doc, candidate))
+                    continue
+                if not (REPO_ROOT / candidate).exists():
+                    missing.append(f"{rel_doc}:{line_no} -> {candidate}")
+
+    assert not missing, "Documented paths do not exist:\n" + "\n".join(missing)
+    stale = sorted(allow_set - used)
+    assert not stale, f"Allow-list entries that no document needs any more: {stale}"
+
+
+STREAM_VERSION_PATTERN = re.compile(r"\d+\.\d+(\.\d+|-rc\d+|-rt)")
+
+
+def test_issue_templates_carry_no_stream_version():
+    """Ensure issue templates name streams without carrying stale kernel version numbers."""
+    templates = sorted((REPO_ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml"))
+    assert templates, "Issue templates must exist"
+
+    failures = []
+    for tmpl in templates:
+        data = yaml.safe_load(tmpl.read_text(encoding="utf-8"))
+        for field in data.get("body", []):
+            attributes = field.get("attributes", {})
+            if STREAM_VERSION_PATTERN.search(str(attributes.get("label", ""))):
+                failures.append(f"{tmpl.name}: label '{attributes['label']}' carries version literal")
+            for option in attributes.get("options", []):
+                label = option if isinstance(option, str) else option.get("label", "")
+                if STREAM_VERSION_PATTERN.search(label):
+                    failures.append(f"{tmpl.name}: option '{label}' carries version literal")
+
+    assert not failures, "Issue template options carry version literals:\n" + "\n".join(failures)
+
+
+def test_security_policy_paths_exist():
+    """Ensure all workflow and script paths referenced in security documentation exist."""
+    security_files = [REPO_ROOT / "SECURITY.md", REPO_ROOT / "docs" / "community" / "security.md"]
+    workflow_re = re.compile(r"\.github/workflows/[a-zA-Z0-9_.-]+\.ya?ml")
+    script_re = re.compile(r"scripts/[a-zA-Z0-9_.-]+")
+
+    for sec_file in security_files:
+        assert sec_file.exists(), f"{sec_file} must exist"
+        content = sec_file.read_text(encoding="utf-8")
+
+        for wf_match in workflow_re.findall(content):
+            target = REPO_ROOT / wf_match
+            assert target.exists(), f"Workflow referenced in {sec_file.name} does not exist: {wf_match}"
+
+        for script_match in script_re.findall(content):
+            clean_script = script_match.rstrip(".,;:)\"'")
+            target = REPO_ROOT / clean_script
+            assert target.exists(), f"Script referenced in {sec_file.name} does not exist: {clean_script}"
+
+
+def test_security_md_mirrored_in_community():
+    """Ensure docs/community/security.md hand-mirrors SECURITY.md except for versions.json link form."""
+    root_security = (REPO_ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    comm_security = (REPO_ROOT / "docs" / "community" / "security.md").read_text(encoding="utf-8")
+
+    norm_root = root_security.replace(
+        "[`versions.json`](versions.json)",
+        "[`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json)",
+    )
+    assert norm_root == comm_security, (
+        "docs/community/security.md must mirror SECURITY.md (differing only in versions.json link form)"
+    )

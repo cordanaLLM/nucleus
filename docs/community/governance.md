@@ -44,7 +44,9 @@ may be nominated and confirmed by consensus of the existing Maintainers.
 
 ## 4. Release Cadence & Upstream Tracking
 
-- **Longterm (LTS)**: Follows the stable cadence of kernel.org longterm branches (6.18.y), updated on a bi-weekly schedule or immediately upon critical security disclosures.
-- **Mainstream (Stable)**: Tracks active stable trees (7.2.y), updated weekly following upstream point releases.
-- **Bleeding (Mainline)**: Rebuilt against release candidates (7.3-rc) within 24 hours of upstream tagging.
-- **Realtime (RT)**: Synchronized with the Linux Foundation PREEMPT_RT patch sets.
+- **Longterm (LTS)**: Follows the stable cadence of kernel.org longterm branches, updated on a bi-weekly schedule or immediately upon critical security disclosures.
+- **Mainstream (Stable)**: Tracks active stable trees, updated weekly following upstream point releases.
+- **Bleeding (Mainline)**: Rebuilt against release candidates within 24 hours of upstream tagging.
+- **Realtime (RT)**: Built from the active stable release with the in-tree `PREEMPT_RT` option; no out-of-tree patch is applied.
+
+These cadences are targets, not automation: no workflow moves a stream. A stream changes through a pull request that edits `versions.json` as [Kernel Streams](../streams.md) describes, and the weekly `build-matrix.yml` run compiles whatever the manifest pins.

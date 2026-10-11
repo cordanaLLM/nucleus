@@ -13,10 +13,10 @@ body:
       label: Kernel Stream
       description: Which kernel stream is affected?
       options:
-        - bleeding (7.3-rc2)
-        - mainstream (7.2.4)
-        - lts (6.18.50)
-        - realtime (7.2-rt)
+        - bleeding
+        - mainstream
+        - lts
+        - realtime
         - all
     validations:
       required: true

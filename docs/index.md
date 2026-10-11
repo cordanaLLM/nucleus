@@ -10,21 +10,21 @@
 
 In traditional cloud image builds, compiling custom Linux kernels directly inside Packer or Image Builder virtual machines introduces severe bottlenecks: multi-hour build cycles, CPU resource exhaustion, duplicate compilation across matrix variants, and brittle compiler toolchain setup. `cordanaLLM/nucleus` solves this by decoupling kernel compilation into a dedicated, hermetic build pipeline.
 
-The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and systemd Unified Kernel Images (`.efi`, unsigned until Secure Boot signing is wired)—are published to an authenticated APT repository and OCI registry, then consumed downstream by `cordanaLLM/imago`.
+The repository compiles, patches, hardens, and packages four production kernel streams across **`x86_64` (AMD64)**, **`arm64` (aarch64)**, and **`riscv64`** architectures. The output artifacts—native Debian packages (`.deb`) and systemd Unified Kernel Images (`.efi`, unsigned until Secure Boot signing is wired)—are built from one manifest. The Debian packages are published as GitHub Release assets with a keyless cosign signature over their checksum file and consumed downstream by `cordanaLLM/imago`; no APT archive exists and no Unified Kernel Image is published yet ([Packaging](packaging.md), section 5).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant KF as nucleus (Sister Repo)
-    participant GH as GitHub Releases & APT Repository
+    participant GH as GitHub Releases
     participant OCI as GitHub Container Registry (ghcr.io)
     participant CI as imago (Image Forge)
     participant BM as Bare-Metal & Hypervisor Fleet
 
-    Note over KF: Upstream kernel.org source unpacked & patched
+    Note over KF: Upstream kernel.org source fetched & verified
     KF->>KF: make bindeb-pkg (linux-image, linux-headers, linux-libc-dev)
     KF->>KF: systemd-ukify (Kernel + cmdline + optional initrd -> unsigned UKI .efi)
-    KF->>GH: Publish signed Debian .deb packages & apt repository
+    KF->>GH: Publish .deb packages, SHA256SUMS & cosign bundle
     KF->>OCI: Push Unified Kernel Images (UKI) as OCI artifacts (planned; unsigned today)
     KF->>CI: repository_dispatch (kernel_release_published)
     CI->>CI: Renovate / sync workflow updates versions.json
@@ -70,20 +70,30 @@ python3 -c "import json; data=json.load(open('versions.json')); print(json.dumps
 ```
 
 ### Dry-Run Kernel Build Pipeline
-Verify downloading, unpacking, patch application, and configuration merging without invoking compiler threads:
+State the fetch, the configuration resolution, the make command and the expected kernel release; nothing is written. `DRY_RUN` defaults to `true` in the `Makefile`:
 ```bash
-./scripts/build-kernel.sh mainstream x86_64 --dry-run
+make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=true
+```
+Or directly via the build script:
+```bash
+./scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run
 ```
 
 ### Building Full Debian Kernel Packages
-Execute compilation using LLVM/Clang or GCC with all available host cores:
+Compile with GCC on all available host cores (`--jobs` defaults to `nproc`):
 ```bash
-./scripts/build-kernel.sh mainstream x86_64
+make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=false
 ```
-Compiled Debian packages will be placed into `output/mainstream-x86_64/`:
-- `linux-image-7.2.4-lusoris1_amd64.deb`
-- `linux-headers-7.2.4-lusoris1_amd64.deb`
-- `linux-libc-dev-7.2.4-lusoris1_amd64.deb`
+Or directly via the build script:
+```bash
+./scripts/build_kernel.sh --stream=mainstream --arch=x86_64
+```
+Compiled Debian packages will be placed into `output/<stream>-<arch>/`:
+- `linux-image-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
+- `linux-headers-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
+- `linux-libc-dev_<debian_version>-lusoris<N>_<debian_arch>.deb`
+
+A cross build ships no headers package ([Packaging](packaging.md)).
 
 ### Synthesizing Unified Kernel Images (UKI)
 

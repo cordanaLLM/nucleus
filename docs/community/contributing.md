@@ -82,6 +82,41 @@ sequenceDiagram
    gh pr create --fill
    ```
 
+### Pull Request Metadata Gate
+
+`pr-project-gate.yml` is a hard gate. A pull request is refused unless it carries all three:
+
+| Requirement | Detail |
+| :--- | :--- |
+| Milestone | An active milestone must be assigned. |
+| Issue reference | The title or body must match `fixes`, `closes`, `resolves`, `relates to` or `ref` followed by `#123`, `owner/repo#123`, or `EPIC-01`. |
+| Label | At least one `tier/*` or `area/*` label. |
+
+The gate reports as `Validate PR Milestone & Metadata`. It is one of the eleven status checks the
+repository ruleset (`.github/rulesets/main.json`, applied to `main`) requires, and it also feeds
+the `required-checks` aggregate; see
+[Repository Governance](../repository-governance.md#4-branch-ruleset).
+
+**No skip markers.** The gate also refuses a title or body that contains a marker GitHub
+honours to skip workflows: the bracketed forms `skip ci`, `ci skip`, `no ci`, `skip actions`
+and `actions skip`, in any letter case, and a `skip-checks: true` trailer. A squash merge
+turns the title and body into the commit message on `main`, and a marker there starts no
+workflow for that commit, which is how #34's merge landed unverified (#39). To discuss a
+marker, name it without its brackets. This check applies to release pull requests too.
+
+**One waiver exists.** A release pull request is authored by `github-actions[bot]` from a
+generated changelog on a `release-please--branches--*` branch. It cannot satisfy any of the
+three — release-please has no API to assign a milestone, a changelog references no single
+issue, and it applies only the `autorelease: pending` label — so the metadata gates are
+waived for it, and only for it. Both the author and the branch prefix must match; a label
+alone does not waive anything, since a contributor can label their own pull request. The
+code gates (`ci`, `codeql`, `security-scans`) are never waived.
+
+**Keeping a branch up to date.** `main` requires signed commits and an up-to-date branch. Do not
+use GitHub's rebase-mode Update branch button: it rewrites the commits without a signature and
+the pull request is then blocked. Rebase locally with signing enabled and push with a lease; see
+[Repository Governance](../repository-governance.md#applying-the-ruleset).
+
 ### Release Tags
 
 Merging the release pull request tags the repository's release `nucleus-v<X.Y.Z>` and

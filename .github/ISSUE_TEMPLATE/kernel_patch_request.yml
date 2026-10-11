@@ -19,10 +19,10 @@ body:
     attributes:
       label: Applicable Kernel Streams
       options:
-        - label: "bleeding (7.3-rc2)"
-        - label: "mainstream (7.2.4)"
-        - label: "lts (6.18.50)"
-        - label: "realtime (7.2-rt)"
+        - label: "bleeding"
+        - label: "mainstream"
+        - label: "lts"
+        - label: "realtime"
     validations:
       required: true
   - type: checkboxes

@@ -52,7 +52,7 @@ graph TD
 
 ## 2. Kernel Configuration Baseline for NVIDIA Acceleration
 
-To compile and execute NVIDIA Open Kernel Modules without symbol mismatches or memory fragmentation, the following options are enforced across `kconfig/drivers/nvidia.config`:
+Not implemented: no `kconfig/drivers` directory exists and no NVIDIA fragment is merged into any build ([#6](https://github.com/cordanaLLM/nucleus/issues/6) tracks the work). The block below is the intended content:
 
 ```ini
 # Core PCI, PAT and Memory Management
@@ -84,6 +84,8 @@ CONFIG_IOMMU_SUPPORT=y
 CONFIG_INTEL_IOMMU=y
 CONFIG_AMD_IOMMU=y
 ```
+
+Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT`, `CONFIG_INTEL_IOMMU`, `CONFIG_AMD_IOMMU`, `CONFIG_VFIO` and `CONFIG_VFIO_PCI` today. No fragment requests the other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
 
 ### Critical Rationale:
 1. **`CONFIG_HMM_MIRROR=y` & `CONFIG_DEVICE_PRIVATE=y`**: Enables the CUDA Unified Virtual Memory (UVM) driver to transparently migrate memory pages between physical system DDR5/LPDDR5 memory and GPU HBM3e/GDDR7 memory upon hardware page fault.
