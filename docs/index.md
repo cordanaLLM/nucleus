@@ -60,6 +60,8 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 ## 4. Quickstart Recipes
 
+To verify and install a published kernel release, see [Verify and Install a Release](install.md).
+
 ### Inspecting Configured Streams
 Validate the declarative manifest and list available build channels:
 ```bash

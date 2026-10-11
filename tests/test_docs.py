@@ -1,6 +1,8 @@
 """Test suite for documentation portal integrity and mkdocs navigation."""
 
+import fnmatch
 from pathlib import Path
+import re
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -92,3 +94,87 @@ def test_adr_files_complete():
             assert section in content, f"{adr.name} lacks {section}"
         assert f"({adr.name})" in index, f"{adr.name} is missing from docs/adr/README.md"
         assert f"adr/{adr.name}" in nav_paths, f"{adr.name} is missing from mkdocs.yml nav"
+
+
+def test_install_page_matches_release_workflow():
+    """Ensure docs/install.md and README.md match release workflow signing and publishing contracts."""
+    install_file = REPO_ROOT / "docs" / "install.md"
+    assert install_file.exists(), "docs/install.md must exist"
+    install_content = install_file.read_text(encoding="utf-8")
+
+    readme_file = REPO_ROOT / "README.md"
+    assert readme_file.exists(), "README.md must exist"
+    readme_content = readme_file.read_text(encoding="utf-8")
+
+    workflow_file = REPO_ROOT / ".github" / "workflows" / "publish-release.yml"
+    assert workflow_file.exists(), ".github/workflows/publish-release.yml must exist"
+    with open(workflow_file, "r", encoding="utf-8") as f:
+        workflow = yaml.load(f, Loader=MkDocsYamlLoader)
+
+    # (a) Verify certificate identity workflow path
+    signer_identity_raw = None
+    for step in workflow.get("jobs", {}).get("publish", {}).get("steps", []):
+        env = step.get("env", {})
+        if "SIGNER_IDENTITY" in env:
+            signer_identity_raw = env["SIGNER_IDENTITY"]
+            break
+    assert signer_identity_raw is not None, "SIGNER_IDENTITY missing in publish-release.yml"
+
+    m = re.search(r"https://github\.com/\$\{\{\s*github\.repository\s*\}\}/([^@]+)@", signer_identity_raw)
+    assert m is not None, f"Could not parse workflow path from SIGNER_IDENTITY: {signer_identity_raw}"
+    expected_workflow_relpath = m.group(1)
+    expected_workflow_file = REPO_ROOT / expected_workflow_relpath
+    assert expected_workflow_file.exists(), f"Workflow file {expected_workflow_relpath} does not exist"
+
+    for doc_name, doc_text in [("docs/install.md", install_content), ("README.md", readme_content)]:
+        id_match = re.search(
+            r"--certificate-identity\s+[\"']https://github\.com/[^/]+/[^/]+/([^@\"'\s]+)@refs/tags/<release-tag>[\"']",
+            doc_text,
+        )
+        assert id_match is not None, f"Certificate identity pattern missing in {doc_name}"
+        doc_workflow_path = id_match.group(1)
+        assert doc_workflow_path == expected_workflow_relpath, (
+            f"Certificate identity in {doc_name} names '{doc_workflow_path}', expected '{expected_workflow_relpath}'"
+        )
+        assert (REPO_ROOT / doc_workflow_path).exists(), (
+            f"Referenced workflow file {doc_workflow_path} in {doc_name} does not exist"
+        )
+
+    # (b) Verify OIDC issuer string exactly
+    expected_issuer = "https://token.actions.githubusercontent.com"
+    for doc_name, doc_text in [("docs/install.md", install_content), ("README.md", readme_content)]:
+        issuer_match = re.search(r"--certificate-oidc-issuer\s+([^\s\\]+)", doc_text)
+        assert issuer_match is not None, f"--certificate-oidc-issuer missing in {doc_name}"
+        assert issuer_match.group(1) == expected_issuer, (
+            f"OIDC issuer in {doc_name} is '{issuer_match.group(1)}', expected '{expected_issuer}'"
+        )
+
+    # (c) Every asset pattern the table names matches one 'files:' glob of 'Publish to GitHub Release'
+    publish_step = None
+    for step in workflow.get("jobs", {}).get("publish", {}).get("steps", []):
+        if step.get("name") == "Publish to GitHub Release":
+            publish_step = step
+            break
+    assert publish_step is not None, "Publish to GitHub Release step missing in publish-release.yml"
+    files_entry = publish_step.get("with", {}).get("files", "")
+    globs = [line.strip().removeprefix("output/") for line in files_entry.strip().splitlines() if line.strip()]
+
+    table_assets = re.findall(r"^\|\s*`([^`]+)`\s*\|", install_content, re.MULTILINE)
+    assert len(table_assets) == 10, f"Expected 10 table assets in docs/install.md, found {len(table_assets)}: {table_assets}"
+    for asset in table_assets:
+        matched = any(fnmatch.fnmatch(asset, g) for g in globs)
+        assert matched, (
+            f"Asset pattern '{asset}' in docs/install.md does not match any 'files:' glob in publish-release.yml: {globs}"
+        )
+
+    # (d) docs/install.md and README.md carry no kernel version literal inside the install section
+    version_regex = re.compile(r"\d+\.\d+\.\d+|-rc\d+")
+    m_install = version_regex.search(install_content)
+    assert m_install is None, f"Kernel version literal '{m_install.group(0) if m_install else ''}' found in docs/install.md"
+
+    readme_install_match = re.search(r"(###?\s+Install a release.*?)(?=\n###?\s+|\Z)", readme_content, re.DOTALL)
+    assert readme_install_match is not None, "Install section missing in README.md"
+    readme_install_section = readme_install_match.group(1)
+    m_readme = version_regex.search(readme_install_section)
+    assert m_readme is None, f"Kernel version literal '{m_readme.group(0) if m_readme else ''}' found in README.md install section"
+
