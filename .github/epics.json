@@ -1,54 +1,101 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "source": "https://api.github.com/repos/cordanaLLM/nucleus/issues?state=all&labels=epic",
+  "mirrored_at": "2026-10-11T23:16:01Z",
   "epics": [
     {
       "id": "EPIC-01",
-      "title": "Stream Synchronization & Upstream Tracking",
+      "issue": 1,
+      "title": "Epic: Multi-Stream Kernel Release Matrix & Upstream Synchronization",
+      "state": "closed",
+      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "labels": [
+        "epic",
+        "kind/feature",
+        "area/kernel-mainstream",
+        "area/kernel-lts",
+        "tier/p0"
+      ],
       "cadence": "Continuous",
-      "status": "active",
-      "required_labels": ["area/streams", "area/automation"],
-      "description": "Continuous monitoring and automated synchronization of upstream kernel releases (bleeding 7.3-rc2, mainstream 7.2.4, lts 6.18.50, and realtime 7.2-rt) in versions.json."
+      "description": "Establish automated kernel compilation, patching, and verification across 4 live release streams (bleeding 7.3-rc2, mainstream 7.2.4, lts 6.18.50, realtime 7.2-rt)."
     },
     {
       "id": "EPIC-02",
-      "title": "KConfig Hardening & Minimal Attack Surface",
+      "issue": 2,
+      "title": "Epic: Hardened KConfig Baselines & KSPP CIS L2 Compliance",
+      "state": "closed",
+      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "labels": [
+        "epic",
+        "kind/security",
+        "area/kconfig",
+        "tier/p0"
+      ],
       "cadence": "Monthly",
-      "status": "active",
-      "required_labels": ["area/kconfig", "area/security"],
-      "description": "Kernel Self Protection Project (KSPP) compliance, modular security configuration fragments, and sysctl hardening for containerized orchestration."
+      "description": "Construct composable, security-hardened kernel configuration fragments meeting Kernel Self-Protection Project (KSPP) and CIS Linux Benchmark Level 2 baselines."
     },
     {
       "id": "EPIC-03",
-      "title": "Multi-Architecture Cross Compilation",
+      "issue": 3,
+      "title": "Epic: Multi-Architecture Cross-Compilation Engine (x86_64, arm64, riscv64)",
+      "state": "open",
+      "milestone": "1.1 — Multi-arch cross-compilation and dual packaging",
+      "labels": [
+        "epic",
+        "kind/feature",
+        "area/arch-x86_64",
+        "area/arch-arm64",
+        "tier/p1"
+      ],
       "cadence": "Quarterly",
-      "status": "active",
-      "required_labels": ["area/arch", "area/toolchain"],
-      "description": "Multi-architecture compilation matrix and cross-toolchain verification across x86_64, arm64, and riscv64 architectures."
+      "description": "Build hermetic, cross-compilation pipeline leveraging LLVM/Clang and GCC toolchains across x86_64, ARM64, and RISC-V 64 targets."
     },
     {
       "id": "EPIC-04",
-      "title": "Dual Packaging & Unified Kernel Images (UKI)",
+      "issue": 4,
+      "title": "Epic: Dual Packaging Pipeline (.deb & systemd-ukify UKI EFI)",
+      "state": "open",
+      "milestone": "1.1 — Multi-arch cross-compilation and dual packaging",
+      "labels": [
+        "epic",
+        "kind/feature",
+        "area/packaging",
+        "tier/p1"
+      ],
       "cadence": "Quarterly",
-      "status": "active",
-      "required_labels": ["area/packaging", "area/uki"],
-      "description": "Dual package delivery supporting traditional Debian packages (.deb) and UEFI Unified Kernel Images (UKI) with systemd-stub and embedded initramfs for secure boot."
+      "description": "Standardize dual packaging producing native Debian `.deb` archives and Unified Kernel Image (UKI) `.efi` executables measured into TPM 2.0 PCR 11."
     },
     {
       "id": "EPIC-05",
-      "title": "Supply Chain Attestation & Cryptographic Signing",
+      "issue": 5,
+      "title": "Epic: Enterprise CI/CD, Supply Chain Attestation & Downstream Dispatch",
+      "state": "closed",
+      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "labels": [
+        "epic",
+        "kind/security",
+        "area/ci-cd",
+        "tier/p0"
+      ],
       "cadence": "Continuous",
-      "status": "active",
-      "required_labels": ["area/security", "area/supply-chain"],
-      "description": "Cryptographic keyless artifact signing via Sigstore Cosign, Syft CycloneDX/SPDX SBOM generation, and SLSA Build Level 3 provenance attestation."
+      "description": "Deploy an enterprise 12-workflow GitHub Actions CI/CD matrix with OpenSSF Scorecard, Semgrep SAST, Trivy CVE scanning, and branch protection aggregator."
     },
     {
       "id": "EPIC-06",
-      "title": "Hardware Acceleration & Driver Integration",
+      "issue": 6,
+      "title": "Epic: Next-Gen Hardware Acceleration & Scheduler Engine (Blackwell, Xe2, BBRv3, sched-ext)",
+      "state": "open",
+      "milestone": "1.2 — Next-gen hardware acceleration and sched-ext",
+      "labels": [
+        "epic",
+        "kind/feature",
+        "area/patches",
+        "area/ebpf-sched-ext",
+        "tier/p1"
+      ],
       "cadence": "Quarterly",
-      "status": "active",
-      "required_labels": ["area/hardware", "area/drivers"],
-      "description": "Hardware enablement fragments and out-of-tree patchsets for NVIDIA Blackwell/Hopper, Intel Xe2 Battlemage, AMD ROCm, OpenZFS 2.3, and sched-ext extensible scheduling."
+      "description": "Curate high-performance patches and drivers for NVIDIA Blackwell B200 / RTX 5090, Intel Xe2 Battlemage, AMD ROCm 10, BBRv3, and eBPF sched-ext."
     }
   ]
 }

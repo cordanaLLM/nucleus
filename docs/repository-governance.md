@@ -241,6 +241,13 @@ documentation gate, agent-harness and Paperclip checks, agent-definition layout 
 hooks) belong to a full adoption and are not run in CI. `praetorctl flavor audit .` finds no
 matching flavor for a kernel forge, and praetor's HISS scanners read Python but no shell.
 
+`.github/milestones.json` and `.github/epics.json` mirror the forge: the milestones and the
+issues labelled `epic`, as the API named in each file's `source` returned them at
+`mirrored_at`. An epic row keeps two fields the forge does not hold, its `id` (the `EPIC-NN`
+form `pr-project-gate.yml` accepts as a reference) and its `cadence`. Nothing compares the
+files with the forge afterwards; `tests/test_governance.py` checks their fields, the two
+forge states, and that every epic names a listed milestone.
+
 The pinned `praetorctl` expands a literal matrix axis in a required job, and parses a matrix
 written as a single expression (`matrix: ${{ fromJSON(...) }}`) in a job that is not
 required. praetor commits before `9a00443c086a` refused that form with a parse error, even in
