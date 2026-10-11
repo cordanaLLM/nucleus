@@ -16,7 +16,7 @@ permissions:
 jobs:
   publish:
     name: Publish Kernel Release & Notify Downstream
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # One x86_64 kernel compile (see build-matrix.yml for the measurement) plus signing.
     timeout-minutes: 120
     permissions:

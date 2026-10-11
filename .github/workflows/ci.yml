@@ -23,7 +23,7 @@ env:
 jobs:
   lint-and-test:
     name: Lint & Pytest Quality Gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout Repository
@@ -58,7 +58,7 @@ jobs:
   # kernel image, so the job needs no kernel build; the result is never published.
   uki-real-ukify:
     name: UKI Real ukify Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
       # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
@@ -138,7 +138,7 @@ jobs:
 
   governance:
     name: Praetor Governance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       # No credential stays in .git/config while this job runs a binary built from another

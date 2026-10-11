@@ -17,7 +17,7 @@ concurrency:
 jobs:
   changes:
     name: Detect Security Scan Paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -41,15 +41,14 @@ jobs:
     name: Semgrep SAST
     needs: changes
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Semgrep runs from its publisher's image, named by release and digest, so the scanner
+    # changes only with a commit here. The update bot moves both parts together.
+    container:
+      image: semgrep/semgrep:1.179.0@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.12"
-      - name: Install Semgrep
-        run: pip install --no-cache-dir semgrep
       - name: Run Semgrep Security Rules
         run: |
           semgrep --error --config p/ci --config p/security-audit .
@@ -58,7 +57,7 @@ jobs:
     name: Trivy Filesystem CVE Scan
     needs: changes
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -72,7 +71,7 @@ jobs:
 
   gitleaks:
     name: Gitleaks History Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -102,7 +101,7 @@ jobs:
     name: Security Scan Gate
     needs: [changes, semgrep, trivy, gitleaks]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Fail when a security scan failed or was cancelled

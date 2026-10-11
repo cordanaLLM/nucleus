@@ -86,7 +86,7 @@ concurrency:
 jobs:
   verify:
     name: Verify Downstream Kernel Requirements
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # An explicit bash runs as bash --noprofile --norc -eo pipefail, so a failing verifier
     # fails its step even though its output is piped through tee.
@@ -228,7 +228,7 @@ jobs:
     name: Resolve KConfig (${{ matrix.stream }})
     needs: verify
     if: needs.verify.outputs.resolve == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
       # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
@@ -322,7 +322,7 @@ jobs:
   verify-resolved:
     name: Verify Requirements Against the Resolved KConfig
     needs: [verify, resolve]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
