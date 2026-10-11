@@ -61,6 +61,12 @@ shellcheck --version
 yamllint --version
 ```
 
+Install the test and documentation dependencies from the hash-pinned lock file
+([Contributing](community/contributing.md) says how it is compiled):
+```bash
+pip install --require-hashes -r requirements-test.txt
+```
+
 ### Order 2: Validate Manifest & Invariants
 Run the local quality gates:
 ```bash

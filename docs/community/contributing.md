@@ -52,6 +52,18 @@ sequenceDiagram
    - Keep changes minimal, coherent, and isolated.
    - Do not reformat nearby files for aesthetic reasons alone.
 3. **Run local verification gates**:
+   Install the test and documentation dependencies from the lock file, as CI does (Python 3.12):
+   ```bash
+   pip install --require-hashes -r requirements-test.txt
+   ```
+   `requirements-test.in` names the direct dependencies; `requirements-test.txt` is compiled
+   from it and pins every package by version and hash. Renovate keeps the lock current by
+   rerunning the command in its header, so change a dependency in the `.in` file and compile
+   with exactly this command (`tests/test_workflows.py` refuses a header Renovate cannot parse):
+   ```bash
+   uv pip compile --generate-hashes --universal --python-version=3.12 --output-file=requirements-test.txt requirements-test.in
+   ```
+   Then run the gates:
    ```bash
    make lint
    make test
