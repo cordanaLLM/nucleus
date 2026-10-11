@@ -23,6 +23,7 @@ SCRIPT = REPO_ROOT / "scripts" / "check-action-pins.sh"
 PINNED = "a" * 40
 OTHER = "b" * 40
 TAG_OBJECT = "c" * 40
+DIGEST = "0123456789abcdef" * 4
 
 FAKE_GH = """#!/usr/bin/env bash
 set -euo pipefail
@@ -270,6 +271,36 @@ def test_local_actions_are_skipped(tmp_path, github):
     result = _run(github, _workflows(tmp_path, ci=uses))
     assert result.returncode == 0, result.stdout + result.stderr
     assert "SKIP  ./.github/actions/setup  [ci.yml:8]: local action" in result.stdout
+
+
+def test_container_image_named_by_digest_is_listed_and_not_queried(tmp_path, github):
+    image = f"docker://docker.io/fsfe/reuse@sha256:{DIGEST}"
+    result = _run(github, _workflows(tmp_path, ci=image))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"IMAGE {image}  [ci.yml:8]: container image named by digest" in result.stdout
+    assert "0 unpinned use(s), 0 failure(s)" in result.stdout
+    assert github.calls() == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "docker://docker.io/fsfe/reuse:6.2.0",
+        "docker://docker.io/fsfe/reuse",
+        "docker://docker.io/fsfe/reuse:latest # 6.2.0",
+        f"docker://docker.io/fsfe/reuse@sha256:{DIGEST[:63]}",
+        f"docker://docker.io/fsfe/reuse@sha256:{DIGEST}0",
+        f"docker://docker.io/fsfe/reuse@sha512:{DIGEST}",
+        f"docker://docker.io/fsfe/reuse@sha256:{DIGEST.upper()}",
+    ],
+)
+def test_container_image_without_a_full_digest_fails(tmp_path, github, image):
+    result = _run(github, _workflows(tmp_path, ci=image))
+    assert result.returncode == 1, result.stdout + result.stderr
+    failures = [line for line in result.stdout.splitlines() if line.startswith("FAIL")]
+    assert len(failures) == 1
+    assert "1 unpinned use(s), 1 failure(s)" in result.stdout
+    assert github.calls() == []
 
 
 def test_one_line_per_pin_across_files(tmp_path, github):

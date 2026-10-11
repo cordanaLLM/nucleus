@@ -1,0 +1,78 @@
+# Copyright 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Licence and copyright of every tracked file (REUSE specification 3.3).
+# When several tables match a file, the last one in this file decides, so a
+# table that narrows an earlier one stands after it.
+
+version = 1
+
+# Everything the project wrote: code, workflows, configuration, tests.
+# "aggregate" adds these terms to what a file states in its own header.
+[[annotations]]
+path = ["**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Lusoris Authors"
+SPDX-License-Identifier = "EUPL-1.2"
+
+# Documentation text.
+[[annotations]]
+path = [
+    "README.md",
+    "CONTRIBUTING.md",
+    "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "docs/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Lusoris Authors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Adapted from the Contributor Covenant (https://www.contributor-covenant.org).
+[[annotations]]
+path = ["CODE_OF_CONDUCT.md", "docs/community/code-of-conduct.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+    "2026 The Lusoris Authors",
+    "Contributor Covenant contributors",
+]
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Changes to Linux kernel sources carry the kernel's licence. "override"
+# because a patch quotes the licence lines of the files it changes.
+[[annotations]]
+path = ["patches/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Lusoris Authors"
+SPDX-License-Identifier = "GPL-2.0-only"
+
+# Public keys of the kernel.org release signers, exported unchanged. A public
+# key is not a work under copyright; the REUSE answer for such a file is no
+# holder and CC0-1.0.
+[[annotations]]
+path = ["keys/*.asc"]
+precedence = "override"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"
+
+# Copied from cordanaLLM/Aegis-OS: its kernel requirement
+# (build/kernel-requirement.json) and the schema of that document, at the
+# commit versions.json pins.
+[[annotations]]
+path = [
+    "tests/fixtures/kernel-requirement/aegis-os.json",
+    "tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Lusoris <lusoris@proton.me>"
+SPDX-License-Identifier = "EUPL-1.2"
+
+# Copied from cordanaLLM/imago (kernel/requirement.json) at commit
+# 16f964b4dafa, when that repository was under the Apache License 2.0.
+[[annotations]]
+path = ["tests/fixtures/kernel-requirement/imago.json"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The Lusoris Authors"
+SPDX-License-Identifier = "Apache-2.0"

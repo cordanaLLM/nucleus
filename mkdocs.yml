@@ -4,7 +4,7 @@ site_url: https://cordanallm.github.io/nucleus/
 repo_url: https://github.com/cordanaLLM/nucleus
 repo_name: cordanaLLM/nucleus
 edit_uri: edit/main/docs/
-copyright: "Copyright &copy; 2026 The Lusoris Authors — Apache 2.0 License"
+copyright: "Copyright &copy; 2026 The Lusoris Authors — EUPL-1.2, documentation text CC BY-SA 4.0"
 
 theme:
   name: material
