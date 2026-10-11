@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.2.0...nucleus-v0.3.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **licence:** licence Apache-2.0 -> EUPL-1.2 Migration: no code changes; a consumer of 0.3.0 or later reads the licence section of the README for what the new terms cover.
+
+### Bug Fixes
+
+* **kconfig:** let BPF LSM attach on every leg, and release revisions above 1 ([#47](https://github.com/cordanaLLM/nucleus/issues/47)) ([852be74](https://github.com/cordanaLLM/nucleus/commit/852be742eb173700d5ef93b0c6f867b855f9c640))
+
+
+### Miscellaneous Chores
+
+* **licence:** relicense to EUPL-1.2 and check licence information ([#55](https://github.com/cordanaLLM/nucleus/issues/55)) ([89bd949](https://github.com/cordanaLLM/nucleus/commit/89bd949dbd51e87cc42fd138bfd4ccfdd083a1ad)), closes [#54](https://github.com/cordanaLLM/nucleus/issues/54)
+
 ## [0.2.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.1.0...nucleus-v0.2.0) (2026-09-29)
 
 
