@@ -42,7 +42,7 @@ jobs:
 
       - name: Install MkDocs Material
         run: |
-          pip install --no-cache-dir mkdocs-material pymdown-extensions
+          pip install --no-cache-dir --require-hashes -r requirements-test.txt
 
       - name: Build MkDocs Site
         run: mkdocs build --strict

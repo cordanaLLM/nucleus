@@ -37,9 +37,13 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck yamllint
-          bash -c "$(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)"
+          # actionlint by version and digest (actionlint_<version>_checksums.txt of its release).
+          curl -sSfL -o actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz" | sha256sum -c
+          tar -xzf actionlint.tar.gz actionlint
           sudo mv ./actionlint /usr/local/bin/
-          pip install --no-cache-dir -r requirements-test.txt
+          rm -f actionlint.tar.gz
+          pip install --no-cache-dir --require-hashes -r requirements-test.txt
 
       - name: Run Makefile Gates
         run: |
