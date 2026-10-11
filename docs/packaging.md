@@ -399,38 +399,17 @@ make verify-reproducibility
 
 ---
 
-## 4. Initramfs Contracts & Driver Profiles
+## 4. Initramfs
 
-Initramfs creation is orchestrated via `dracut` using two distinct deployment profiles:
-
-### 4.1 MicroVM / Cloud Instance Profile (`dracut-micro`)
-For virtualization in Proxmox VE, KVM, and QEMU microVMs, boot latency must remain sub-second (< 350ms):
-- **Omitted**: Bluetooth, sound, wireless, PCMCIA, legacy IDE, floppy, ISDN.
-- **Included**: `virtio_pci`, `virtio_blk`, `virtio_net`, `virtio_scsi`, `virtio_console`, `nvme`, `overlay`, `ext4`, `xfs`.
-- **Driver Model**: Core VirtIO storage and network drivers are built directly into the kernel (`=y`), allowing instantaneous pivot-root without waiting for module loading.
-
-### 4.2 Bare-Metal & SAN Profile (`dracut-enterprise`)
-For bare-metal physical hypervisors and storage appliances:
-- **Included**: Intel i40e/ice, Mellanox ConnectX-5/6/7 (`mlx5_core`), Broadcom bnxt, Broadcom MegaRAID, NVMe-over-Fabrics (TCP/RDMA), OpenZFS root (`zfs`), and multipath.
+The repository does not orchestrate initramfs creation or provide dracut configuration profiles today. When packaging Unified Kernel Images, `scripts/package-uki.sh` accepts an optional pre-built initramfs archive via `--initrd=<file>` and embeds it into the `.initrd` PE section. If `--initrd` is omitted, no initramfs section is embedded.
 
 ---
 
 ## 5. Distribution & Downstream Delivery
 
 ### 5.1 Authenticated APT Repository
-Compiled `.deb` packages are imported into an authenticated Debian archive powered by `reprepro`:
-- **Repository URL**: `https://apt.example.com/kernels/`
-- **Distributions**: `bookworm`, `trixie`, `resolute`
-- **Architectures**: `amd64`, `arm64`, `riscv64`
-- **Signing**: InRelease files signed with project OpenPGP key.
 
-```bash
-# Example downstream consumption in Debian/Ubuntu:
-curl -fsSL https://apt.example.com/kernels/archive-key.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/lusoris-kernel.gpg
-echo "deb [signed-by=/etc/apt/trusted.gpg.d/lusoris-kernel.gpg] https://apt.example.com/kernels/ resolute main" > /etc/apt/sources.list.d/lusoris-kernel.list
-apt-get update
-apt-get install -y linux-image-7.2.8-lusoris1-mainstream linux-headers-7.2.8-lusoris1-mainstream
-```
+Not implemented: no APT archive is published; packages are GitHub Release assets.
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
 Planned: UKI binaries (`.efi`) are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. The image is unsigned today (section 3.1), and no workflow publishes or pushes one: CI builds one only to test it, and `publish-release.yml` publishes GitHub Release assets, none of them a UKI (section 5.3).

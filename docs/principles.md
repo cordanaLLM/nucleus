@@ -27,9 +27,9 @@
 ## 3. Kernel Packaging Contracts
 
 1. **Native Debian Packaging**: Builds generate standard `.deb` packages via upstream `make bindeb-pkg`:
-   - `linux-image-<version>-<stream>-<arch>.deb`
-   - `linux-headers-<version>-<stream>-<arch>.deb`
-   - `linux-libc-dev-<version>-<stream>-<arch>.deb`
+   - `linux-image-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
+   - `linux-headers-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
+   - `linux-libc-dev_<debian_version>-lusoris<N>_<debian_arch>.deb`
 2. **Package Versioning**: Packages carry a reproducible localversion suffix, e.g. `-lusoris1`.
 3. **Verified Sources**: A kernel source is used only after `scripts/fetch-kernel-source.sh` has proven it: a tarball matches its pinned SHA-256 and carries a good kernel.org signature, over the uncompressed tar, by a key the stream lists; a release-candidate tag passes `git verify-tag` and points at its pinned commit. The public keys are in `keys/`. Anything else is refused ([ADR-0008](adr/0008-signed-kernel-sources-and-resolved-configuration.md)).
 4. **Modular KConfig**: Avoid monolith `.config` files. Configuration is partitioned into composable fragments that `scripts/merge-config.sh` merges in a fixed order: `kconfig/security-hardened.config`, `kconfig/<arch>.config`, then `kconfig/streams/<stream>.config` when the stream has one. The last line for a symbol wins, `# CONFIG_X is not set` included, and the output carries no timestamp. Against a verified tree (`--source-tree`), the fragments are applied with the kernel's `scripts/kconfig/merge_config.sh -m` on top of the architecture's defconfig and resolved with `make olddefconfig`; there is no `kconfig/base.config`.

@@ -1,6 +1,7 @@
 """Test suite for documentation portal integrity and mkdocs navigation."""
 
 from pathlib import Path
+import re
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -92,3 +93,77 @@ def test_adr_files_complete():
             assert section in content, f"{adr.name} lacks {section}"
         assert f"({adr.name})" in index, f"{adr.name} is missing from docs/adr/README.md"
         assert f"adr/{adr.name}" in nav_paths, f"{adr.name} is missing from mkdocs.yml nav"
+
+
+PATH_MENTION_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_/.-])(?:\./)?((?:scripts|kconfig|patches|tests|docker)/[^\s`"\'\)\]>]+|\.github/workflows/[^\s`"\'\)\]>]+\.ya?ml)'
+)
+
+ALLOW_LIST_ABSENT_PATHS = [
+    ("docs/principles.md", "kconfig/base.config", "document explicitly states there is no kconfig/base.config"),
+    ("docs/principles.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
+    ("docs/streams.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
+    ("docs/packaging.md", "scripts/package/mkdebian", "upstream kernel source tree packaging script"),
+    ("docs/packaging.md", "scripts/package/builddeb", "upstream kernel source tree packaging script"),
+    ("docs/patches.md", "scripts/checkpatch.pl", "upstream kernel source tree coding style checker"),
+    ("docs/community/security.md", ".github/workflows/reproducibility.yml", "removed by the fix for issue #58; drop this entry with it"),
+    ("docs/hardware/amd-rocm.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
+    ("docs/hardware/nvidia-blackwell.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
+]
+
+
+def test_documented_paths_exist():
+    """Ensure documented filesystem and workflow paths in non-ADR docs exist on disk."""
+    allow_set = {(doc, path) for doc, path, _ in ALLOW_LIST_ABSENT_PATHS}
+    docs_files = [REPO_ROOT / "README.md", REPO_ROOT / "CONTRIBUTING.md"] + sorted(
+        [p for p in (REPO_ROOT / "docs").rglob("*.md") if not p.is_relative_to(REPO_ROOT / "docs" / "adr")]
+    )
+
+    missing = []
+    used = set()
+    for doc in docs_files:
+        rel_doc = str(doc.relative_to(REPO_ROOT))
+        for line_no, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
+            for match in PATH_MENTION_PATTERN.finditer(line):
+                candidate = match.group(1).rstrip(".,;:)\"\'`>?]")
+                candidate = re.sub(r":\d+(?::\d+)?$", "", candidate)
+                if "::" in candidate:
+                    candidate = candidate.split("::")[0]
+                if "#" in candidate:
+                    candidate = candidate.split("#")[0]
+                candidate = candidate.rstrip("/")
+                if any(char in candidate for char in ("<", "*", "{", "}", ">")):
+                    continue
+                if (rel_doc, candidate) in allow_set:
+                    used.add((rel_doc, candidate))
+                    continue
+                if not (REPO_ROOT / candidate).exists():
+                    missing.append(f"{rel_doc}:{line_no} -> {candidate}")
+
+    assert not missing, "Documented paths do not exist:\n" + "\n".join(missing)
+    stale = sorted(allow_set - used)
+    assert not stale, f"Allow-list entries that no document needs any more: {stale}"
+
+
+STREAM_VERSION_PATTERN = re.compile(r"\d+\.\d+(\.\d+|-rc\d+|-rt)")
+
+
+def test_issue_templates_carry_no_stream_version():
+    """Ensure issue templates name streams without carrying stale kernel version numbers."""
+    templates = sorted((REPO_ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml"))
+    assert templates, "Issue templates must exist"
+
+    failures = []
+    for tmpl in templates:
+        data = yaml.safe_load(tmpl.read_text(encoding="utf-8"))
+        for field in data.get("body", []):
+            attributes = field.get("attributes", {})
+            if STREAM_VERSION_PATTERN.search(str(attributes.get("label", ""))):
+                failures.append(f"{tmpl.name}: label '{attributes['label']}' carries version literal")
+            for option in attributes.get("options", []):
+                label = option if isinstance(option, str) else option.get("label", "")
+                if STREAM_VERSION_PATTERN.search(label):
+                    failures.append(f"{tmpl.name}: option '{label}' carries version literal")
+
+    assert not failures, "Issue template options carry version literals:\n" + "\n".join(failures)
+
