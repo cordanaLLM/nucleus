@@ -106,7 +106,6 @@ ALLOW_LIST_ABSENT_PATHS = [
     ("docs/packaging.md", "scripts/package/mkdebian", "upstream kernel source tree packaging script"),
     ("docs/packaging.md", "scripts/package/builddeb", "upstream kernel source tree packaging script"),
     ("docs/patches.md", "scripts/checkpatch.pl", "upstream kernel source tree coding style checker"),
-    ("docs/community/security.md", ".github/workflows/reproducibility.yml", "removed by the fix for issue #58; drop this entry with it"),
     ("docs/hardware/amd-rocm.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
     ("docs/hardware/nvidia-blackwell.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
 ]
@@ -167,3 +166,36 @@ def test_issue_templates_carry_no_stream_version():
 
     assert not failures, "Issue template options carry version literals:\n" + "\n".join(failures)
 
+
+def test_security_policy_paths_exist():
+    """Ensure all workflow and script paths referenced in security documentation exist."""
+    security_files = [REPO_ROOT / "SECURITY.md", REPO_ROOT / "docs" / "community" / "security.md"]
+    workflow_re = re.compile(r"\.github/workflows/[a-zA-Z0-9_.-]+\.ya?ml")
+    script_re = re.compile(r"scripts/[a-zA-Z0-9_.-]+")
+
+    for sec_file in security_files:
+        assert sec_file.exists(), f"{sec_file} must exist"
+        content = sec_file.read_text(encoding="utf-8")
+
+        for wf_match in workflow_re.findall(content):
+            target = REPO_ROOT / wf_match
+            assert target.exists(), f"Workflow referenced in {sec_file.name} does not exist: {wf_match}"
+
+        for script_match in script_re.findall(content):
+            clean_script = script_match.rstrip(".,;:)\"'")
+            target = REPO_ROOT / clean_script
+            assert target.exists(), f"Script referenced in {sec_file.name} does not exist: {clean_script}"
+
+
+def test_security_md_mirrored_in_community():
+    """Ensure docs/community/security.md hand-mirrors SECURITY.md except for versions.json link form."""
+    root_security = (REPO_ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    comm_security = (REPO_ROOT / "docs" / "community" / "security.md").read_text(encoding="utf-8")
+
+    norm_root = root_security.replace(
+        "[`versions.json`](versions.json)",
+        "[`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json)",
+    )
+    assert norm_root == comm_security, (
+        "docs/community/security.md must mirror SECURITY.md (differing only in versions.json link form)"
+    )
