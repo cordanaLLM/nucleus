@@ -52,6 +52,9 @@
             "context": "CodeQL (actions)"
           },
           {
+            "context": "REUSE lint"
+          },
+          {
             "context": "Validate PR Milestone \u0026 Metadata"
           },
           {

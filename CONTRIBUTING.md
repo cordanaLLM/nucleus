@@ -80,7 +80,7 @@ sequenceDiagram
 | Issue reference | The title or body must match `fixes`, `closes`, `resolves`, `relates to` or `ref` followed by `#123`, `owner/repo#123`, or `EPIC-01`. |
 | Label | At least one `tier/*` or `area/*` label. |
 
-The gate reports as `Validate PR Milestone & Metadata`. It is one of the ten status checks the
+The gate reports as `Validate PR Milestone & Metadata`. It is one of the eleven status checks the
 repository ruleset (`.github/rulesets/main.json`, applied to `main`) requires, and it also feeds
 the `required-checks` aggregate; see
 [Repository Governance](docs/repository-governance.md#4-branch-ruleset).
@@ -139,7 +139,7 @@ runs `make ruleset`, because `.github/rulesets/main.json` lists those jobs as re
 
 ## 3. Developer Certificate of Origin (DCO)
 
-By contributing to this repository, you certify that you have the right to submit the code under the project's Apache 2.0 license:
+By contributing to this repository, you certify that you have the right to submit the code under the project's licence (`EUPL-1.2`; see the licence section of the README for documentation and patches):
 
 ```text
 Developer Certificate of Origin
