@@ -206,6 +206,181 @@ def test_no_run_block_interpolates_event_data():
                 assert not event_data.search(step.get("run", "")), f"{wf.name}: {step.get('name')}"
 
 
+LOCK_FILE = REPO_ROOT / "requirements-test.txt"
+PIP_INSTALL = re.compile(r"\bpip[\d.]*\s+install\b")
+SHELL = r"(?:\S*/)?(?:ba|z|da|a)?sh\b"
+DOWNLOAD_INTO_SHELL = re.compile(
+    rf"\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?{SHELL}"
+    rf"|\b(?:{SHELL}|eval|source)[^\n]*(?:\$\(|<\(|`)\s*(?:curl|wget)\b"
+)
+# What Renovate's pip-compile manager accepts in the command a uv lock file names in its
+# header (renovatebot/renovate, lib/modules/manager/pip-compile/common.ts): an allow-list,
+# and every option that takes a value must be written as --option=value.
+RENOVATE_UV_FLAGS = {"--generate-hashes", "--universal", "--no-strip-extras"}
+RENOVATE_UV_VALUE_OPTIONS = {"--python-version", "--output-file"}
+
+
+def _run_lines(workflow_text: str) -> list[str]:
+    """Every logical line of every run: block of a workflow, continuations joined."""
+    lines: list[str] = []
+    for job in yaml.safe_load(workflow_text)["jobs"].values():
+        for step in job.get("steps", []):
+            lines += step.get("run", "").replace("\\\n", " ").splitlines()
+    return [line.strip() for line in lines if line.strip()]
+
+
+def _unhashed_pip_installs(workflow_text: str) -> list[str]:
+    """pip install lines that do not install a requirements file under --require-hashes."""
+    return [
+        line
+        for line in _run_lines(workflow_text)
+        if PIP_INSTALL.search(line)
+        and not ("--require-hashes" in line and re.search(r"(?:\s-r\s|--requirement[\s=])", line))
+    ]
+
+
+def _downloads_into_shell(workflow_text: str) -> list[str]:
+    """Lines that pipe or substitute a download into a shell."""
+    return [line for line in _run_lines(workflow_text) if DOWNLOAD_INTO_SHELL.search(line)]
+
+
+def _unhashed_requirements(lock_text: str) -> list[str]:
+    """Lines of a requirements file that carry no --hash=."""
+    lines = lock_text.replace("\\\n", " ").splitlines()
+    return [
+        line.strip()
+        for line in lines
+        if line.strip() and not line.strip().startswith("#") and "--hash=" not in line
+    ]
+
+
+def _lock_command(lock_text: str) -> str:
+    """The command a lock file names in its header, as uv writes it."""
+    match = re.match(r"(?:#.*\n)+?#    (uv pip compile .*)\n", lock_text)
+    assert match, "the lock file must start with uv's header and its command"
+    return match.group(1)
+
+
+def _renovate_refusals(command: str) -> list[str]:
+    """Arguments of a uv pip compile command that Renovate's pip-compile manager refuses."""
+    refused = []
+    for arg in command.split()[3:]:
+        option = arg.split("=", 1)[0]
+        if not arg.startswith("-") or arg in RENOVATE_UV_FLAGS:
+            continue
+        if not (option in RENOVATE_UV_VALUE_OPTIONS and "=" in arg):
+            refused.append(arg)
+    return refused
+
+
+def _step(run: str) -> str:
+    """A one-job workflow whose only step runs the given script."""
+    return yaml.safe_dump({"jobs": {"job": {"steps": [{"run": run}]}}})
+
+
+def test_every_workflow_pip_install_requires_hashes():
+    """Every pip install in a workflow installs a requirements file with --require-hashes."""
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        assert not _unhashed_pip_installs(wf.read_text(encoding="utf-8")), wf.name
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        "pip install --no-cache-dir -r requirements-test.txt",
+        "pip install --no-cache-dir jsonschema pytest",
+        "pip install --require-hashes jsonschema",
+        "python3 -m pip install -r requirements.txt",
+        "sudo pip3 install mkdocs-material",
+        "set -e\nmake lint && pip install \\\n  pytest",
+    ],
+)
+def test_an_unhashed_pip_install_is_refused(run: str):
+    """The check refuses each planted install, in a single-line run: as in a script."""
+    assert _unhashed_pip_installs(_step(run))
+    if "\n" not in run:
+        assert _unhashed_pip_installs(f"jobs:\n  job:\n    steps:\n      - run: {run}\n")
+
+
+def test_no_workflow_downloads_into_a_shell():
+    """No workflow executes what curl or wget returned; a download is verified first."""
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        assert not _downloads_into_shell(wf.read_text(encoding="utf-8")), wf.name
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        'bash -c "$(curl -sSfL https://example.com/main/scripts/download-actionlint.bash)"',
+        'sh -c "$(curl -sSfL https://example.com/install.sh)"',
+        "curl -sSfL https://example.com/install.sh | bash",
+        "curl -sSfL https://example.com/install.sh | sudo bash",
+        "curl -sSfL https://example.com/install.sh \\\n  | sh",
+        "wget -qO- https://example.com/install.sh | sh",
+        'eval "$(curl -sSfL https://example.com/init)"',
+        "bash <(curl -sSfL https://example.com/install.sh)",
+        "source <(curl -sSfL https://example.com/env)",
+    ],
+)
+def test_a_download_into_a_shell_is_refused(run: str):
+    """The check refuses each planted download that reaches a shell unverified."""
+    assert _downloads_into_shell(_step(run))
+
+
+def test_a_verified_download_is_not_refused():
+    """A download to a file that sha256sum checks is the accepted form."""
+    run = 'curl -sSfL -o tool.tar.gz https://example.com/tool.tar.gz\necho "0  tool.tar.gz" | sha256sum -c'
+    assert not _downloads_into_shell(_step(run))
+    assert not _unhashed_pip_installs(_step("pip install --require-hashes -r requirements-test.txt"))
+
+
+def test_the_lock_file_pins_every_requirement_by_hash():
+    """requirements-test.txt carries a hash for every requirement it names."""
+    assert not _unhashed_requirements(LOCK_FILE.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "lock",
+    [
+        "jsonschema>=4.20.0\npytest>=7.4.0\n",
+        "pytest==9.1.1\n",
+        "attrs==26.1.0 \\\n    --hash=sha256:00\npytest==9.1.1\n",
+        "-r other.txt\n",
+    ],
+)
+def test_a_requirement_without_a_hash_is_refused(lock: str):
+    """The check refuses each planted lock file with a line that has no hash."""
+    assert _unhashed_requirements(lock)
+
+
+def test_the_lock_command_is_one_renovate_can_rerun():
+    """Renovate reruns the header's command, so it must parse it; the docs name the same one."""
+    command = _lock_command(LOCK_FILE.read_text(encoding="utf-8"))
+    assert not _renovate_refusals(command), command
+    assert "--generate-hashes" in command.split()
+    assert "--output-file=requirements-test.txt" in command.split()
+    assert command.split()[-1] == "requirements-test.in"
+    for doc in ("CONTRIBUTING.md", "docs/community/contributing.md"):
+        assert command in (REPO_ROOT / doc).read_text(encoding="utf-8"), doc
+    renovate = json.loads((REPO_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    patterns = renovate["pip-compile"]["managerFilePatterns"]
+    assert any(re.search(pattern.strip("/"), LOCK_FILE.name) for pattern in patterns), patterns
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv pip compile --generate-hashes --python-version 3.12 requirements-test.in -o requirements-test.txt",
+        "uv pip compile --python-version=3.12 -o requirements-test.txt requirements-test.in",
+        "uv pip compile --no-header --output-file=requirements-test.txt requirements-test.in",
+        "uv pip compile --output-file requirements-test.txt requirements-test.in",
+    ],
+)
+def test_a_lock_command_renovate_cannot_parse_is_refused(command: str):
+    """The first case is the command the lock file was first compiled with."""
+    assert _renovate_refusals(command)
+
+
 def test_verify_requirements_fetches_pinned_documents_and_keeps_the_report():
     """The dispatch payload goes to the fetch script through env; the report is kept."""
     parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))

@@ -111,7 +111,7 @@ jobs:
       - name: Install Test Dependencies
         run: |
           set -euo pipefail
-          pip install --no-cache-dir jsonschema pytest
+          pip install --no-cache-dir --require-hashes -r requirements-test.txt
 
       # The verifier's own tests, including parity with scripts/merge-config.sh, run before
       # its verdict is trusted. The full suite runs in ci.yml on every pull request.

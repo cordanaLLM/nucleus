@@ -94,6 +94,11 @@ The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); 
   ```bash
   sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
+- The Python test and documentation dependencies, from the hash-pinned lock file
+  ([CONTRIBUTING.md](CONTRIBUTING.md) says how it is compiled):
+  ```bash
+  pip install --require-hashes -r requirements-test.txt
+  ```
 
 ### Build & Packaging Recipes
 ```bash

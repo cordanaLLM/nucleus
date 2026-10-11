@@ -15,6 +15,18 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "rebaseWhen": "behind-base-branch",
+  "pip-compile": {
+    "managerFilePatterns": ["/(^|/)requirements-test\\.txt$/"]
+  },
+  "pip_requirements": {
+    "enabled": false
+  },
+  "pip_setup": {
+    "enabled": false
+  },
+  "lockFileMaintenance": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
@@ -23,7 +35,7 @@
       "pinDigests": true
     },
     {
-      "matchManagers": ["pip_requirements", "setup-cfg", "pep621"],
+      "matchManagers": ["pip-compile", "setup-cfg", "pep621"],
       "groupName": "python-tooling",
       "groupSlug": "python-tooling"
     },
