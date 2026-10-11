@@ -16,20 +16,21 @@ Every patch introduced into `cordanaLLM/nucleus` must meet all of the following 
 
 ## 2. Directory Layout
 
+The directory layout currently holds only one common patch:
+
 ```
 patches/
-├── common/             # Applied across all compatible streams
-│   └── 0001-sched-ext-tuning.patch
-├── bleeding/           # Specific to Linux 7.3-rc
-├── mainstream/         # Specific to Linux 7.2.x
-└── lts/                # Specific to Linux 6.18.x
+└── common/
+    └── 0001-sched-ext-tuning.patch
 ```
+
+The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. The single patch present (`patches/common/0001-sched-ext-tuning.patch`) changes a license identifier and does not apply cleanly to the current kernel source.
 
 ---
 
 ## 3. Retiring Patches
 
-When an upstream minor or major release incorporates a previously backported patch:
-1. Remove the corresponding patch file from `patches/<stream>/`.
+When an upstream release incorporates a previously backported patch:
+1. Remove the corresponding patch file from `patches/common/` or `patches/<stream>/`.
 2. Document the retirement in the PR commit message.
 3. Re-verify the build pipeline with `scripts/build_kernel.sh`.

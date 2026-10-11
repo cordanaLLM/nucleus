@@ -53,7 +53,7 @@ graph TD
 
 ## 2. Essential Kernel Configuration Parameters
 
-To ensure low-latency compute dispatch, large language model (LLM) inference throughput, and zero driver conflicts, the following kernel configuration fragment is integrated into `kconfig/drivers/amd-rocm.config`:
+Not implemented: no `kconfig/drivers` directory exists and no AMD ROCm fragment is merged into any build ([#6](https://github.com/cordanaLLM/nucleus/issues/6) tracks the work). The block below is the intended content:
 
 ```ini
 # Core AMDGPU DRM Driver & KFD Compute
@@ -84,6 +84,8 @@ CONFIG_IOMMU_SUPPORT=y
 CONFIG_AMD_IOMMU=y
 CONFIG_AMD_IOMMU_V2=y
 ```
+
+Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT` and `CONFIG_AMD_IOMMU` today. No fragment requests the other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
 
 ### Key Technical Rationale:
 - **`CONFIG_HSA_AMD_SVM=y`**: Enables Shared Virtual Memory between host CPU and GPU compute queues. Pointers allocated with `malloc()` or `mmap()` can be accessed directly by GPU kernels without explicit host-to-device memory copies.

@@ -106,15 +106,16 @@ python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lu
 ```
 
 ### Recipe B: Adding a Curated Kernel Patch
-1. Create a descriptive patch file under `patches/<stream>/` or `patches/common/`:
+The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. When preparing a patch candidate:
+1. Create a descriptive patch file under `patches/common/` or `patches/<stream>/`:
    ```bash
-   # Example: patches/common/0002-bbrv3-congestion-tuning.patch
+   # Example: patches/common/<patch-name>.patch
    ```
 2. Verify that the patch applies cleanly against the unpacked kernel source:
    ```bash
-   patch -p1 --dry-run < patches/common/0002-bbrv3-congestion-tuning.patch
+   patch -p1 --dry-run < patches/common/<patch-name>.patch
    ```
-3. Commit adhering to Conventional Commits: `feat(patches): add bbrv3 congestion tuning patch for mainstream`.
+3. Commit adhering to Conventional Commits: `feat(patches): add custom tuning patch for mainstream`.
 
 ### Recipe C: Bumping a Kernel Version
 1. Edit [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json): the new `version` and `tag`, and the `source` with them. For a tarball, the URL, the signature URL and the `sha256`, taken from kernel.org's `sha256sums.asc` after `gpgv` verifies it against the autosigner key in `keys/`; for a release candidate, the tag and the commit `git ls-remote <repository> 'refs/tags/<tag>^{}'` reports. [Kernel Streams](streams.md#3-sources-and-signatures) has the details.
