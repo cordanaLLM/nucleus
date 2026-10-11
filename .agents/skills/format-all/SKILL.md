@@ -43,5 +43,5 @@ For complete language style conventions, tab widths, and editor configurations, 
 
 ## Invariants to Preserve
 1. **Deterministic Output**: Formatting tools must produce consistent, reproducible output.
-2. **License Headers**: Formatting must preserve the Apache 2.0 / `Copyright 2026 The Lusoris Authors` header at line 1-2.
+2. **License Headers**: Formatting must preserve the `Copyright 2026 The Lusoris Authors` and `SPDX-License-Identifier: EUPL-1.2` header lines.
 3. **No Hidden Trailing Spaces**: Strip trailing whitespace from all lines.

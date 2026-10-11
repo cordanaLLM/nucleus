@@ -6,7 +6,7 @@
 
 ## 1. Authority Classes & Precedence
 
-1. **Class 0 (Legal & Security)**: Zero-leak privacy invariant (no private RFC 1918 IPs, no workstation paths), Apache 2.0 license compliance.
+1. **Class 0 (Legal & Security)**: Zero-leak privacy invariant (no private RFC 1918 IPs, no workstation paths), licence compliance (`EUPL-1.2`, with the per-path terms in `REUSE.toml`).
 2. **Class 1 (Declarative SSOT)**: [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) is the sole authority for kernel versions, release tags, kernel sources (URL or repository, the pinned `sha256` or commit, and the accepted signers), and the supported architectures with their `ARCH`, base defconfig and toolchain prefix.
 3. **Class 2 (Code Contracts)**: NASA/JPL Power of 10 rules for shell scripts and automated build tooling.
 4. **Class 3 (Documentation & ADRs)**: Architectural Decision Records under `docs/` govern durable technical strategy.

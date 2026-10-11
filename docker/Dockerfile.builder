@@ -1,16 +1,5 @@
 # Copyright 2026 The Lusoris Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: EUPL-1.2
 #
 # docker/Dockerfile.builder — Hermetic Multi-Architecture Kernel Builder Container
 # Targets: x86_64, arm64, and riscv64 native and cross-compilation
@@ -20,7 +9,7 @@ FROM ubuntu:24.04
 LABEL org.opencontainers.image.title="lusoris-kernel-builder" \
       org.opencontainers.image.description="Hermetic multi-architecture Linux kernel compiler and UKI synthesis engine" \
       org.opencontainers.image.vendor="Lusoris" \
-      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.licenses="EUPL-1.2" \
       org.opencontainers.image.source="https://github.com/cordanaLLM/nucleus"
 
 ENV DEBIAN_FRONTEND=noninteractive \

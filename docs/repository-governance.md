@@ -90,7 +90,7 @@ praetor requires the check of every job that reports on every pull request: the 
 triggers on `pull_request` without a `paths` filter, and the job has no `if:` condition or one
 that holds on every run, such as `always()`. A job its condition skips is reported as
 successful, so a lane that can be skipped is never required. In this revision the ruleset
-requires ten checks:
+requires eleven checks:
 
 | Check | Workflow | Reported on |
 | :--- | :--- | :--- |
@@ -98,6 +98,7 @@ requires ten checks:
 | `Lint & Pytest Quality Gates` | `ci.yml` | every pull request to `main` |
 | `UKI Real ukify Build` | `ci.yml` | every pull request to `main` |
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
+| `REUSE lint` | `licence.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
 | `required-checks` | `required-aggregator.yml` | every pull request |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |

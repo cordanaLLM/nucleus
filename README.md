@@ -1,6 +1,6 @@
 # Lusoris Kernel Forge
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Automated%20Gates-emerald.svg)](.github/workflows/ci.yml)
 [![Downstream](https://img.shields.io/badge/downstream-imago-purple.svg)](https://github.com/cordanaLLM/imago)
 
@@ -202,5 +202,24 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 
 ## 6. License & Copyright
 
-`cordanaLLM/nucleus` is open-source software licensed under the [Apache License 2.0](LICENSE).
-Copyright &copy; 2026 The Lusoris Authors. All rights reserved.
+Copyright &copy; 2026 The Lusoris Authors.
+
+From version 0.3.0 on, `cordanaLLM/nucleus` is licensed under the
+[European Union Public Licence 1.2](LICENSE) (`EUPL-1.2`). Versions up to and including 0.2.x were
+released under the Apache License 2.0 and keep that licence.
+
+| What | Licence |
+| :--- | :--- |
+| Code, workflows, configuration, tests | `EUPL-1.2` |
+| Documentation text (`README.md`, the root policy files, `docs/`) | `CC-BY-SA-4.0` |
+| Kernel patches under `patches/` | `GPL-2.0-only`, the licence of the kernel they change |
+| kernel.org signing keys under `keys/` | `CC0-1.0`; a public key is not a work under copyright |
+| Test fixtures copied from other repositories | the licence of their source, named in `REUSE.toml` |
+
+The version above is the version of this repository (`VERSION`). The kernel release tags
+(`v<kernel version>-<stream>-lusoris<N>`) count separately, and the kernel packages a release
+carries stay under the kernel's `GPL-2.0-only`.
+
+`REUSE.toml` states the licence and the copyright holder of every file, `LICENSES/` holds each
+licence text, and the `REUSE lint` job (`.github/workflows/licence.yml`) checks both on every pull
+request. Run the same check locally with `reuse lint`.

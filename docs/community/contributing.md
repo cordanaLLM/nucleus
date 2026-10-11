@@ -115,7 +115,7 @@ runs `make ruleset`, because `.github/rulesets/main.json` lists those jobs as re
 
 ## 3. Developer Certificate of Origin (DCO)
 
-By contributing to this repository, you certify that you have the right to submit the code under the project's Apache 2.0 license:
+By contributing to this repository, you certify that you have the right to submit the code under the project's licence (`EUPL-1.2`; see the licence section of the README for documentation and patches):
 
 ```text
 Developer Certificate of Origin

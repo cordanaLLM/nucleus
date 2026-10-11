@@ -13,6 +13,18 @@ import subprocess
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+EUPL_TITLE = "EUROPEAN UNION PUBLIC LICENCE v. 1.2"
+APACHE_TEXT = "Apache License\nVersion 2.0, January 2004\n"
+
+
+def licence_problems(text: str) -> list[str]:
+    """Name what keeps a text from being the EUPL-1.2 licence text."""
+    problems = []
+    if not text.lstrip().startswith(EUPL_TITLE):
+        problems.append(f"does not start with '{EUPL_TITLE}'")
+    if "Apache License" in text:
+        problems.append("holds Apache License terms")
+    return problems
 
 
 class TestGovernanceIntegrity:
@@ -76,18 +88,32 @@ class TestGovernanceIntegrity:
         )
 
     def test_license_terms_and_copyright(self) -> None:
-        """Verify LICENSE file contains Apache 2.0 terms and README/mkdocs state copyright."""
+        """Verify LICENSE is the EUPL-1.2 text and README/mkdocs state licence and copyright."""
         license_path = REPO_ROOT / "LICENSE"
         assert license_path.exists(), "LICENSE file is missing"
         content = license_path.read_text(encoding="utf-8")
-        assert "Apache License" in content, "Missing Apache License terms in LICENSE"
-        assert "Version 2.0" in content, "Missing Version 2.0 declaration in LICENSE"
+        assert licence_problems(content) == [], "LICENSE is not the EUPL-1.2 text"
+        stored = (REPO_ROOT / "LICENSES" / "EUPL-1.2.txt").read_text(encoding="utf-8")
+        assert content == stored, "LICENSE differs from LICENSES/EUPL-1.2.txt"
 
         readme_content = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         assert "Lusoris Authors" in readme_content, "Missing Lusoris copyright in README.md"
 
+        assert "EUPL-1.2" in readme_content, "README.md does not name the licence"
+        assert "Apache%202.0" not in readme_content, "README.md still shows the Apache badge"
+
         mkdocs_content = (REPO_ROOT / "mkdocs.yml").read_text(encoding="utf-8")
         assert "The Lusoris Authors" in mkdocs_content, "Missing Lusoris copyright in mkdocs.yml"
+        assert "EUPL-1.2" in mkdocs_content, "mkdocs.yml does not name the licence"
+
+    def test_license_check_refuses_another_licence_text(self) -> None:
+        """Verify the licence check names an Apache text, an empty text and a text with both."""
+        assert licence_problems(APACHE_TEXT) == [
+            f"does not start with '{EUPL_TITLE}'",
+            "holds Apache License terms",
+        ]
+        assert licence_problems("") == [f"does not start with '{EUPL_TITLE}'"]
+        assert licence_problems(EUPL_TITLE + "\n" + APACHE_TEXT) == ["holds Apache License terms"]
 
     def test_agent_directives_principles_citation(self) -> None:
         """Verify AGENTS.md references principles.md contract."""

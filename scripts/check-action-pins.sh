@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 The Lusoris Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: EUPL-1.2
 #
 # scripts/check-action-pins.sh — verify every SHA-pinned action against its upstream.
 #
@@ -20,7 +9,9 @@
 # dereferenced). A tag that points elsewhere is reported with the commit it does
 # point to, and a pinned commit that does not exist upstream is reported as such.
 # A remote `uses:` without a full commit SHA and a `# <tag>` comment fails; local
-# actions (./...) are skipped. One line per pin; exit 1 when any pin fails.
+# actions (./...) are skipped. A container image (docker://...) passes only when it
+# is named by a sha256 digest; a digest has no tag to compare, so it is listed and
+# not queried. One line per pin; exit 1 when any pin fails.
 #
 # Needs the gh CLI with a token (GH_TOKEN) and network access, which is why it is
 # `make lint-pins` and not part of the offline `make lint`. When the API refuses a
@@ -38,7 +29,10 @@ readonly PIN_RE='^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(/[^@[:space:]]+)?@([0-9a-f]{
 
 declare -A PIN_SITES=()
 declare -a PIN_KEYS=()
+readonly IMAGE_RE='^docker://[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}([[:space:]]|$)'
+
 declare -a BAD_USES=()
+declare -a IMAGE_USES=()
 declare -a LOCAL_USES=()
 
 parse_args() {
@@ -79,6 +73,10 @@ record_use() {
   value="${value#"${value%%[![:space:]]*}"}"
   if [[ "${value}" == ./* ]]; then
     LOCAL_USES+=("${value%%[[:space:]]*}  [${site}]")
+    return 0
+  fi
+  if [[ "${value}" =~ ${IMAGE_RE} ]]; then
+    IMAGE_USES+=("${value%%[[:space:]]*}  [${site}]")
     return 0
   fi
   if [[ ! "${value}" =~ ${PIN_RE} ]]; then
@@ -237,6 +235,9 @@ main() {
   for entry in "${BAD_USES[@]}"; do
     echo "FAIL  ${entry}: not pinned as owner/repo@<40-hex commit> # <tag>"
     failures=$((failures + 1))
+  done
+  for entry in "${IMAGE_USES[@]}"; do
+    echo "IMAGE ${entry}: container image named by digest"
   done
   for entry in "${LOCAL_USES[@]}"; do
     echo "SKIP  ${entry}: local action"
