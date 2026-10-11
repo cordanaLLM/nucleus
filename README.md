@@ -88,6 +88,18 @@ The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md); 
 
 ## 3. Quickstart & Local Building
 
+### Install a release
+
+Download published release packages with `gh release download <release-tag> -R cordanaLLM/nucleus` (or from GitHub Releases), verify the signature bundle and checksums, then install the kernel and header packages:
+
+```bash
+cosign verify-blob --bundle SHA256SUMS.bundle --certificate-identity "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/<release-tag>" --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+sha256sum -c SHA256SUMS
+sudo dpkg -i linux-image-*.deb linux-headers-*.deb
+```
+
+For full artifact details, verification semantics, and current operational limits, see [Verify and Install a Release](docs/install.md).
+
 ### Prerequisites
 - An Ubuntu 26.04 host or container with the kernel build toolchain; the build workflows install
   it with the same script:
