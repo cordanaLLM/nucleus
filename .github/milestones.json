@@ -1,24 +1,43 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "source": "https://api.github.com/repos/cordanaLLM/nucleus/milestones?state=all",
+  "mirrored_at": "2026-10-11T23:16:01Z",
   "milestones": [
     {
-      "title": "v1.0.0-rc1",
-      "state": "open",
-      "due_on": "2026-10-15T00:00:00Z",
-      "description": "Initial Production Release Candidate - Baseline Streams (bleeding, mainstream, lts, realtime) & KConfig Hardening"
+      "number": 1,
+      "title": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "state": "closed",
+      "due_on": "2026-09-23T00:00:00Z",
+      "description": "Initial production kernel release supporting bleeding (7.3-rc2), mainstream (7.2.4), lts (6.18.50), and realtime (7.2-rt) across x86_64 and arm64."
     },
     {
-      "title": "v1.1.0",
+      "number": 2,
+      "title": "1.1 — Multi-arch cross-compilation and dual packaging",
       "state": "open",
-      "due_on": "2026-11-15T00:00:00Z",
-      "description": "Unified Kernel Image (UKI) Architecture & Multi-Arch (x86_64, arm64, riscv64) Parity"
+      "due_on": null,
+      "description": "Hermetic cross-compilation pipeline for RISC-V, automated systemd-ukify Unified Kernel Image packaging, and reproducible builds."
     },
     {
-      "title": "v1.2.0",
+      "number": 3,
+      "title": "1.2 — Next-gen hardware acceleration and sched-ext",
       "state": "open",
-      "due_on": "2026-12-15T00:00:00Z",
-      "description": "Advanced Hardware Acceleration (Blackwell, Xe2, ROCm) & Deterministic PREEMPT_RT Integration"
+      "due_on": null,
+      "description": "NVIDIA Blackwell B200/RTX 5090 open kernel modules, AMD ROCm 10 GFX12 drivers, and sched-ext dynamic scheduler integration."
+    },
+    {
+      "number": 4,
+      "title": "nucleus 0.3.0",
+      "state": "closed",
+      "due_on": null,
+      "description": "Work that ships with the release nucleus-v0.3.0."
+    },
+    {
+      "number": 5,
+      "title": "nucleus 0.3.1",
+      "state": "open",
+      "due_on": null,
+      "description": "Work that ships with the release nucleus-v0.3.1."
     }
   ]
 }

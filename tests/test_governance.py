@@ -7,6 +7,7 @@ Complies with NASA/JPL Power of 10: short functions (<= 60 lines), checked asser
 """
 
 from pathlib import Path
+import json
 import os
 import re
 import subprocess
@@ -24,6 +25,52 @@ def licence_problems(text: str) -> list[str]:
         problems.append(f"does not start with '{EUPL_TITLE}'")
     if "Apache License" in text:
         problems.append("holds Apache License terms")
+    return problems
+
+
+MILESTONE_KEYS = {"number", "title", "state", "due_on", "description"}
+EPIC_KEYS = {"id", "issue", "title", "state", "milestone", "labels", "cadence", "description"}
+FORGE_STATES = ("open", "closed")
+
+
+def _unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build one JSON object and refuse a key that is written twice."""
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"repeated key {repeated}")
+    return dict(pairs)
+
+
+def planning_problems(milestones_text: str, epics_text: str) -> list[str]:
+    """Name what keeps the two planning files from being one forge mirror."""
+    try:
+        milestones = json.loads(milestones_text, object_pairs_hook=_unique_keys)["milestones"]
+        epics = json.loads(epics_text, object_pairs_hook=_unique_keys)["epics"]
+    except (ValueError, KeyError) as error:
+        return [f"unreadable: {error}"]
+    problems = []
+    for row in milestones:
+        if set(row) != MILESTONE_KEYS:
+            problems.append(f"milestone {row.get('title')}: keys {sorted(row)}")
+        elif row["state"] not in FORGE_STATES:
+            problems.append(f"milestone {row['title']}: state '{row['state']}'")
+    titles = [row.get("title") for row in milestones]
+    for row in epics:
+        if set(row) != EPIC_KEYS:
+            problems.append(f"epic {row.get('id')}: keys {sorted(row)}")
+            continue
+        if row["state"] not in FORGE_STATES:
+            problems.append(f"epic {row['id']}: state '{row['state']}'")
+        if row["id"] != f"EPIC-{row['issue']:02d}":
+            problems.append(f"epic {row['id']}: issue {row['issue']}")
+        if row["milestone"] not in titles:
+            problems.append(f"epic {row['id']}: milestone '{row['milestone']}' is not in milestones.json")
+        if "epic" not in row["labels"]:
+            problems.append(f"epic {row['id']}: lacks the label 'epic'")
+    for name, values in (("milestone title", titles), ("epic id", [row.get("id") for row in epics])):
+        if len(values) != len(set(values)):
+            problems.append(f"{name} listed twice")
     return problems
 
 
@@ -114,6 +161,34 @@ class TestGovernanceIntegrity:
         ]
         assert licence_problems("") == [f"does not start with '{EUPL_TITLE}'"]
         assert licence_problems(EUPL_TITLE + "\n" + APACHE_TEXT) == ["holds Apache License terms"]
+
+    def test_planning_files_mirror_shape(self) -> None:
+        """Verify milestones.json and epics.json carry forge fields and agree with each other."""
+        milestones = (REPO_ROOT / ".github" / "milestones.json").read_text(encoding="utf-8")
+        epics = (REPO_ROOT / ".github" / "epics.json").read_text(encoding="utf-8")
+        assert planning_problems(milestones, epics) == []
+
+    def test_planning_check_refuses_broken_mirrors(self) -> None:
+        """Verify the planning check names a foreign state, an unknown milestone and a repeated key."""
+        milestone = {"number": 1, "title": "one", "state": "open", "due_on": None, "description": "d"}
+        epic = {"id": "EPIC-01", "issue": 1, "title": "t", "state": "open", "milestone": "one"}
+        epic.update({"labels": ["epic"], "cadence": "Monthly", "description": "d"})
+
+        def problems(milestone_row: dict, epic_row: dict) -> list[str]:
+            return planning_problems(json.dumps({"milestones": [milestone_row]}), json.dumps({"epics": [epic_row]}))
+
+        assert problems(milestone, epic) == []
+        assert problems(milestone, {**epic, "state": "active"}) == ["epic EPIC-01: state 'active'"]
+        assert problems(milestone, {**epic, "milestone": "two"}) == [
+            "epic EPIC-01: milestone 'two' is not in milestones.json"
+        ]
+        assert problems(milestone, {**epic, "issue": 2}) == ["epic EPIC-01: issue 2"]
+        assert problems(milestone, {**epic, "labels": ["kind/feature"]}) == ["epic EPIC-01: lacks the label 'epic'"]
+        assert problems({**milestone, "state": "active"}, epic) == ["milestone one: state 'active'"]
+        without_due = {key: value for key, value in milestone.items() if key != "due_on"}
+        assert problems(without_due, epic) == ["milestone one: keys ['description', 'number', 'state', 'title']"]
+        repeated = '{"milestones": [], "milestones": []}'
+        assert planning_problems(repeated, '{"epics": []}') == ["unreadable: repeated key ['milestones']"]
 
     def test_agent_directives_principles_citation(self) -> None:
         """Verify AGENTS.md references principles.md contract."""
