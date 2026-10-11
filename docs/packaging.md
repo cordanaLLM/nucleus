@@ -523,6 +523,13 @@ python3 scripts/resolve_release_tag.py --tag v7.2.4-mainstream-lusoris1
 
 It writes `stream`, `version`, `rev`, `release_tag` and `release_version` (`<version>-lusoris<N>`, the `version` the manifest and the downstream payload carry). `tests/test_resolve_release_tag.py` derives its cases from `versions.json`.
 
+Push at most three release tags in one `git push`. GitHub creates no `push` event for tags when more than three are pushed at once ([Events that trigger workflows, `push`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)), so no `publish-release.yml` run starts, and nothing reports that it did not. Both cases were measured here on 2026-09-29:
+
+- Three revision 1 tags (`bleeding`, `mainstream`, `lts`) arrived together and each started its run by `push`, within two seconds: 36600388625, 36600388402 and 36600387255.
+- The four revision 2 tags were pushed in one command and started no run. Each was then released with the `gh workflow run` command above: runs 36640767545, 36640769883, 36640772064 and 36640774712, event `workflow_dispatch`.
+
+`gh run list --workflow publish-release.yml --json databaseId,event,headBranch` shows the event of every release run. When all four streams get a new revision, push the tags in two groups, or start the missing runs by hand.
+
 The repository's own releases never start a kernel release. `release-please-config.json` sets `include-component-in-tag: true`, so release-please tags them `<component>-v<X.Y.Z>` with the component taken from `package-name` (`nucleus`); that tag does not match the `v*` trigger, and the resolver would refuse it as well. release-please also writes the released version into `VERSION` through `version-file`. Sources: the release-please manifest documentation ([Subsequent Versions](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#subsequent-versions)), the `--component` option in its [CLI reference](https://github.com/googleapis/release-please/blob/main/docs/cli.md), and `version-file` in its [configuration schema](https://github.com/googleapis/release-please/blob/main/schemas/config.json) ("Used by `ruby` and `simple` strategies").
 
 ### 5.5 Downstream Dispatch Credential (`KERNEL_FORGE_TOKEN`)
