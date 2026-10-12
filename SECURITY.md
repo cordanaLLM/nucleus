@@ -44,6 +44,7 @@ A published release carries a keyless Cosign signature over its checksum file. T
    - The workflow signs `SHA256SUMS` using keyless Cosign (`cosign sign-blob`) and publishes the signature as `SHA256SUMS.bundle`.
    - The signed `SHA256SUMS` file covers the Debian packages (`*.deb`), the extracted kernel image (`vmlinuz-<kernelrelease>`), the resolved kernel configuration (`kernel-<stream>-x86_64.config`), and the Syft SBOM files (`kernel-<stream>.cdx.json` and `kernel-<stream>.spdx.json`).
    - The signature does not cover `kernel-<stream>.manifest.json`, which the workflow writes after `SHA256SUMS` is signed. The manifest is unsigned; a consumer checks the digests it carries against the signed `SHA256SUMS`.
+   - `.github/workflows/supply-chain.yml` builds no package. It attests only packages placed in `output/` before it runs, writes `SHA256SUMS` through the same `scripts/publish_release.sh`, and fails when `output/` holds no package or an empty one, or when `sha256sum` or `cosign` fails (`tests/test_supply_chain_workflow.py`).
    - Unified Kernel Images (`.efi`) are not signed yet. `sbsign` Secure Boot signing is not wired into `scripts/package-uki.sh`, and no release workflow publishes a UKI, so the release **Cosign** signature over `SHA256SUMS` covers no UKI. Both are planned.
 
 2. **Verifying a Release**:
