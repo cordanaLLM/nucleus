@@ -102,11 +102,24 @@ requires eleven checks:
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
 | `required-checks` | `required-aggregator.yml` | every pull request |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
-| `Security Scan Gate` | `security-scans.yml` | every pull request; fails when any scan job failed or was cancelled |
+| `Security Scan Gate` | `security-scans.yml` | every pull request; fails unless every scan job succeeded or the change detector excluded it |
 
 `Semgrep SAST` and `Trivy Filesystem CVE Scan` are skipped on pull requests that touch no
-code path, so they are not required on their own; `Security Scan Gate` needs both and fails
-when either failed or was cancelled.
+code path, so they are not required on their own. `Security Scan Gate` needs both. It passes a
+skipped Semgrep or Trivy only on a pull request on which `Detect Security Scan Paths`
+succeeded and found no code path; on a push, on a schedule, or when the detector failed, a
+skipped scan fails the gate. `Detect Security Scan Paths` and `Gitleaks History Scan` run on
+every event and must succeed.
+
+`required-checks` runs `scripts/required_checks_gate.py`. It waits until every other check run
+on the head commit has completed, then requires each to have concluded `success`. The newest
+run of a check name stands for it, since `Validate PR Milestone & Metadata` runs once per pull
+request edit. A skipped check passes only when its name is listed with `--allow-skip`. The
+list holds just `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
+Gate judges, and `tests/test_gates_refuse_skipped.py` fails when that list differs from the
+detector-gated jobs in `security-scans.yml`. The gate also fails when it finds no other check
+run, or when the others are still running after 25 minutes. Before this, the aggregator
+accepted `skipped` from any check.
 
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
 lists, so none of its jobs is required: `Verify Downstream Kernel Requirements`, the

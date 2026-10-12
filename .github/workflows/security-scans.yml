@@ -95,8 +95,10 @@ jobs:
 
   # One check that stands for every scan above. Semgrep and Trivy are skipped on pull
   # requests that touch no code path, and GitHub reports a skipped job as successful, so
-  # neither can be a required check on its own. This job needs all of them, runs on every
-  # pull request (if: always()), and fails when any of them failed or was cancelled.
+  # neither can be a required check on its own. This job needs all of them and runs on every
+  # event (if: always()). The change detector and Gitleaks run on every event and must
+  # succeed. Semgrep and Trivy may be skipped only when the detector succeeded and decided
+  # that this pull request touches no code; every other result fails the gate.
   security-gate:
     name: Security Scan Gate
     needs: [changes, semgrep, trivy, gitleaks]
@@ -104,26 +106,36 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Fail when a security scan failed or was cancelled
+      - name: Fail unless every scan succeeded or the detector excluded it
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           SEMGREP_RESULT: ${{ needs.semgrep.result }}
           TRIVY_RESULT: ${{ needs.trivy.result }}
           GITLEAKS_RESULT: ${{ needs.gitleaks.result }}
         run: |
           set -euo pipefail
+          detector_excluded=false
+          if [[ "${CHANGES_RESULT}" == "success" && "${EVENT_NAME}" == "pull_request" \
+            && "${CODE_CHANGED}" != "true" ]]; then
+            detector_excluded=true
+          fi
+          echo "event: ${EVENT_NAME}, code changed: ${CODE_CHANGED:-unset}, detector excluded scans: ${detector_excluded}"
           status=0
           for entry in "changes=${CHANGES_RESULT}" "semgrep=${SEMGREP_RESULT}" \
             "trivy=${TRIVY_RESULT}" "gitleaks=${GITLEAKS_RESULT}"; do
             job="${entry%%=*}"
             result="${entry#*=}"
             echo "${job}: ${result}"
-            case "${result}" in
-              success | skipped) ;;
-              *)
-                echo "::error::security scan job '${job}' ended with result '${result}'"
-                status=1
-                ;;
-            esac
+            if [[ "${result}" == "success" ]]; then
+              continue
+            fi
+            if [[ "${result}" == "skipped" && "${detector_excluded}" == "true" ]] \
+              && [[ "${job}" == "semgrep" || "${job}" == "trivy" ]]; then
+              continue
+            fi
+            echo "::error::security scan job '${job}' ended with result '${result}'"
+            status=1
           done
           exit "${status}"

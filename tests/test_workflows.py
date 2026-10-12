@@ -586,7 +586,9 @@ def test_security_gate_fails_on_failed_or_cancelled_scans(results, expected):
     if not bash:
         pytest.skip("bash not found in PATH")
     _, gate = _security_gate_job()
-    env = {"PATH": "/usr/bin:/bin"}
+    # A pull request on which the change detector found no code path: the only case in which
+    # Semgrep and Trivy may skip (tests/test_gates_refuse_skipped.py covers the others).
+    env = {"PATH": "/usr/bin:/bin", "EVENT_NAME": "pull_request", "CODE_CHANGED": "false"}
     for job, result in results.items():
         env[f"{job.upper()}_RESULT"] = result
     res = subprocess.run([bash, "-c", gate["steps"][-1]["run"]], env=env, capture_output=True, text=True)
