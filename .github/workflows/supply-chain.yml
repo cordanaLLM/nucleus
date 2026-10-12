@@ -29,28 +29,30 @@ jobs:
       - name: Generate SBOM and Sign Release Artifacts
         run: |
           set -euo pipefail
-          echo "==> Staging output artifacts for supply chain attestation..."
-          mkdir -p output
-          if [[ -z "$(ls -A output 2>/dev/null)" ]]; then
-            echo "Staging representative release artifacts for verification..."
-            touch output/linux-image-lusoris.deb
-            touch output/linux-headers-lusoris.deb
+          # This job builds nothing: it attests only packages placed in output/ before it
+          # runs, and fails when there are none. It never creates a package itself.
+          shopt -s nullglob
+          debs=(output/*.deb)
+          if [[ "${#debs[@]}" -eq 0 ]]; then
+            echo "::error title=Nothing to attest::no Debian package in output/; this job attests only packages it is given" >&2
+            exit 1
           fi
+          for deb in "${debs[@]}"; do
+            if [[ ! -s "${deb}" ]]; then
+              echo "::error title=Empty package::${deb} is empty; a zero-byte package is never attested" >&2
+              exit 1
+            fi
+          done
 
           echo "==> Generating Syft CycloneDX and SPDX SBOMs..."
           syft dir:output/ -o cyclonedx-json=output/kernel-sbom.cdx.json
           syft dir:output/ -o spdx-json=output/kernel-sbom.spdx.json
 
-          echo "==> Generating SHA256SUMS..."
-          (
-            cd output
-            sha256sum -- *.deb *.json > SHA256SUMS 2>/dev/null || true
-          )
+          echo "==> Generating SHA256SUMS (refuses empty, unknown and missing files)..."
+          OUTPUT_DIR=output scripts/publish_release.sh "${GITHUB_REF_NAME}"
 
-          echo "==> Signing checksums and SBOMs with keyless Cosign..."
-          if [[ -f output/SHA256SUMS ]]; then
-            cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS || true
-          fi
+          echo "==> Signing SHA256SUMS with keyless Cosign..."
+          cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
           echo "==> Supply chain attestation and SBOM generation complete."
 
       - name: Upload Supply Chain Artifacts
