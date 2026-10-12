@@ -82,7 +82,7 @@ A published release carries a keyless Cosign signature over its checksum file. T
 
 The repository runs the following security checks. Semgrep and Trivy run on every push to `main` and on a weekly schedule, and on a pull request when it changes code, build configuration, tests or workflows (`.github/workflows/security-scans.yml`):
 
-- **Zero-Leak Invariant Test (`tests/test_security_privacy.py`)**: Asserts zero private RFC 1918 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and zero workstation paths (`/home/...`) exist across the codebase.
+- **Zero-Leak Invariant Test (`tests/test_security_privacy.py`)**: Asserts zero private RFC 1918 addresses (`10.x`, `192.168.x`, `172.16-31.x`) and zero workstation paths (`/home/...`) exist in any file git tracks (`git ls-files`). A tracked file it cannot read fails the test instead of being skipped, and planted cases in a throwaway repository prove that each pattern is reported.
 - **Semgrep SAST**: Scans shell scripts, Python tests, and GitHub Actions workflows for dangerous shell constructs, credential leaks, and injection vulnerabilities.
 - **Trivy Scanner**: Scans the repository filesystem for known high- and critical-severity CVEs.
 - **OpenSSF Scorecard**: Audits repository posture on a weekly schedule and on push to `main` for read-only workflow permissions, branch protection, and pinned GitHub Actions commit hashes.
