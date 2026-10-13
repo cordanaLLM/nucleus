@@ -56,8 +56,19 @@ def test_publish_release_ships_kernel_artifact_manifest():
     manifest = names.index("Generate Kernel Artifact Manifest")
     publish = names.index("Publish to GitHub Release")
     assert build < gate < sign < manifest < publish, "gate before checksums, manifest after signing"
-    assert "imago.nucleus.kernel-artifact.v1" in steps[manifest]["run"]
-    assert 'digest(out / f"kernel-{stream}-x86_64.config")' in steps[manifest]["run"]
+    run = steps[manifest]["run"]
+    assert "python3 scripts/kernel_artifact_manifest.py --dir=output" in run
+    bound = {
+        "--stream": "STREAM",
+        "--version": "VERSION",
+        "--kernelrelease": "KERNELRELEASE",
+        "--tag": "RELEASE_TAG",
+        "--revision": "REVISION",
+        "--repository": "GITHUB_REPOSITORY",
+        "--signer-identity": "SIGNER_IDENTITY",
+    }
+    for option, variable in bound.items():
+        assert f'{option}="${{{variable}}}"' in run, f"the manifest step must pass {option}"
 
     files = steps[publish]["with"]["files"]
     for pattern in (
@@ -96,8 +107,8 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     manifest = steps[names.index("Generate Kernel Artifact Manifest")]
     assert manifest["env"]["KERNELRELEASE"] == "${{ steps.gate.outputs.kernelrelease }}"
     assert manifest["env"]["REVISION"] == "${{ steps.rev.outputs.revision }}"
-    assert '"release": os.environ["KERNELRELEASE"]' in manifest["run"]
-    assert '"revision": os.environ["REVISION"]' in manifest["run"]
+    assert '--kernelrelease="${KERNELRELEASE}"' in manifest["run"]
+    assert '--revision="${REVISION}"' in manifest["run"]
     assert "GITHUB_SHA" not in manifest["run"]
     text = (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
     assert "-lusoris1" not in text, "no hardcoded revision"
