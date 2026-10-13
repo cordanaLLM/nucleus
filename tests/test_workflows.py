@@ -60,7 +60,13 @@ def test_publish_release_ships_kernel_artifact_manifest():
     assert 'digest(out / f"kernel-{stream}-x86_64.config")' in steps[manifest]["run"]
 
     files = steps[publish]["with"]["files"]
-    for pattern in ("output/*.deb", "output/vmlinuz-*", "output/*.manifest.json", "output/*.config", "output/SHA256SUMS*"):
+    for pattern in (
+        "output/*.deb",
+        "output/vmlinuz-*",
+        "output/*.manifest.json",
+        "output/*.config",
+        "output/SHA256SUMS*",
+    ):
         assert pattern in files, f"release upload must include {pattern}"
 
     dispatch = steps[names.index("Dispatch Downstream Notification to imago")]
@@ -81,7 +87,9 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert "-e GITHUB_TOKEN" not in build["run"] and "ACTIONS_ID_TOKEN" not in build["run"]
     gate = steps[names.index("Gate the Kernel Artifacts")]
     assert "scripts/check_kernel_artifacts.py --dir=output" in gate["run"]
-    assert "--cross" not in gate["run"], "the release builds natively and must ship its headers package"
+    assert "--cross" not in gate["run"], (
+        "the release builds natively and must ship its headers package"
+    )
     sign = steps[names.index("Checksum and Sign the Release")]["run"]
     assert sign.index("publish_release.sh") < sign.index("cosign sign-blob")
     assert "OUTPUT_DIR=output" in sign and "|| true" not in sign
@@ -99,7 +107,9 @@ def test_publish_release_builds_gates_and_records_what_it_built():
 
 
 def _build_matrix():
-    return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"]["build"]
+    return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"][
+        "build"
+    ]
 
 
 def test_build_matrix_compiles_twelve_legs_with_least_privilege():
@@ -108,7 +118,11 @@ def test_build_matrix_compiles_twelve_legs_with_least_privilege():
     matrix = job["strategy"]["matrix"]
     assert len(matrix["stream"]) * len(matrix["arch"]) == 12
     runners = {entry["arch"]: entry["runner"] for entry in matrix["include"]}
-    assert runners == {"x86_64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm", "riscv64": "ubuntu-24.04"}
+    assert runners == {
+        "x86_64": "ubuntu-24.04",
+        "arm64": "ubuntu-24.04-arm",
+        "riscv64": "ubuntu-24.04",
+    }
     assert job["runs-on"] == "${{ matrix.runner }}"
     assert BUILD_IMAGE.fullmatch(job["container"]["image"])
     assert job["timeout-minutes"] == "${{ matrix.timeout }}"
@@ -134,10 +148,14 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     stage = steps["Stage Artifacts and Checksums"]["run"]
     assert 'OUTPUT_DIR="output/${STREAM}-${ARCH}" ./scripts/publish_release.sh' in stage
     assert order.index("Compile Kernel Package") < order.index("Boot the Kernel to Userspace")
-    assert order.index("Boot the Kernel to Userspace") < order.index("Stage Artifacts and Checksums")
+    assert order.index("Boot the Kernel to Userspace") < order.index(
+        "Stage Artifacts and Checksums"
+    )
     restore = steps["Restore the Compiler Cache"]
     save = steps["Save the Compiler Cache"]
-    assert restore["uses"].startswith("actions/cache/restore@") and save["uses"].startswith("actions/cache/save@")
+    assert restore["uses"].startswith("actions/cache/restore@") and save["uses"].startswith(
+        "actions/cache/save@"
+    )
     assert "${{ steps.build.outputs.config_sha256 }}" in save["with"]["key"]
     assert "${{ matrix.stream }}-${{ matrix.arch }}" in save["with"]["key"]
 
@@ -145,7 +163,10 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
 def test_build_matrix_compiler_cache_is_restored_by_prefix_and_saved_under_a_new_key():
     """The save key must never equal an existing entry, or the cache is frozen at its first save."""
     steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}
-    restore, save = steps["Restore the Compiler Cache"]["with"], steps["Save the Compiler Cache"]["with"]
+    restore, save = (
+        steps["Restore the Compiler Cache"]["with"],
+        steps["Save the Compiler Cache"]["with"],
+    )
     prefix = "ccache-${{ matrix.stream }}-${{ matrix.arch }}-"
     assert restore["restore-keys"].strip() == prefix
     assert save["key"].startswith(prefix) and restore["key"].startswith(prefix)
@@ -158,14 +179,16 @@ def test_publish_release_container_cannot_rewrite_what_the_host_runs_next():
     steps, names = _publish_release_steps()
     run = steps[names.index("Build and Boot the Tagged Stream")]["run"]
     mounts = re.findall(r'-v "?([^"\s)]+)"?', run)
-    assert '${GITHUB_WORKSPACE}:/forge:ro' in mounts
+    assert "${GITHUB_WORKSPACE}:/forge:ro" in mounts
     writable = [m for m in mounts if not m.endswith(":ro")]
-    assert sorted(writable) == sorted([
-        "${GITHUB_WORKSPACE}/output:/forge/output",
-        "${GITHUB_WORKSPACE}/records:/forge/records",
-        "${RUNNER_TEMP}/nucleus-build:/work/temp",
-        "/mnt/nucleus-build:/work/mnt",
-    ]), writable
+    assert sorted(writable) == sorted(
+        [
+            "${GITHUB_WORKSPACE}/output:/forge/output",
+            "${GITHUB_WORKSPACE}/records:/forge/records",
+            "${RUNNER_TEMP}/nucleus-build:/work/temp",
+            "/mnt/nucleus-build:/work/mnt",
+        ]
+    ), writable
     assert "/var/run/docker.sock" not in run and "--privileged" not in run
 
 
@@ -175,7 +198,9 @@ def test_publish_release_boots_the_kernel_before_anything_is_signed():
     assert run.index("./scripts/build_kernel.sh") < run.index("python3 scripts/boot_smoke.py")
     assert '--log="records/boot-${STREAM}-x86_64.log"' in run
     assert 'exit "${status}"' in run and "|| status=$?" in run
-    assert names.index("Build and Boot the Tagged Stream") < names.index("Checksum and Sign the Release")
+    assert names.index("Build and Boot the Tagged Stream") < names.index(
+        "Checksum and Sign the Release"
+    )
     keep = steps[names.index("Keep the Build Record and Boot Log")]
     assert keep["if"] == "always()" and keep["with"]["path"] == "records/"
 
@@ -331,7 +356,9 @@ def test_a_verified_download_is_not_refused():
     """A download to a file that sha256sum checks is the accepted form."""
     run = 'curl -sSfL -o tool.tar.gz https://example.com/tool.tar.gz\necho "0  tool.tar.gz" | sha256sum -c'
     assert not _downloads_into_shell(_step(run))
-    assert not _unhashed_pip_installs(_step("pip install --require-hashes -r requirements-test.txt"))
+    assert not _unhashed_pip_installs(
+        _step("pip install --require-hashes -r requirements-test.txt")
+    )
 
 
 def test_the_lock_file_pins_every_requirement_by_hash():
@@ -423,7 +450,9 @@ def test_publish_release_resolves_tags_without_fallback():
     assert resolve["id"] == "meta"
     assert "scripts/resolve_release_tag.py" in resolve["run"]
     assert '--github-output "${GITHUB_OUTPUT}"' in resolve["run"]
-    assert "python3 -c" not in resolve["run"], "the tag grammar lives in scripts/resolve_release_tag.py"
+    assert "python3 -c" not in resolve["run"], (
+        "the tag grammar lives in scripts/resolve_release_tag.py"
+    )
     assert "${{" not in resolve["run"], "the tag reaches the resolver through env, never inline"
 
 
@@ -431,14 +460,20 @@ def test_publish_release_tag_and_ref_cannot_diverge():
     """A dispatched run must start from the tag it releases, and the release names that tag."""
     steps, names = _publish_release_steps()
     resolve = steps[names.index("Resolve Stream and Version")]
-    assert '--ref "${GITHUB_REF}"' in resolve["run"], "the resolver must compare the run's ref with the tag"
+    assert '--ref "${GITHUB_REF}"' in resolve["run"], (
+        "the resolver must compare the run's ref with the tag"
+    )
     release = steps[names.index("Publish to GitHub Release")]
     assert release["with"]["tag_name"] == "${{ steps.meta.outputs.release_tag }}"
 
 
 def _guard_step():
     steps, names = _publish_release_steps()
-    return steps, names, steps[names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")]
+    return (
+        steps,
+        names,
+        steps[names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")],
+    )
 
 
 def _run_guard(token_set: str) -> subprocess.CompletedProcess:
@@ -504,9 +539,10 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     """The resolved level: plan, fetch and verify, resolve with the survival check, verify."""
     parsed = yaml.safe_load((WORKFLOWS_DIR / "verify-requirements.yml").read_text(encoding="utf-8"))
     jobs = parsed["jobs"]
-    assert "--plan=" in {s.get("name"): s for s in jobs["verify"]["steps"]}[
-        "Plan the Resolved Evidence"
-    ]["run"]
+    assert (
+        "--plan="
+        in {s.get("name"): s for s in jobs["verify"]["steps"]}["Plan the Resolved Evidence"]["run"]
+    )
     resolve = jobs["resolve"]
     assert resolve["needs"] == "verify" and BUILD_IMAGE.fullmatch(resolve["container"]["image"])
     # The plan is the matrix; each leg reports as "Resolve KConfig (<stream>)"
@@ -547,7 +583,9 @@ def test_required_aggregator_contract():
     content = aggregator.read_text(encoding="utf-8")
     parsed = yaml.safe_load(content)
     assert "jobs" in parsed
-    assert "required-checks" in parsed["jobs"], "required-aggregator must define job 'required-checks'"
+    assert "required-checks" in parsed["jobs"], (
+        "required-aggregator must define job 'required-checks'"
+    )
 
 
 def _security_gate_job():
@@ -571,13 +609,44 @@ def test_security_scans_aggregate_contract():
 @pytest.mark.parametrize(
     ("results", "expected"),
     [
-        ({"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "success"}, 0),
-        ({"changes": "success", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"}, 0),
-        ({"changes": "success", "semgrep": "failure", "trivy": "skipped", "gitleaks": "success"}, 1),
-        ({"changes": "success", "semgrep": "skipped", "trivy": "cancelled", "gitleaks": "success"}, 1),
-        ({"changes": "failure", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"}, 1),
-        ({"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "failure"}, 1),
-        ({"changes": "cancelled", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "cancelled"}, 1),
+        (
+            {"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "success"},
+            0,
+        ),
+        (
+            {"changes": "success", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"},
+            0,
+        ),
+        (
+            {"changes": "success", "semgrep": "failure", "trivy": "skipped", "gitleaks": "success"},
+            1,
+        ),
+        (
+            {
+                "changes": "success",
+                "semgrep": "skipped",
+                "trivy": "cancelled",
+                "gitleaks": "success",
+            },
+            1,
+        ),
+        (
+            {"changes": "failure", "semgrep": "skipped", "trivy": "skipped", "gitleaks": "success"},
+            1,
+        ),
+        (
+            {"changes": "success", "semgrep": "success", "trivy": "success", "gitleaks": "failure"},
+            1,
+        ),
+        (
+            {
+                "changes": "cancelled",
+                "semgrep": "skipped",
+                "trivy": "skipped",
+                "gitleaks": "cancelled",
+            },
+            1,
+        ),
     ],
 )
 def test_security_gate_fails_on_failed_or_cancelled_scans(results, expected):
@@ -591,7 +660,9 @@ def test_security_gate_fails_on_failed_or_cancelled_scans(results, expected):
     env = {"PATH": "/usr/bin:/bin", "EVENT_NAME": "pull_request", "CODE_CHANGED": "false"}
     for job, result in results.items():
         env[f"{job.upper()}_RESULT"] = result
-    res = subprocess.run([bash, "-c", gate["steps"][-1]["run"]], env=env, capture_output=True, text=True)
+    res = subprocess.run(
+        [bash, "-c", gate["steps"][-1]["run"]], env=env, capture_output=True, text=True
+    )
     assert res.returncode == expected, f"{results}: {res.stdout}{res.stderr}"
 
 
@@ -628,7 +699,9 @@ def _job_contexts(job_id, job):
     for leg in legs:
         expanded = name
         for key, value in leg.items():
-            expanded = re.sub(r"\$\{\{\s*matrix\." + re.escape(key) + r"\s*\}\}", str(value), expanded)
+            expanded = re.sub(
+                r"\$\{\{\s*matrix\." + re.escape(key) + r"\s*\}\}", str(value), expanded
+            )
         contexts.append(expanded)
     return contexts
 
@@ -681,12 +754,18 @@ def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
     for step in steps:
         uses = step.get("uses", "")
         if uses.startswith("actions/checkout@"):
-            assert step["with"]["persist-credentials"] is False, f"checkout keeps credentials: {step}"
-    checkout = next(step for step in steps if step.get("with", {}).get("repository") == "cordanaLLM/praetor")
+            assert step["with"]["persist-credentials"] is False, (
+                f"checkout keeps credentials: {step}"
+            )
+    checkout = next(
+        step for step in steps if step.get("with", {}).get("repository") == "cordanaLLM/praetor"
+    )
     assert checkout["with"]["ref"] == "${{ env.PRAETOR_COMMIT }}"
 
     commands = [step["run"].strip() for step in steps if "run" in step]
-    assert not [command for command in commands if "--remote" in command], "governance job must stay local"
+    assert not [command for command in commands if "--remote" in command], (
+        "governance job must stay local"
+    )
     order = [
         "praetorctl plan --catalog-root praetor-src",
         "praetorctl sync --catalog-root praetor-src",

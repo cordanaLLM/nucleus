@@ -70,7 +70,9 @@ PLANTED_PATHS = ["/ho" + "me/someone", "/Us" + "ers/someone", "C:" + "\\Users\\s
 def planted(tmp_path):
     """A git repository with one tracked leak file, one untracked one and one clean file."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    (tmp_path / "leak.conf").write_text("\n".join(PLANTED_IPS + PLANTED_PATHS) + "\n", encoding="utf-8")
+    (tmp_path / "leak.conf").write_text(
+        "\n".join(PLANTED_IPS + PLANTED_PATHS) + "\n", encoding="utf-8"
+    )
     (tmp_path / "clean.txt").write_text("192.0.2.10 kernel.example.com\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "leak.conf", "clean.txt"], check=True)
     (tmp_path / "untracked.log").write_text(PLANTED_PATHS[0] + "\n", encoding="utf-8")

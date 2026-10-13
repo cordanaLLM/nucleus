@@ -97,15 +97,27 @@ def test_the_release_builds_gates_and_names_the_revision_the_tag_names():
     manifest = steps["Generate Kernel Artifact Manifest"]["env"]
     assert manifest["VERSION"] == "${{ steps.meta.outputs.release_version }}"
     assert manifest["KERNELRELEASE"] == "${{ steps.gate.outputs.kernelrelease }}"
-    assert "-lusoris1" not in (REPO_ROOT / "scripts" / "build_kernel.sh").read_text(encoding="utf-8")
+    assert "-lusoris1" not in (REPO_ROOT / "scripts" / "build_kernel.sh").read_text(
+        encoding="utf-8"
+    )
 
 
 def _dry_run(stream: str, rev: str, tmp_path: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["bash", str(REPO_ROOT / "scripts" / "build_kernel.sh"), f"--stream={stream}",
-         "--arch=x86_64", f"--revision={rev}", "--dry-run",
-         f"--work-dir={tmp_path / 'build'}", f"--output-dir={tmp_path / 'out'}"],
-        capture_output=True, text=True, cwd=REPO_ROOT, check=False,
+        [
+            "bash",
+            str(REPO_ROOT / "scripts" / "build_kernel.sh"),
+            f"--stream={stream}",
+            "--arch=x86_64",
+            f"--revision={rev}",
+            "--dry-run",
+            f"--work-dir={tmp_path / 'build'}",
+            f"--output-dir={tmp_path / 'out'}",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
     )
 
 

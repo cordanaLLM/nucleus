@@ -33,11 +33,16 @@ def fetch(repo: str, ref: str) -> list[dict]:
     """Every check run on the ref, all pages, as {id, name, status, conclusion}."""
     out = subprocess.run(
         [
-            "gh", "api", "--paginate",
+            "gh",
+            "api",
+            "--paginate",
             f"repos/{repo}/commits/{ref}/check-runs?per_page=100",
-            "--jq", ".check_runs[] | {id, name, status, conclusion}",
+            "--jq",
+            ".check_runs[] | {id, name, status, conclusion}",
         ],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     return latest([json.loads(line) for line in out.splitlines() if line.strip()])
 

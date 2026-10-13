@@ -19,12 +19,12 @@ from __future__ import annotations
 import http.client
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import time
-from typing import Any
 import urllib.parse
+from pathlib import Path
+from typing import Any
 
 HINDSIGHT_URL = os.environ.get("HINDSIGHT_URL", "http://127.0.0.1:8888").rstrip("/")
 HINDSIGHT_TENANT = os.environ.get("HINDSIGHT_TENANT", "default")
@@ -83,9 +83,7 @@ def append_local_fact(content: str, context: str, bank_id: str) -> dict[str, Any
     return entry
 
 
-def http_api(
-    method: str, path: str, body: dict[str, Any] | None = None
-) -> tuple[int, Any]:
+def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
     """Dispatch HTTP request to Hindsight API endpoint using http.client."""
     url = f"{HINDSIGHT_URL}{path}"
     parsed = urllib.parse.urlparse(url)
@@ -135,9 +133,7 @@ def flush_local_pending(bank_id: str) -> int:
     return synced
 
 
-def tool_hindsight_retain(
-    content: str, context: str = "", bank_id: str = DEFAULT_BANK
-) -> str:
+def tool_hindsight_retain(content: str, context: str = "", bank_id: str = DEFAULT_BANK) -> str:
     """Retain memory into Hindsight or offline buffer."""
     clean_content = sanitize_privacy(content.strip())
     clean_context = sanitize_privacy(context.strip())
@@ -160,9 +156,7 @@ def tool_hindsight_retain(
     )
 
 
-def tool_hindsight_recall(
-    query: str, top_k: int = 5, bank_id: str = DEFAULT_BANK
-) -> str:
+def tool_hindsight_recall(query: str, top_k: int = 5, bank_id: str = DEFAULT_BANK) -> str:
     """Recall relevant facts from Hindsight or offline buffer."""
     clean_query = sanitize_privacy(query.strip())
     k = max(1, min(20, int(top_k)))
@@ -183,11 +177,14 @@ def tool_hindsight_recall(
 
     local_entries = read_local_buffer()
     matched = [
-        e for e in local_entries
+        e
+        for e in local_entries
         if e.get("bank_id") == bank_id and clean_query.lower() in e.get("content", "").lower()
     ]
     if matched:
-        lines = [f"[Hindsight Offline Buffer] Found {len(matched[:k])} locally buffered facts in '{bank_id}':"]
+        lines = [
+            f"[Hindsight Offline Buffer] Found {len(matched[:k])} locally buffered facts in '{bank_id}':"
+        ]
         for idx, item in enumerate(matched[:k], 1):
             lines.append(f"{idx}. {item['content']} (saved: {item['timestamp']})")
         return "\n".join(lines)
@@ -247,9 +244,20 @@ def get_tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Semantic search query or topic to recall."},
-                    "top_k": {"type": "integer", "description": "Maximum number of memories to return (1-20).", "default": 5},
-                    "bank_id": {"type": "string", "description": "Target memory bank identifier.", "default": DEFAULT_BANK},
+                    "query": {
+                        "type": "string",
+                        "description": "Semantic search query or topic to recall.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Maximum number of memories to return (1-20).",
+                        "default": 5,
+                    },
+                    "bank_id": {
+                        "type": "string",
+                        "description": "Target memory bank identifier.",
+                        "default": DEFAULT_BANK,
+                    },
                 },
                 "required": ["query"],
             },
@@ -260,9 +268,19 @@ def get_tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "Fact or knowledge statement to retain."},
-                    "context": {"type": "string", "description": "Optional background rationale, file path, or issue reference."},
-                    "bank_id": {"type": "string", "description": "Target memory bank identifier.", "default": DEFAULT_BANK},
+                    "content": {
+                        "type": "string",
+                        "description": "Fact or knowledge statement to retain.",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional background rationale, file path, or issue reference.",
+                    },
+                    "bank_id": {
+                        "type": "string",
+                        "description": "Target memory bank identifier.",
+                        "default": DEFAULT_BANK,
+                    },
                 },
                 "required": ["content"],
             },
@@ -273,7 +291,11 @@ def get_tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "bank_id": {"type": "string", "description": "Target memory bank identifier.", "default": DEFAULT_BANK},
+                    "bank_id": {
+                        "type": "string",
+                        "description": "Target memory bank identifier.",
+                        "default": DEFAULT_BANK,
+                    },
                 },
             },
         },

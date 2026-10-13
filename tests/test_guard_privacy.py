@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -96,7 +96,10 @@ ALLOWED = [
     ("address outside 172.16/12", _arguments({"content": IP_172_PUBLIC})),
     ("dictionary keys are not scanned", _arguments({HOME_PATH: "ok", IP_TEN: "ok"})),
     ("numbers, booleans and null", _arguments({"n": 10, "b": True, "z": None})),
-    ("clean value at the deepest scanned level", '{"arguments": ' + "[" * 64 + '"ok"' + "]" * 64 + "}"),
+    (
+        "clean value at the deepest scanned level",
+        '{"arguments": ' + "[" * 64 + '"ok"' + "]" * 64 + "}",
+    ),
 ]
 
 

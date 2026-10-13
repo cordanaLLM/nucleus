@@ -154,7 +154,9 @@ def boot(args: argparse.Namespace, initrd: Path) -> tuple[str, bool]:
             timeout=args.timeout,
             check=False,
         )
-        return result.stdout.decode("utf-8", "replace") + result.stderr.decode("utf-8", "replace"), False
+        return result.stdout.decode("utf-8", "replace") + result.stderr.decode(
+            "utf-8", "replace"
+        ), False
     except subprocess.TimeoutExpired as exc:
         partial = exc.stdout or b""
         return partial.decode("utf-8", "replace"), True
