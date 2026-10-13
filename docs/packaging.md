@@ -125,6 +125,9 @@ The packages are not bit-for-bit reproducible, for two known reasons:
   `usr/share/doc/<package>/changelog.Debian.gz`. The bleeding/x86_64 build of 2026-09-29 dates it
   `Tue, 29 Sep 2026 02:23:03 +0000`, while its `SOURCE_DATE_EPOCH` is 2026-09-27.
 
+Issue #77 tracks both, and a CI job that builds one tag twice and compares the two output
+directories with `scripts/verify-reproducibility.sh` (section 3).
+
 ### 2.2 Localversion & Package Naming Contract
 
 | | Form | `mainstream` |
@@ -392,9 +395,13 @@ make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=true
 ./scripts/package-uki.sh --stream=mainstream --arch=x86_64 --vmlinuz=<path> [--initrd=<path>]
 make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=false VMLINUZ=<path> [INITRD=<path>]
 
-# Verify byte-level build reproducibility across compilation passes
-./scripts/verify-reproducibility.sh --dry-run
-make verify-reproducibility
+# Compare two build output directories byte for byte: every file by SHA-256, every link by
+# its target. Names each entry that differs and exits 1; refuses a missing, empty or identical
+# directory. The packages are not reproducible yet (section 2.1), so two builds differ today
+./scripts/verify-reproducibility.sh --dir-a=<dir> --dir-b=<dir>
+make verify-reproducibility DRY_RUN=false DIR_A=<dir> DIR_B=<dir>
+# States the comparison and gives no verdict
+make verify-reproducibility DIR_A=<dir> DIR_B=<dir>
 ```
 
 ---
