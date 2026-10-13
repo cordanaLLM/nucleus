@@ -193,7 +193,7 @@ package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY
 verify-reproducibility: ## Compare two build output directories byte for byte (DIR_A=<dir> DIR_B=<dir>; DRY_RUN=true states the comparison only)
 	@./scripts/verify-reproducibility.sh --dir-a="$(DIR_A)" --dir-b="$(DIR_B)" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
-docker-builder: ## Build hermetic multi-architecture builder container
+docker-builder: ## Build the local build container: the CI image and toolchain (docker/Dockerfile.builder)
 	@echo "==> Building lusoris-kernel-builder container..."
 	@docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
 
