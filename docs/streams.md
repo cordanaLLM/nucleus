@@ -12,7 +12,7 @@
         ┌───────────────────┬────────────┴───────┬───────────────────┐
         ▼                   ▼                    ▼                   ▼
     bleeding            mainstream              lts               realtime
-  (Linux 7.3-rc5)      (Linux 7.2.8)       (Linux 6.18.54)   (Linux 7.2.8 + RT)
+  (Linux 7.3-rc7)      (Linux 7.2.10)      (Linux 6.18.56)   (Linux 7.2.10 + RT)
         │                   │                    │                   │
         ▼                   ▼                    ▼                   ▼
   Blackwell B200       Intel Xe2 Arc        Enterprise K8s      Game Servers
@@ -20,7 +20,7 @@
   sched-ext eBPF       NVIDIA 565/610       CloudNativePG       WireGuard Gateway
 ```
 
-The versions above are the pins of `versions.json` on 2026-09-29; `versions.json` is the
+The versions above are the pins of `versions.json` on 2026-10-14; `versions.json` is the
 authority, and section 3 says how each source is proven.
 
 ---
@@ -28,25 +28,25 @@ authority, and section 3 says how each source is proven.
 ## 2. Stream Specifications
 
 ### 2.1 Bleeding Stream (`bleeding`)
-- **Upstream Release**: Linux 7.3-rc5 (Mainline release candidate, from the signed tag)
+- **Upstream Release**: Linux 7.3-rc7 (Mainline release candidate, from the signed tag)
 - **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, PCIe 6.0 / CXL 3.0 interconnects.
 - **Key Features**: sched-ext user-space eBPF scheduler support, cutting-edge DRMs, prototype memory tiering.
 - **Flavors**: `ai-infer-nvidia-bleeding`, `k8s-node-nvidia-bleeding`, `docker-nvidia-bleeding`.
 
 ### 2.2 Mainstream Stream (`mainstream`)
-- **Upstream Release**: Linux 7.2.8 (Stable)
+- **Upstream Release**: Linux 7.2.10 (Stable)
 - **Target Hardware**: Intel Arc Battlemage Xe2, AMD Radeon RX 7000/8000 (ROCm 10), NVIDIA Ada/Ampere (565/610).
 - **Key Features**: BBR congestion control, `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
 ### 2.3 Long-Term Support Stream (`lts`)
-- **Upstream Release**: Linux 6.18.54 (Longterm)
+- **Upstream Release**: Linux 6.18.56 (Longterm)
 - **Target Workloads**: Enterprise Kubernetes nodes, OpenZFS 2.3.x root filesystems, PostgreSQL / CNPG databases.
 - **Key Features**: Rock-solid stability, proven OpenZFS kernel module API stability, strict memory overcommit controls.
 - **Flavors**: `k8s-node-*`, `cloudnative-storage`, `cloudnative-pg`.
 
 ### 2.4 Realtime Stream (`realtime`)
-- **Upstream Release**: Linux 7.2.8 (Stable), built with the in-tree `PREEMPT_RT` option; no out-of-tree rt patch is applied
+- **Upstream Release**: Linux 7.2.10 (Stable), built with the in-tree `PREEMPT_RT` option; no out-of-tree rt patch is applied
 - **Target Workloads**: Low-jitter gaming servers (Counter-Strike 2, dedicated game hosts), software-defined radio, audio processing.
 - **Key Features**: Deterministic interrupt handling, high-resolution timers, threaded IRQs.
 - **Kconfig**: `kconfig/streams/realtime.config` sets `PREEMPT_RT`, `HZ_1000` and `EXPERT` (section 3).
@@ -94,18 +94,25 @@ stream without a fragment builds the architecture configuration unchanged.
 
 | Stream | Fragment | What it declares |
 | :--- | :--- | :--- |
-| `realtime` | `kconfig/streams/realtime.config` | `CONFIG_PREEMPT_RT=y` and `CONFIG_HZ_1000=y`, which Aegis-OS asks for together (`REQ-P07-01`), and `CONFIG_EXPERT=y`, because `PREEMPT_RT` depends on `EXPERT && ARCH_SUPPORTS_RT` (`kernel/Kconfig.preempt`); x86, arm64 and riscv select `ARCH_SUPPORTS_RT` in 6.18.54, 7.2.8 and 7.3-rc5 |
+| `realtime` | `kconfig/streams/realtime.config` | `CONFIG_PREEMPT_RT=y` and `CONFIG_HZ_1000=y`, which Aegis-OS asks for together (`REQ-P07-01`), and `CONFIG_EXPERT=y`, because `PREEMPT_RT` depends on `EXPERT && ARCH_SUPPORTS_RT` (`kernel/Kconfig.preempt`); x86, arm64 and riscv select `ARCH_SUPPORTS_RT` in 6.18.56, 7.2.10 and 7.3-rc7 |
 | `bleeding`, `mainstream`, `lts` | none | nothing beyond the architecture fragment |
 
 Every leg also carries the baseline, `kconfig/security-hardened.config`. It requests the chain
 BPF trampolines need, so that BPF LSM, `fentry` and `fexit` programs can attach: `FTRACE`,
 `FUNCTION_TRACER`, `DYNAMIC_FTRACE` and `DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. Direct calls depend on
 the architecture's `HAVE_DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. x86 selects it unconditionally. arm64
-selects it when `DYNAMIC_FTRACE_WITH_ARGS` resolves, and in 6.18.54 and 7.2.8 also needs
+selects it when `DYNAMIC_FTRACE_WITH_ARGS` resolves, and in 6.18.56 and 7.2.10 also needs
 `DYNAMIC_FTRACE_WITH_CALL_OPS` (no `CFI`, not optimized for size). riscv selects it with
 `DYNAMIC_FTRACE_WITH_CALL_OPS`. All twelve legs meet these conditions with the Ubuntu 26.04
 toolchain, so none needs an architecture override
 ([ADR-0011](adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
+
+The baseline also requests `CRYPTO_DEFLATE`, which selects `ZLIB_DEFLATE`. OpenZFS refuses to
+configure against a kernel without `ZLIB_DEFLATE`, and that symbol has no prompt: on the x86_64
+defconfig base its only selector was `DRM_I915_COMPRESS_ERROR`, and `DRM_I915` depends on
+`!PREEMPT_RT`, so the `realtime` kernels up to `7.2.8-lusoris2-realtime` built without it. The
+baseline requests `ZLIB_DEFLATE=y` as well, so the survival check refuses any leg on which nothing
+selects it (`scripts/kconfig_survival.py`).
 
 With `--source-tree=<verified tree>`, the same fragments are resolved against the stream's
 source: the architecture's `base_config` from `versions.json` (`x86_64_defconfig`, or
@@ -132,8 +139,8 @@ All twelve stream and architecture legs resolve with every requested value intac
 fragments, the scripts, `keys/` or `versions.json`, whether or not a requirement document binds
 the stream or lists the architecture. A failed resolution leaves no `.config` behind, neither
 at the output path nor in the build directory. The kernel
-release each resolved tree reports (`make kernelrelease`) is `7.3.0-rc5` for `bleeding`,
-`7.2.8` for `mainstream` and `realtime`, and `6.18.54` for `lts`.
+release each resolved tree reports (`make kernelrelease`) is `7.3.0-rc7` for `bleeding`,
+`7.2.10` for `mainstream` and `realtime`, and `6.18.56` for `lts`.
 
 The build (`scripts/build_kernel.sh`, [packaging section 2](packaging.md)) adds the localversion
 `-lusoris<N>-<stream>`, so every stream's kernel names itself, and `mainstream` and `realtime`,
@@ -141,20 +148,20 @@ built from the same tree, do not share a release or a package name:
 
 | Stream | Kernel release (`uname -r`) | Package version | x86_64 boot to userspace |
 | :--- | :--- | :--- | :--- |
-| `bleeding` | `7.3.0-rc5-lusoris1-bleeding` | `7.3~rc5-lusoris1` | booted |
-| `mainstream` | `7.2.8-lusoris1-mainstream` | `7.2.8-lusoris1` | booted |
-| `lts` | `6.18.54-lusoris1-lts` | `6.18.54-lusoris1` | booted |
-| `realtime` | `7.2.8-lusoris1-realtime` | `7.2.8-lusoris1` | booted |
+| `bleeding` | `7.3.0-rc7-lusoris1-bleeding` | `7.3~rc7-lusoris1` | booted |
+| `mainstream` | `7.2.10-lusoris1-mainstream` | `7.2.10-lusoris1` | booted |
+| `lts` | `6.18.56-lusoris1-lts` | `6.18.56-lusoris1` | booted |
+| `realtime` | `7.2.10-lusoris1-realtime` | `7.2.10-lusoris1` | booted |
 
-A release candidate's package version spells `-rc5` as `~rc5`, so dpkg orders it before the
+A release candidate's package version spells `-rc7` as `~rc7`, so dpkg orders it before the
 final release, and its package files spell that `~` as `.` ([packaging section 2.2](packaging.md)).
 
-The table shows revision 1, the first release of each stream, which does not carry the BPF
-trampoline chain. Revision 2 releases the same upstream versions with it, as
-`7.3.0-rc5-lusoris2-bleeding`, `7.2.8-lusoris2-mainstream`, `6.18.54-lusoris2-lts` and
-`7.2.8-lusoris2-realtime`, at package versions ending in `-lusoris2`. A new revision is a new
-kernel release, so its image and headers packages install next to the earlier revision's
-([packaging section 5.4](packaging.md)).
+The table shows revision 1 of the current pins, which carries the BPF trampoline chain and zlib
+deflate. The earlier pins were released twice: revision 1 (`7.3.0-rc5-lusoris1-bleeding`,
+`7.2.8-lusoris1-mainstream`, `6.18.54-lusoris1-lts`, `7.2.8-lusoris1-realtime`) without the
+trampoline chain, and revision 2 (`-lusoris2`) with it, but without zlib deflate on `realtime`.
+A new revision or a new upstream version is a new kernel release, so its image and headers
+packages install next to the earlier one's ([packaging section 5.4](packaging.md)).
 
 `build-matrix.yml` compiles every stream for x86_64, arm64 and riscv64, opens every package with
 the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages;
