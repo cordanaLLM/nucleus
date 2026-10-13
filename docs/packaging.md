@@ -531,3 +531,34 @@ RELEASE_TAG=v7.2.4-mainstream-lusoris1 ./scripts/notify_downstream.sh mainstream
 ``` ADR-0005 names this credential `DISPATCH_ACCESS_TOKEN`; the workflows use `KERNEL_FORGE_TOKEN`.
 
 Every third-party action in `.github/workflows/` is pinned to a commit SHA with its release tag as a comment. `make lint-pins` (`scripts/check-action-pins.sh`, also run by `ci.yml`) verifies that each tag points to the pinned commit, since a SHA that no upstream commit carries fails only when a job using it starts. A container image a step runs (`uses: docker://...`) has to be named by a full `sha256` digest; the script lists it and fails one named by tag, and it does not query a registry. When the API refuses a query with HTTP 403, as an organization IP allow list does for the Actions token even on public repositories (`aquasecurity` is one), the script resolves that tag over anonymous `git ls-remote` instead and says so on the pin's line.
+
+### 5.6 OpenZFS Module Build (`.github/workflows/openzfs-module.yml`)
+
+imago builds OpenZFS as an out-of-tree module against the `linux-headers-<kernelrelease>` package a
+release publishes. `openzfs-module.yml` checks that this works before a consumer finds out: it runs
+weekly, on every push to `main` and on pull requests that touch `versions.json`, its schema,
+`keys/`, the build script or the workflow.
+
+- **What is pinned.** `modules.openzfs` in `versions.json` names the OpenZFS version, its
+  tarball and detached signature, the tarball's `sha256`, the accepted signer
+  (`keys/4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc`, see [`keys/README.md`](../keys/README.md))
+  and the Linux range the release declares in its `META` file (`linux_minimum`,
+  `linux_maximum`).
+- **Which streams.** The plan job builds every stream whose `major.minor` lies in that range
+  and lists the others in the step summary. A release candidate above `linux_maximum`, as
+  `bleeding` usually is, is skipped and reported, not built.
+- **What each leg proves.** It picks the stream's newest `v<version>-<stream>-lusoris<N>`
+  release and verifies its `SHA256SUMS` with cosign against the `publish-release.yml` identity
+  of that tag. It then checks the headers package's digest against that list, and runs
+  `scripts/check-openzfs-module.sh`. The script refuses a tarball whose `sha256` or `gpgv`
+  signature does not match. It configures OpenZFS against the headers tree
+  (`--with-config=kernel`), builds `module/`, and requires `module/zfs.ko` with a `vermagic` of
+  the release's kernel release.
+- **Why every stream carries zlib deflate.** OpenZFS's `configure` refuses a kernel without
+  `ZLIB_DEFLATE`. On the x86_64 defconfig base only i915 selected it, and `PREEMPT_RT` excludes
+  i915, so `realtime` lost it. The baseline fragment now declares `CRYPTO_DEFLATE` and
+  `ZLIB_DEFLATE` (section 4 of [`docs/streams.md`](streams.md)), and the survival check
+  refuses a leg where nothing selects them.
+
+`scripts/check-openzfs-module.sh --headers-deb=<deb> --print-plan` states the tarball, its
+`sha256`, the kernel release and the range without downloading anything.
