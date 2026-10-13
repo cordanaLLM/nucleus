@@ -1,0 +1,205 @@
+---
+# Copyright 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+name: package-lifecycle
+on:
+  pull_request:
+    paths:
+      - "scripts/package_lifecycle.py"
+      - ".github/workflows/package-lifecycle.yml"
+  schedule:
+    - cron: "45 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan Package Lifecycle Matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.streams.outputs.matrix }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Enumerate Streams from versions.json
+        id: streams
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          versions = json.loads(Path("versions.json").read_text(encoding="utf-8"))
+          streams = sorted(versions.get("streams", {}).keys())
+          if not streams:
+              raise ValueError("no streams declared in versions.json")
+          matrix = {"stream": streams}
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          if github_output:
+              with open(github_output, "a", encoding="utf-8") as f:
+                  f.write(f"matrix={json.dumps(matrix)}\n")
+          print(f"Discovered streams: {streams}")
+          PY
+
+  lifecycle:
+    name: Package Lifecycle (${{ matrix.stream }})
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Select Published Releases
+        id: select-releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STREAM: ${{ matrix.stream }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          stream = os.environ["STREAM"]
+          versions = json.loads(Path("versions.json").read_text(encoding="utf-8"))
+          stream_info = versions["streams"].get(stream)
+          if not stream_info:
+              raise ValueError(f"unknown stream {stream!r} in versions.json")
+          version = stream_info["version"]
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          cmd = ["gh", "release", "list", "-R", repo, "--limit", "100", "--json", "tagName"]
+          res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+          tags_data = json.loads(res.stdout)
+
+          pattern = re.compile(rf"^v{re.escape(version)}-{re.escape(stream)}-lusoris([0-9]+)$")
+          matched_releases: list[tuple[int, str]] = []
+          for item in tags_data:
+              tag = item.get("tagName", "")
+              m = pattern.match(tag)
+              if m:
+                  matched_releases.append((int(m.group(1)), tag))
+
+          matched_releases.sort(key=lambda x: x[0])
+          if not matched_releases:
+              raise ValueError(f"no published releases found matching v{version}-{stream}-lusoris<N>")
+
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+
+          if len(matched_releases) == 1:
+              rev, rel_tag = matched_releases[0]
+              print(f"Found single release for stream {stream}: {rel_tag}")
+              if step_summary:
+                  with open(step_summary, "a", encoding="utf-8") as f:
+                      f.write(
+                          f"### Stream `{stream}`\n"
+                          f"Upgrade test was not exercised (only 1 release published: `{rel_tag}`).\n"
+                      )
+              if github_output:
+                  with open(github_output, "a", encoding="utf-8") as f:
+                      f.write(f"release_tag={rel_tag}\n")
+                      f.write("previous_tag=\n")
+          else:
+              prev_rev, prev_tag = matched_releases[-2]
+              rel_rev, rel_tag = matched_releases[-1]
+              print(
+                  f"Selected releases for stream {stream}: "
+                  f"previous={prev_tag} (rev {prev_rev}), release={rel_tag} (rev {rel_rev})"
+              )
+              if github_output:
+                  with open(github_output, "a", encoding="utf-8") as f:
+                      f.write(f"release_tag={rel_tag}\n")
+                      f.write(f"previous_tag={prev_tag}\n")
+          PY
+
+      - name: Download and Verify Release Assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.select-releases.outputs.release_tag }}
+          PREVIOUS_TAG: ${{ steps.select-releases.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          verify_release_assets() {
+            local tag="$1"
+            local dir="$2"
+            mkdir -p "${dir}"
+            echo "==> Downloading assets for ${tag} into ${dir}..."
+            gh release download "${tag}" -R "${GITHUB_REPOSITORY}" -D "${dir}"
+            echo "==> Verifying cosign signature for ${tag}..."
+            (
+              cd "${dir}"
+              cosign verify-blob \
+                --bundle SHA256SUMS.bundle \
+                --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/publish-release.yml@refs/tags/${tag}" \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+                SHA256SUMS
+              echo "==> Verifying SHA256SUMS for ${tag}..."
+              sha256sum -c SHA256SUMS
+            )
+          }
+
+          verify_release_assets "${RELEASE_TAG}" "assets/${RELEASE_TAG}"
+          if [[ -n "${PREVIOUS_TAG}" ]]; then
+            verify_release_assets "${PREVIOUS_TAG}" "assets/${PREVIOUS_TAG}"
+          fi
+
+      - name: Run Package Lifecycle in Disposable Container
+        shell: bash
+        env:
+          STREAM: ${{ matrix.stream }}
+          RELEASE_TAG: ${{ steps.select-releases.outputs.release_tag }}
+          PREVIOUS_TAG: ${{ steps.select-releases.outputs.previous_tag }}
+          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+        run: |
+          set -euo pipefail
+          mounts=(-v "${GITHUB_WORKSPACE}:/src:ro" -v "${GITHUB_WORKSPACE}/assets/${RELEASE_TAG}:/release:ro")
+          cmd_args=(--stream "${STREAM}" --release /release)
+          if [[ -n "${PREVIOUS_TAG}" ]]; then
+            mounts+=(-v "${GITHUB_WORKSPACE}/assets/${PREVIOUS_TAG}:/previous:ro")
+            cmd_args+=(--previous /previous)
+          fi
+          # The arguments reach the script as "$@", never spliced into the command string.
+          docker run --rm -e NUCLEUS_DISPOSABLE_ROOT=1 "${mounts[@]}" "${BUILD_IMAGE}" \
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends python3 initramfs-tools kmod && exec python3 -I /src/scripts/package_lifecycle.py "$@"' \
+            lifecycle "${cmd_args[@]}"

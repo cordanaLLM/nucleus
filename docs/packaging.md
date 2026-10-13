@@ -261,6 +261,8 @@ python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lu
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```
 
+Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`).
+
 ---
 
 ## 3. Unified Kernel Images (UKI) via `systemd-ukify`
