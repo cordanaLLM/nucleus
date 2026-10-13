@@ -1,6 +1,28 @@
 ---
 name: build-matrix
 on:
+  # A pull request that touches what a build reads compiles all twelve legs; required-checks
+  # waits for them (docs/repository-governance.md). The list is every file the build path runs
+  # or reads: the scripts this workflow calls and the ones they call, the fragments, the
+  # manifest, the signing keys, the builder image and this workflow.
+  pull_request:
+    paths:
+      - "scripts/build_kernel.sh"
+      - "scripts/merge-config.sh"
+      - "scripts/fetch-kernel-source.sh"
+      - "scripts/kconfig_survival.py"
+      - "scripts/verify_kernel_requirement.py"
+      - "scripts/versions_query.py"
+      - "scripts/install-build-toolchain.sh"
+      - "scripts/probe-build-space.sh"
+      - "scripts/check_kernel_artifacts.py"
+      - "scripts/boot_smoke.py"
+      - "scripts/publish_release.sh"
+      - "docker/Dockerfile.builder"
+      - "kconfig/**"
+      - "keys/**"
+      - "versions.json"
+      - ".github/workflows/build-matrix.yml"
   schedule:
     - cron: "0 2 * * 0"
   workflow_dispatch:
@@ -16,7 +38,9 @@ permissions:
 
 concurrency:
   group: build-matrix-${{ github.ref }}
-  cancel-in-progress: false
+  # A new push to a pull request supersedes its running build; a scheduled or dispatched run
+  # is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
