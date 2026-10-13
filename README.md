@@ -143,13 +143,14 @@ make boot-smoke KERNEL=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstrea
 # A real UKI needs a built kernel and ukify (DRY_RUN=false VMLINUZ=<path>); see docs/packaging.md, section 3.
 make package-uki STREAM=mainstream ARCH=x86_64
 
-# Run reproducible build attestation
-make verify-reproducibility
+# Compare two build output directories byte for byte (DRY_RUN=true, the default, only states it).
+# The packages are not reproducible yet; see docs/packaging.md, section 2.1
+make verify-reproducibility DRY_RUN=false DIR_A=<dir> DIR_B=<dir>
 
 # Run the hermetic tests of the boot smoke test
 make test-boot
 
-# Build hermetic multi-architecture container
+# Build the local build container (the CI image and toolchain)
 make docker-builder
 ```
 
