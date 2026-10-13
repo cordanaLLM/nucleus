@@ -241,6 +241,8 @@ jobs:
       # The cross compilers resolve arm64 and riscv64 against the compiler that builds them.
       # zstd lets actions/cache compress the source download quickly.
       - name: Install the Resolution Toolchain
+        # bash is not in the image until this step installs it.
+        shell: sh
         run: |
           set -eu
           export DEBIAN_FRONTEND=noninteractive

@@ -175,6 +175,39 @@ def test_required_checks_waits_longer_than_the_longest_build_leg():
     assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
 
 
+def _container_run_shells() -> dict[tuple[str, str, str], str | None]:
+    """The shell each run step of each container job resolves to, keyed by workflow, job, step."""
+    shells: dict[tuple[str, str, str], str | None] = {}
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        parsed = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        default = parsed.get("defaults", {}).get("run", {}).get("shell")
+        for job_id, job in parsed["jobs"].items():
+            if "container" not in job:
+                continue
+            job_default = job.get("defaults", {}).get("run", {}).get("shell", default)
+            for index, step in enumerate(job["steps"]):
+                if "run" in step:
+                    key = (wf.name, job_id, step.get("name", f"step {index}"))
+                    shells[key] = step.get("shell", job_default)
+    return shells
+
+
+def test_every_run_step_in_a_container_names_its_shell():
+    """Issue #16: a container job's default shell is sh, which parses no `[[` and no array.
+
+    A step that leaves the shell to the default ran under dash in the build container and failed
+    on bash syntax on every architecture, so each one names its shell, and the kernel build,
+    which all twelve legs run, names bash.
+    """
+    shells = _container_run_shells()
+    unnamed = [key for key, shell in shells.items() if shell is None]
+    assert not unnamed, f"run steps that leave the shell to the container default: {unnamed}"
+    build = {
+        key: shell for key, shell in shells.items() if key[:2] == ("build-matrix.yml", "build")
+    }
+    assert build and set(build.values()) == {"bash"}, build
+
+
 def test_build_matrix_compiles_twelve_legs_with_least_privilege():
     job = _build_matrix()
     assert job["permissions"] == {"contents": "read"}
