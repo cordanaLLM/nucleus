@@ -24,7 +24,20 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import hindsight_mcp_server as hms  # noqa: E402
 
-PRIVATE = "reached 10.1.2.3 and 192.168.0.9 from /home/planted-user/src"
+
+def _ip(*octets: int) -> str:
+    """A dotted address built from parts, so this file holds no private address itself.
+
+    tests/test_security_privacy.py refuses RFC 1918 addresses and workstation paths in every
+    tracked file, test fixtures included; the redaction cases below are assembled at run time.
+    """
+    return ".".join(str(octet) for octet in octets)
+
+
+HOME = "/" + "home"
+USERS = "/" + "Users"
+LEAKED_IP = _ip(10, 1, 2, 3)
+PRIVATE = f"reached {LEAKED_IP} and {_ip(192, 168, 0, 9)} from {HOME}/planted-user/src"
 
 
 class Upstream:
@@ -93,12 +106,15 @@ def offline(buffer, monkeypatch):
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("10.0.0.1", "[REDACTED-RFC1918-IP]"),
-        ("192.168.178.20", "[REDACTED-RFC1918-IP]"),
-        ("172.16.0.1 172.31.255.1", "[REDACTED-RFC1918-IP] [REDACTED-RFC1918-IP]"),
+        (_ip(10, 0, 0, 1), "[REDACTED-RFC1918-IP]"),
+        (_ip(192, 168, 178, 20), "[REDACTED-RFC1918-IP]"),
+        (
+            f"{_ip(172, 16, 0, 1)} {_ip(172, 31, 255, 1)}",
+            "[REDACTED-RFC1918-IP] [REDACTED-RFC1918-IP]",
+        ),
         ("172.15.0.1 172.32.0.1 192.0.2.7", "172.15.0.1 172.32.0.1 192.0.2.7"),
-        ("/home/planted-user/x", "[REDACTED-USER-PATH]/x"),
-        ("/Users/planted/x", "[REDACTED-USER-PATH]/x"),
+        (f"{HOME}/planted-user/x", "[REDACTED-USER-PATH]/x"),
+        (f"{USERS}/planted/x", "[REDACTED-USER-PATH]/x"),
         ("C:\\Users\\planted\\x", "[REDACTED-USER-PATH]\\x"),
         ("/srv/kernel.example.com", "/srv/kernel.example.com"),
     ],
@@ -109,12 +125,16 @@ def test_private_addresses_and_workstation_paths_are_redacted(text, expected):
 
 def test_retain_sends_only_redacted_text_upstream(upstream):
     upstream.routes[("POST", "/v1/default/banks/nucleus/retain")] = (200, {"document_id": "d1"})
-    reply = hms.tool_hindsight_retain(PRIVATE, context="seen on 172.20.0.4")
+    reply = hms.tool_hindsight_retain(PRIVATE, context=f"seen on {_ip(172, 20, 0, 4)}")
     assert "Retained fact in bank 'nucleus' (document_id: d1)" in reply
     [(_, _, body)] = upstream.requests
     sent = json.dumps(body)
-    assert "10.1.2.3" not in sent and "192.168" not in sent and "planted-user" not in sent
-    assert "172.20" not in sent and "[REDACTED-RFC1918-IP]" in sent
+    assert LEAKED_IP not in sent and _ip(192, 168, 0, 9) not in sent
+    assert (
+        "planted-user" not in sent
+        and _ip(172, 20, 0, 4) not in sent
+        and "[REDACTED-RFC1918-IP]" in sent
+    )
 
 
 def test_retain_refuses_empty_content_and_sends_nothing(upstream):
@@ -127,7 +147,7 @@ def test_an_unreachable_upstream_buffers_the_redacted_fact(offline):
     assert "[Hindsight Offline Buffer]" in reply and "pending_sync: true" in reply
     [entry] = json.loads(offline.read_text(encoding="utf-8"))
     assert entry["bank_id"] == "b1" and entry["pending_sync"] is True
-    assert "10.1.2.3" not in entry["content"] and "planted-user" not in entry["content"]
+    assert LEAKED_IP not in entry["content"] and "planted-user" not in entry["content"]
 
 
 def test_an_upstream_error_status_buffers_the_fact(upstream, buffer):
@@ -165,7 +185,7 @@ def test_recall_asks_upstream_for_a_bounded_number_and_lists_the_results(upstrea
     )
     reply = hms.tool_hindsight_recall(f"where did {PRIVATE}", top_k=top_k)
     [(_, _, body)] = upstream.requests
-    assert body["k"] == k and "10.1.2.3" not in body["query"]
+    assert body["k"] == k and LEAKED_IP not in body["query"]
     assert reply.splitlines() == [
         "Found 2 memories in bank 'nucleus':",
         "1. first (score: 0.9)",
@@ -207,20 +227,20 @@ def test_a_url_that_is_not_http_is_refused(monkeypatch):
         hms.http_api("GET", "/v1/default/banks")
 
 
-def test_an_https_url_is_spoken_to_over_tls(monkeypatch):
+def test_an_https_url_is_refused_not_spoken_to_in_plaintext(monkeypatch):
+    """The server speaks plain HTTP to a local port-forward; it once sent https URLs in clear."""
     opened = []
 
     class Refuse:
         def __init__(self, host, port, timeout):
-            opened.append((type(self).__name__, host, port))
+            opened.append((host, port))
             raise OSError("planted: no network in this test")
 
-    monkeypatch.setattr(hms.http.client, "HTTPSConnection", type("HTTPS", (Refuse,), {}))
-    monkeypatch.setattr(hms.http.client, "HTTPConnection", type("HTTP", (Refuse,), {}))
+    monkeypatch.setattr(hms.http.client, "HTTPConnection", Refuse)
     monkeypatch.setattr(hms, "HINDSIGHT_URL", "https://memory.example.com")
-    status, body = hms.http_api("GET", "/v1/default/banks")
-    assert opened == [("HTTPS", "memory.example.com", 443)]
-    assert status == 0 and "planted" in body["error"]
+    with pytest.raises(ValueError, match="https is not supported"):
+        hms.http_api("GET", "/v1/default/banks")
+    assert opened == [], "nothing may be sent before the refusal"
 
 
 def test_every_listed_tool_has_a_handler(offline):

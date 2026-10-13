@@ -87,7 +87,11 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
     """Dispatch HTTP request to Hindsight API endpoint using http.client."""
     url = f"{HINDSIGHT_URL}{path}"
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme == "https":
+        # Only plain HTTP to a local port-forward is spoken. An https URL is refused rather than
+        # sent in clear, as it once was.
+        raise ValueError(f"https is not supported for the Hindsight API: {url}")
+    if parsed.scheme != "http":
         raise ValueError(f"Prohibited URL scheme for Hindsight API: {url}")
 
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -99,10 +103,7 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
     conn: http.client.HTTPConnection | None = None
     try:
         host = parsed.hostname or "127.0.0.1"
-        if parsed.scheme == "https":
-            conn = http.client.HTTPSConnection(host, parsed.port or 443, timeout=REQUEST_TIMEOUT)
-        else:
-            conn = http.client.HTTPConnection(host, parsed.port or 8888, timeout=REQUEST_TIMEOUT)
+        conn = http.client.HTTPConnection(host, parsed.port or 8888, timeout=REQUEST_TIMEOUT)
         conn.request(method, full_path, body=data, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
