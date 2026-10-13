@@ -37,7 +37,10 @@ def _security_gate(event: str, code: str, **results: str) -> subprocess.Complete
         env[f"{need.upper()}_RESULT"] = results.get(need, "success")
     return subprocess.run(
         ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", step["run"]],
-        capture_output=True, text=True, env=env, check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
     )
 
 
@@ -88,11 +91,15 @@ def _run(name, conclusion, status="completed", run_id=1):
 
 
 def test_the_newest_run_of_a_check_name_decides():
-    rerun = [_run("Validate PR Milestone & Metadata", "failure", run_id=1),
-             _run("Validate PR Milestone & Metadata", "success", run_id=2)]
+    rerun = [
+        _run("Validate PR Milestone & Metadata", "failure", run_id=1),
+        _run("Validate PR Milestone & Metadata", "success", run_id=2),
+    ]
     assert gate.evaluate(gate.latest(rerun), "required-checks", set()) == []
-    regressed = [_run("Validate PR Milestone & Metadata", "success", run_id=3),
-                 _run("Validate PR Milestone & Metadata", "failure", run_id=4)]
+    regressed = [
+        _run("Validate PR Milestone & Metadata", "success", run_id=3),
+        _run("Validate PR Milestone & Metadata", "failure", run_id=4),
+    ]
     assert gate.evaluate(gate.latest(regressed), "required-checks", set()) == [
         "Validate PR Milestone & Metadata: failure"
     ]
@@ -105,7 +112,9 @@ def test_a_skipped_required_check_fails_the_aggregate():
     ]
 
 
-@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", "neutral", "action_required", "stale", None])
+@pytest.mark.parametrize(
+    "conclusion", ["failure", "cancelled", "timed_out", "neutral", "action_required", "stale", None]
+)
 def test_every_conclusion_but_success_fails(conclusion):
     assert gate.evaluate([_run("CodeQL", conclusion)], "required-checks", DETECTOR_GATED)
 
@@ -135,7 +144,16 @@ def _main_with_stub(tmp_path, lines: str, *extra: str) -> subprocess.CompletedPr
     stub.write_text(f"#!/usr/bin/env bash\ncat {tmp_path / 'runs.jsonl'}\n", encoding="utf-8")
     stub.chmod(0o755)
     env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-    args = [sys.executable, str(GATE_SCRIPT), "--repo", "o/r", "--ref", "abc", "--self", "required-checks"]
+    args = [
+        sys.executable,
+        str(GATE_SCRIPT),
+        "--repo",
+        "o/r",
+        "--ref",
+        "abc",
+        "--self",
+        "required-checks",
+    ]
     return subprocess.run([*args, *extra], capture_output=True, text=True, env=env, check=False)
 
 
@@ -166,7 +184,9 @@ def test_the_aggregator_runs_the_gate_and_allows_only_detector_gated_skips():
     job = _workflow("required-aggregator.yml")["jobs"]["required-checks"]
     text = yaml.safe_dump(job)
     assert "allowed-conclusions" not in text, "no blanket list of accepted conclusions"
-    run = next(step["run"] for step in job["steps"] if "required_checks_gate.py" in step.get("run", ""))
+    run = next(
+        step["run"] for step in job["steps"] if "required_checks_gate.py" in step.get("run", "")
+    )
     allowed = {part.split('"')[1] for part in run.split("--allow-skip")[1:]}
     assert allowed == DETECTOR_GATED
 

@@ -57,13 +57,25 @@ audit_license_headers() {
 
 audit_executable_permissions() {
   echo "==> [3/7] Auditing script executable permissions..."
+  local missing=0
   while IFS= read -r -d '' script; do
     if [ ! -x "${script}" ]; then
-      echo "    Fixing: adding executable bit to ${script}"
-      chmod +x "${script}"
+      echo "    Error: ${script} is not executable"
+      missing=$((missing + 1))
     fi
   done < <(find "${ROOT_DIR}/scripts" -type f -name "*.sh" -print0)
+  if [ "${missing}" -ne 0 ]; then
+    return 1
+  fi
   echo "    ✓ Script permissions verified."
+}
+
+# An audit stage whose tool is missing fails and names it; it never passes by skipping.
+require_tool() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "    Error: $1 is not installed; this stage cannot run."
+    return 1
+  fi
 }
 
 audit_manifest_schema() {
@@ -106,42 +118,26 @@ with open('${ROOT_DIR}/versions.json') as f:
 
 audit_static_linters() {
   echo "==> [6/7] Running ShellCheck and Yamllint..."
-  if command -v shellcheck >/dev/null 2>&1; then
-    shellcheck "${ROOT_DIR}/scripts/"*.sh
-    echo "    ✓ ShellCheck passed with zero warnings."
-  fi
+  require_tool shellcheck
+  shellcheck "${ROOT_DIR}/scripts/"*.sh
+  echo "    ✓ ShellCheck passed with zero warnings."
 
-  if command -v yamllint >/dev/null 2>&1; then
-    if [ -f "${ROOT_DIR}/.yamllint.yml" ]; then
-      yamllint -c "${ROOT_DIR}/.yamllint.yml" "${ROOT_DIR}" >/dev/null 2>&1 || true
-    fi
-    echo "    ✓ Yamllint passed."
-  fi
+  require_tool yamllint
+  yamllint -c "${ROOT_DIR}/.yamllint.yml" "${ROOT_DIR}"
+  echo "    ✓ Yamllint passed."
 }
 
 audit_actionlint() {
   echo "==> [7/7] Auditing GitHub Actions workflows with actionlint..."
-  local actionlint_bin=""
-  if command -v actionlint >/dev/null 2>&1; then
-    actionlint_bin="actionlint"
-  elif [ -x "${HOME}/go/bin/actionlint" ]; then
-    actionlint_bin="${HOME}/go/bin/actionlint"
+  require_tool actionlint
+  local wf_count
+  wf_count=$(find "${ROOT_DIR}/.github/workflows" -maxdepth 1 \( -name "*.yml" -o -name "*.yaml" \) | wc -l)
+  if [ "${wf_count}" -eq 0 ]; then
+    echo "    Error: no workflows under .github/workflows"
+    return 1
   fi
-
-  if [ -n "${actionlint_bin}" ]; then
-    local wf_count=0
-    if [ -d "${ROOT_DIR}/.github/workflows" ]; then
-      wf_count=$(find "${ROOT_DIR}/.github/workflows" -maxdepth 1 \( -name "*.yml" -o -name "*.yaml" \) | wc -l)
-    fi
-    if [ "${wf_count}" -gt 0 ]; then
-      "${actionlint_bin}" "${ROOT_DIR}/.github/workflows/"*.yml
-      echo "    ✓ Actionlint passed across ${wf_count} workflow(s)."
-    else
-      echo "    ✓ Actionlint verified (no workflows currently in .github/workflows)."
-    fi
-  else
-    echo "    Notice: actionlint not found, skipping."
-  fi
+  actionlint "${ROOT_DIR}/.github/workflows/"*.yml
+  echo "    ✓ Actionlint passed across ${wf_count} workflow(s)."
 }
 
 main() {

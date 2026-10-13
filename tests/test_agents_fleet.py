@@ -9,9 +9,9 @@ progressive disclosure standards for nucleus.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / ".agents" / "agents"
@@ -42,7 +42,7 @@ class TestAgentsFleetIntegrity:
                 assert agent_json.is_file(), f"Missing agent.json in {d}"
                 assert agents_md.is_file(), f"Missing AGENTS.md in {d}"
 
-                with open(agent_json, "r", encoding="utf-8") as f:
+                with open(agent_json, encoding="utf-8") as f:
                     data = json.load(f)
                 discovered.add(data.get("id"))
 
@@ -53,7 +53,7 @@ class TestAgentsFleetIntegrity:
     def test_agent_json_schemas(self) -> None:
         for d in AGENTS_DIR.iterdir():
             if d.is_dir() and not d.name.startswith("."):
-                with open(d / "agent.json", "r", encoding="utf-8") as f:
+                with open(d / "agent.json", encoding="utf-8") as f:
                     data = json.load(f)
 
                 assert "id" in data
@@ -66,7 +66,7 @@ class TestAgentsFleetIntegrity:
 
     def test_hooks_configuration_validity(self) -> None:
         assert HOOKS_JSON.is_file(), f"Missing {HOOKS_JSON}"
-        with open(HOOKS_JSON, "r", encoding="utf-8") as f:
+        with open(HOOKS_JSON, encoding="utf-8") as f:
             hooks_data = json.load(f)
 
         assert "events" in hooks_data
@@ -79,7 +79,7 @@ class TestAgentsFleetIntegrity:
 
     def test_mcp_config_validity(self) -> None:
         assert MCP_CONFIG_JSON.is_file(), f"Missing {MCP_CONFIG_JSON}"
-        with open(MCP_CONFIG_JSON, "r", encoding="utf-8") as f:
+        with open(MCP_CONFIG_JSON, encoding="utf-8") as f:
             data = json.load(f)
         assert "mcpServers" in data
         assert "hindsight" in data["mcpServers"]

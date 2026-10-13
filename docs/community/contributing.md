@@ -66,8 +66,13 @@ sequenceDiagram
    Then run the gates:
    ```bash
    make lint
+   make audit
    make test
    ```
+   `make lint` includes `make fmt-check`: `shfmt` and `ruff format` must report no change and
+   `ruff check` no finding (`make fmt` applies the formatting). Both tools come from the lock
+   file. `make audit` runs `scripts/audit-repository-health.sh`. Each of them fails, naming the
+   tool, when a tool it needs is missing, and `ci.yml` runs all three on every pull request.
    When you add or bump an action pin under `.github/workflows/`, also run `make lint-pins`.
    It asks GitHub whether each `# <tag>` comment points to the pinned commit, so it needs
    network access and an authenticated `gh`; `ci.yml` runs it on every pull request.

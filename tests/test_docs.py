@@ -1,8 +1,9 @@
 """Test suite for documentation portal integrity and mkdocs navigation."""
 
 import fnmatch
-from pathlib import Path
 import re
+from pathlib import Path
+
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -13,12 +14,14 @@ class MkDocsYamlLoader(yaml.SafeLoader):
 
 
 MkDocsYamlLoader.add_multi_constructor("!python/name:", lambda loader, suffix, node: None)
-MkDocsYamlLoader.add_multi_constructor("tag:yaml.org,2002:python/name:", lambda loader, suffix, node: None)
+MkDocsYamlLoader.add_multi_constructor(
+    "tag:yaml.org,2002:python/name:", lambda loader, suffix, node: None
+)
 
 
 def _load_mkdocs_config():
     mkdocs_file = REPO_ROOT / "mkdocs.yml"
-    with open(mkdocs_file, "r", encoding="utf-8") as f:
+    with open(mkdocs_file, encoding="utf-8") as f:
         return yaml.load(f, Loader=MkDocsYamlLoader)
 
 
@@ -108,7 +111,7 @@ def test_install_page_matches_release_workflow():
 
     workflow_file = REPO_ROOT / ".github" / "workflows" / "publish-release.yml"
     assert workflow_file.exists(), ".github/workflows/publish-release.yml must exist"
-    with open(workflow_file, "r", encoding="utf-8") as f:
+    with open(workflow_file, encoding="utf-8") as f:
         workflow = yaml.load(f, Loader=MkDocsYamlLoader)
 
     # (a) Verify certificate identity workflow path
@@ -120,11 +123,17 @@ def test_install_page_matches_release_workflow():
             break
     assert signer_identity_raw is not None, "SIGNER_IDENTITY missing in publish-release.yml"
 
-    m = re.search(r"https://github\.com/\$\{\{\s*github\.repository\s*\}\}/([^@]+)@", signer_identity_raw)
-    assert m is not None, f"Could not parse workflow path from SIGNER_IDENTITY: {signer_identity_raw}"
+    m = re.search(
+        r"https://github\.com/\$\{\{\s*github\.repository\s*\}\}/([^@]+)@", signer_identity_raw
+    )
+    assert m is not None, (
+        f"Could not parse workflow path from SIGNER_IDENTITY: {signer_identity_raw}"
+    )
     expected_workflow_relpath = m.group(1)
     expected_workflow_file = REPO_ROOT / expected_workflow_relpath
-    assert expected_workflow_file.exists(), f"Workflow file {expected_workflow_relpath} does not exist"
+    assert expected_workflow_file.exists(), (
+        f"Workflow file {expected_workflow_relpath} does not exist"
+    )
 
     for doc_name, doc_text in [("docs/install.md", install_content), ("README.md", readme_content)]:
         id_match = re.search(
@@ -157,10 +166,16 @@ def test_install_page_matches_release_workflow():
             break
     assert publish_step is not None, "Publish to GitHub Release step missing in publish-release.yml"
     files_entry = publish_step.get("with", {}).get("files", "")
-    globs = [line.strip().removeprefix("output/") for line in files_entry.strip().splitlines() if line.strip()]
+    globs = [
+        line.strip().removeprefix("output/")
+        for line in files_entry.strip().splitlines()
+        if line.strip()
+    ]
 
     table_assets = re.findall(r"^\|\s*`([^`]+)`\s*\|", install_content, re.MULTILINE)
-    assert len(table_assets) == 10, f"Expected 10 table assets in docs/install.md, found {len(table_assets)}: {table_assets}"
+    assert len(table_assets) == 10, (
+        f"Expected 10 table assets in docs/install.md, found {len(table_assets)}: {table_assets}"
+    )
     for asset in table_assets:
         matched = any(fnmatch.fnmatch(asset, g) for g in globs)
         assert matched, (
@@ -170,13 +185,19 @@ def test_install_page_matches_release_workflow():
     # (d) docs/install.md and README.md carry no kernel version literal inside the install section
     version_regex = re.compile(r"\d+\.\d+\.\d+|-rc\d+")
     m_install = version_regex.search(install_content)
-    assert m_install is None, f"Kernel version literal '{m_install.group(0) if m_install else ''}' found in docs/install.md"
+    assert m_install is None, (
+        f"Kernel version literal '{m_install.group(0) if m_install else ''}' found in docs/install.md"
+    )
 
-    readme_install_match = re.search(r"(###?\s+Install a release.*?)(?=\n###?\s+|\Z)", readme_content, re.DOTALL)
+    readme_install_match = re.search(
+        r"(###?\s+Install a release.*?)(?=\n###?\s+|\Z)", readme_content, re.DOTALL
+    )
     assert readme_install_match is not None, "Install section missing in README.md"
     readme_install_section = readme_install_match.group(1)
     m_readme = version_regex.search(readme_install_section)
-    assert m_readme is None, f"Kernel version literal '{m_readme.group(0) if m_readme else ''}' found in README.md install section"
+    assert m_readme is None, (
+        f"Kernel version literal '{m_readme.group(0) if m_readme else ''}' found in README.md install section"
+    )
 
 
 PATH_MENTION_PATTERN = re.compile(
@@ -184,14 +205,46 @@ PATH_MENTION_PATTERN = re.compile(
 )
 
 ALLOW_LIST_ABSENT_PATHS = [
-    ("docs/principles.md", "kconfig/base.config", "document explicitly states there is no kconfig/base.config"),
-    ("docs/principles.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
-    ("docs/streams.md", "scripts/kconfig/merge_config.sh", "upstream kernel source tree script invoked by merge-config.sh"),
-    ("docs/packaging.md", "scripts/package/mkdebian", "upstream kernel source tree packaging script"),
-    ("docs/packaging.md", "scripts/package/builddeb", "upstream kernel source tree packaging script"),
-    ("docs/patches.md", "scripts/checkpatch.pl", "upstream kernel source tree coding style checker"),
-    ("docs/hardware/amd-rocm.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
-    ("docs/hardware/nvidia-blackwell.md", "kconfig/drivers", "document explicitly states no kconfig/drivers directory exists"),
+    (
+        "docs/principles.md",
+        "kconfig/base.config",
+        "document explicitly states there is no kconfig/base.config",
+    ),
+    (
+        "docs/principles.md",
+        "scripts/kconfig/merge_config.sh",
+        "upstream kernel source tree script invoked by merge-config.sh",
+    ),
+    (
+        "docs/streams.md",
+        "scripts/kconfig/merge_config.sh",
+        "upstream kernel source tree script invoked by merge-config.sh",
+    ),
+    (
+        "docs/packaging.md",
+        "scripts/package/mkdebian",
+        "upstream kernel source tree packaging script",
+    ),
+    (
+        "docs/packaging.md",
+        "scripts/package/builddeb",
+        "upstream kernel source tree packaging script",
+    ),
+    (
+        "docs/patches.md",
+        "scripts/checkpatch.pl",
+        "upstream kernel source tree coding style checker",
+    ),
+    (
+        "docs/hardware/amd-rocm.md",
+        "kconfig/drivers",
+        "document explicitly states no kconfig/drivers directory exists",
+    ),
+    (
+        "docs/hardware/nvidia-blackwell.md",
+        "kconfig/drivers",
+        "document explicitly states no kconfig/drivers directory exists",
+    ),
 ]
 
 
@@ -199,7 +252,11 @@ def test_documented_paths_exist():
     """Ensure documented filesystem and workflow paths in non-ADR docs exist on disk."""
     allow_set = {(doc, path) for doc, path, _ in ALLOW_LIST_ABSENT_PATHS}
     docs_files = [REPO_ROOT / "README.md", REPO_ROOT / "CONTRIBUTING.md"] + sorted(
-        [p for p in (REPO_ROOT / "docs").rglob("*.md") if not p.is_relative_to(REPO_ROOT / "docs" / "adr")]
+        [
+            p
+            for p in (REPO_ROOT / "docs").rglob("*.md")
+            if not p.is_relative_to(REPO_ROOT / "docs" / "adr")
+        ]
     )
 
     missing = []
@@ -208,7 +265,7 @@ def test_documented_paths_exist():
         rel_doc = str(doc.relative_to(REPO_ROOT))
         for line_no, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
             for match in PATH_MENTION_PATTERN.finditer(line):
-                candidate = match.group(1).rstrip(".,;:)\"\'`>?]")
+                candidate = match.group(1).rstrip(".,;:)\"'`>?]")
                 candidate = re.sub(r":\d+(?::\d+)?$", "", candidate)
                 if "::" in candidate:
                     candidate = candidate.split("::")[0]
@@ -242,7 +299,9 @@ def test_issue_templates_carry_no_stream_version():
         for field in data.get("body", []):
             attributes = field.get("attributes", {})
             if STREAM_VERSION_PATTERN.search(str(attributes.get("label", ""))):
-                failures.append(f"{tmpl.name}: label '{attributes['label']}' carries version literal")
+                failures.append(
+                    f"{tmpl.name}: label '{attributes['label']}' carries version literal"
+                )
             for option in attributes.get("options", []):
                 label = option if isinstance(option, str) else option.get("label", "")
                 if STREAM_VERSION_PATTERN.search(label):
@@ -263,12 +322,16 @@ def test_security_policy_paths_exist():
 
         for wf_match in workflow_re.findall(content):
             target = REPO_ROOT / wf_match
-            assert target.exists(), f"Workflow referenced in {sec_file.name} does not exist: {wf_match}"
+            assert target.exists(), (
+                f"Workflow referenced in {sec_file.name} does not exist: {wf_match}"
+            )
 
         for script_match in script_re.findall(content):
             clean_script = script_match.rstrip(".,;:)\"'")
             target = REPO_ROOT / clean_script
-            assert target.exists(), f"Script referenced in {sec_file.name} does not exist: {clean_script}"
+            assert target.exists(), (
+                f"Script referenced in {sec_file.name} does not exist: {clean_script}"
+            )
 
 
 def test_security_md_mirrored_in_community():

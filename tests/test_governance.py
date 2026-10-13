@@ -6,11 +6,9 @@ and required CI/CD workflows.
 Complies with NASA/JPL Power of 10: short functions (<= 60 lines), checked assertions.
 """
 
-from pathlib import Path
 import json
-import os
 import re
-import subprocess
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
@@ -65,10 +63,15 @@ def planning_problems(milestones_text: str, epics_text: str) -> list[str]:
         if row["id"] != f"EPIC-{row['issue']:02d}":
             problems.append(f"epic {row['id']}: issue {row['issue']}")
         if row["milestone"] not in titles:
-            problems.append(f"epic {row['id']}: milestone '{row['milestone']}' is not in milestones.json")
+            problems.append(
+                f"epic {row['id']}: milestone '{row['milestone']}' is not in milestones.json"
+            )
         if "epic" not in row["labels"]:
             problems.append(f"epic {row['id']}: lacks the label 'epic'")
-    for name, values in (("milestone title", titles), ("epic id", [row.get("id") for row in epics])):
+    for name, values in (
+        ("milestone title", titles),
+        ("epic id", [row.get("id") for row in epics]),
+    ):
         if len(values) != len(set(values)):
             problems.append(f"{name} listed twice")
     return problems
@@ -170,12 +173,20 @@ class TestGovernanceIntegrity:
 
     def test_planning_check_refuses_broken_mirrors(self) -> None:
         """Verify the planning check names a foreign state, an unknown milestone and a repeated key."""
-        milestone = {"number": 1, "title": "one", "state": "open", "due_on": None, "description": "d"}
+        milestone = {
+            "number": 1,
+            "title": "one",
+            "state": "open",
+            "due_on": None,
+            "description": "d",
+        }
         epic = {"id": "EPIC-01", "issue": 1, "title": "t", "state": "open", "milestone": "one"}
         epic.update({"labels": ["epic"], "cadence": "Monthly", "description": "d"})
 
         def problems(milestone_row: dict, epic_row: dict) -> list[str]:
-            return planning_problems(json.dumps({"milestones": [milestone_row]}), json.dumps({"epics": [epic_row]}))
+            return planning_problems(
+                json.dumps({"milestones": [milestone_row]}), json.dumps({"epics": [epic_row]})
+            )
 
         assert problems(milestone, epic) == []
         assert problems(milestone, {**epic, "state": "active"}) == ["epic EPIC-01: state 'active'"]
@@ -183,12 +194,18 @@ class TestGovernanceIntegrity:
             "epic EPIC-01: milestone 'two' is not in milestones.json"
         ]
         assert problems(milestone, {**epic, "issue": 2}) == ["epic EPIC-01: issue 2"]
-        assert problems(milestone, {**epic, "labels": ["kind/feature"]}) == ["epic EPIC-01: lacks the label 'epic'"]
+        assert problems(milestone, {**epic, "labels": ["kind/feature"]}) == [
+            "epic EPIC-01: lacks the label 'epic'"
+        ]
         assert problems({**milestone, "state": "active"}, epic) == ["milestone one: state 'active'"]
         without_due = {key: value for key, value in milestone.items() if key != "due_on"}
-        assert problems(without_due, epic) == ["milestone one: keys ['description', 'number', 'state', 'title']"]
+        assert problems(without_due, epic) == [
+            "milestone one: keys ['description', 'number', 'state', 'title']"
+        ]
         repeated = '{"milestones": [], "milestones": []}'
-        assert planning_problems(repeated, '{"epics": []}') == ["unreadable: repeated key ['milestones']"]
+        assert planning_problems(repeated, '{"epics": []}') == [
+            "unreadable: repeated key ['milestones']"
+        ]
 
     def test_agent_directives_principles_citation(self) -> None:
         """Verify AGENTS.md references principles.md contract."""
@@ -222,5 +239,6 @@ class TestGovernanceIntegrity:
         """Verify audit-repository-health.sh is present and executable."""
         audit_script = REPO_ROOT / "scripts" / "audit-repository-health.sh"
         assert audit_script.exists(), "scripts/audit-repository-health.sh missing"
-        assert audit_script.stat().st_mode & 0o111, "scripts/audit-repository-health.sh not executable"
-
+        assert audit_script.stat().st_mode & 0o111, (
+            "scripts/audit-repository-health.sh not executable"
+        )

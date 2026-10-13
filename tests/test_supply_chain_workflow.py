@@ -106,7 +106,9 @@ def test_a_zero_byte_package_is_never_signed(tmp_path):
 
 
 def test_a_failed_signature_fails_the_job(tmp_path):
-    result, _, calls = _run(tmp_path, debs={"linux-image-7.2.8.deb": b"!<arch>\n"}, cosign_fail=True)
+    result, _, calls = _run(
+        tmp_path, debs={"linux-image-7.2.8.deb": b"!<arch>\n"}, cosign_fail=True
+    )
     assert result.returncode != 0, result.stdout
     assert "cosign sign-blob" in calls
 
