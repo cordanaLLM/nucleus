@@ -58,6 +58,9 @@ IMAGE_MAGIC = {"arm64": b"ARM\x64", "riscv": b"RSC\x05"}
 IMAGE_MAGIC_OFFSET = 0x38
 # A decompressed arm64 Image of this forge is about 50 MB; anything past this bound is refused.
 MAX_IMAGE_BYTES = 256 * 1024 * 1024
+# Downstream bound: imago pkg/kernel/artifact.go@557319a line 38 defines
+# `const MaxArtifactBytes int64 = 512 << 20` and line 198 refuses `a.Size > MaxArtifactBytes`.
+MAX_ARTIFACT_BYTES = 512 * 1024 * 1024
 
 
 class GateError(RuntimeError):
@@ -152,8 +155,13 @@ def check_listing(directory: Path, exp: Expectation) -> tuple[list[str], list[Pa
         if entry.is_symlink() or not entry.is_file():
             problems.append(f"{entry.name}: not a regular file")
             continue
-        if entry.stat().st_size == 0:
+        size = entry.stat().st_size
+        if size == 0:
             problems.append(f"{entry.name}: zero bytes")
+            continue
+        if size > MAX_ARTIFACT_BYTES:
+            bound = f"above imago's per-artifact bound of {MAX_ARTIFACT_BYTES} bytes"
+            problems.append(f"{entry.name}: {size} bytes, {bound}")
             continue
         if entry.suffix == ".deb":
             debs.append(entry)

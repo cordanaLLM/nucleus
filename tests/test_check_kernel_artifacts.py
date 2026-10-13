@@ -258,6 +258,37 @@ def test_listing_refuses_zero_bytes_strangers_and_missing_files(tmp_path):
     assert "no Debian package" in text and debs == []
 
 
+@pytest.mark.parametrize(
+    "name",
+    [f"linux-image-{KR}_{PKGVER}_amd64.deb", f"vmlinuz-{KR}"],
+)
+def test_an_artifact_above_the_imago_bound_is_refused(tmp_path, name):
+    exp = _exp()
+    # imago pkg/kernel/artifact.go@557319a: MaxArtifactBytes int64 = 512 << 20.
+    bound = 512 << 20
+    assert gate.MAX_ARTIFACT_BYTES == bound
+
+    # One byte over the bound is refused.
+    out_over = tmp_path / "over"
+    out_over.mkdir()
+    target_over = out_over / name
+    with target_over.open("wb") as f:
+        f.truncate(bound + 1)
+    problems_over, debs_over = gate.check_listing(out_over, exp)
+    expected_msg = f"{name}: {bound + 1} bytes, above imago's per-artifact bound of {bound} bytes"
+    assert expected_msg in problems_over
+    assert target_over not in debs_over
+
+    # Exactly at the bound the size passes; the sparse file may fail other checks.
+    out_bound = tmp_path / "bound"
+    out_bound.mkdir()
+    target_bound = out_bound / name
+    with target_bound.open("wb") as f:
+        f.truncate(bound)
+    problems_bound, _ = gate.check_listing(out_bound, exp)
+    assert not any("above imago's per-artifact bound" in p for p in problems_bound)
+
+
 def test_an_unknown_stream_cannot_be_evaluated(tmp_path):
     if shutil.which("dpkg-deb") is None:
         pytest.skip("dpkg-deb not installed")
