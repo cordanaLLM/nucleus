@@ -52,27 +52,44 @@ KERNEL = bzimage(KR)
 needs_dpkg = pytest.mark.skipif(shutil.which("dpkg-deb") is None, reason="dpkg-deb not installed")
 
 
-def _exp(kernelrelease: str = KR, revision: int = 1, stream: str = STREAM, arch: str = ARCH,
-         cross: bool = False) -> gate.Expectation:
-    args = argparse.Namespace(stream=stream, arch=arch, revision=revision, kernelrelease=kernelrelease,
-                              cross=cross)
+def _exp(
+    kernelrelease: str = KR,
+    revision: int = 1,
+    stream: str = STREAM,
+    arch: str = ARCH,
+    cross: bool = False,
+) -> gate.Expectation:
+    args = argparse.Namespace(
+        stream=stream, arch=arch, revision=revision, kernelrelease=kernelrelease, cross=cross
+    )
     return gate.expectation(REPO_ROOT / "versions.json", args)
 
 
-def _deb(out: Path, package: str, version: str = PKGVER, arch: str = "amd64",
-         files: dict[str, bytes] | None = None, name: str | None = None) -> Path:
+def _deb(
+    out: Path,
+    package: str,
+    version: str = PKGVER,
+    arch: str = "amd64",
+    files: dict[str, bytes] | None = None,
+    name: str | None = None,
+) -> Path:
     root = out.parent / f"pkgroot-{package}-{len(list(out.parent.iterdir()))}"
     (root / "DEBIAN").mkdir(parents=True)
-    control = (f"Package: {package}\nVersion: {version}\nArchitecture: {arch}\n"
-               "Maintainer: test <test@example.com>\nDescription: test package\n")
+    control = (
+        f"Package: {package}\nVersion: {version}\nArchitecture: {arch}\n"
+        "Maintainer: test <test@example.com>\nDescription: test package\n"
+    )
     (root / "DEBIAN" / "control").write_text(control, encoding="utf-8")
     for member, data in (files or {}).items():
         target = root / member
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     deb = out / (name or f"{package}_{version}_{arch}.deb")
-    subprocess.run(["dpkg-deb", "-Zgzip", "--root-owner-group", "--build", str(root), str(deb)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["dpkg-deb", "-Zgzip", "--root-owner-group", "--build", str(root), str(deb)],
+        check=True,
+        capture_output=True,
+    )
     return deb
 
 
@@ -91,12 +108,25 @@ def _release(tmp_path: Path, kernel: bytes = KERNEL, config: bytes = CONFIG) -> 
     return out
 
 
-def _cli(out: Path, kernelrelease: str = KR, stream: str = STREAM, *extra: str, env: dict | None = None):
+def _cli(
+    out: Path, kernelrelease: str = KR, stream: str = STREAM, *extra: str, env: dict | None = None
+):
     return subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "check_kernel_artifacts.py"), f"--dir={out}",
-         f"--stream={stream}", f"--arch={ARCH}", f"--kernelrelease={kernelrelease}", "--revision=1",
-         f"--versions={REPO_ROOT / 'versions.json'}", *extra],
-        capture_output=True, text=True, check=False, env=env,
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "check_kernel_artifacts.py"),
+            f"--dir={out}",
+            f"--stream={stream}",
+            f"--arch={ARCH}",
+            f"--kernelrelease={kernelrelease}",
+            "--revision=1",
+            f"--versions={REPO_ROOT / 'versions.json'}",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
     )
 
 
@@ -118,7 +148,10 @@ def test_a_release_candidate_package_sorts_before_its_release_and_names_no_tilde
     assert exp.package_version == "7.3~rc5-lusoris1"
     name = gate.package_file_name("linux-libc-dev", exp.package_version, exp.debian_arch)
     assert name == "linux-libc-dev_7.3.rc5-lusoris1_amd64.deb"
-    assert gate.package_file_name("linux-libc-dev", PKGVER, "amd64") == f"linux-libc-dev_{PKGVER}_amd64.deb"
+    assert (
+        gate.package_file_name("linux-libc-dev", PKGVER, "amd64")
+        == f"linux-libc-dev_{PKGVER}_amd64.deb"
+    )
 
 
 # --- the kernel image ---------------------------------------------------------------------------
@@ -156,7 +189,10 @@ def test_an_arm64_or_riscv_image_must_be_a_compressed_image_of_this_release(arch
     cases = [
         (bzimage(KR), "not a complete gzip-compressed Image"),
         (arm_image(KR, magic)[:-12], "not a complete gzip-compressed Image"),
-        (gzip.compress(b"\0" * 0x40 + f"Linux version {KR} ".encode()), f"no {exp.kernel_arch} Image header"),
+        (
+            gzip.compress(b"\0" * 0x40 + f"Linux version {KR} ".encode()),
+            f"no {exp.kernel_arch} Image header",
+        ),
         (arm_image(KR, b"MZ\0\0"), f"no {exp.kernel_arch} Image header"),
         (arm_image("7.2.8-lusoris1-lts", magic), f"no 'Linux version {KR} ' banner"),
         (arm_image(KR + "x", magic), f"no 'Linux version {KR} ' banner"),
@@ -173,9 +209,16 @@ def test_a_decompression_past_the_bound_is_refused(monkeypatch):
 
 
 def test_an_architecture_without_a_known_image_check_is_refused():
-    exp = gate.Expectation(stream=STREAM, arch="s390x", kernel_arch="s390", kernelversion=KV,
-                           package_version=PKGVER, debian_arch="s390x",
-                           localversion="-lusoris1-mainstream", kernelrelease=KR)
+    exp = gate.Expectation(
+        stream=STREAM,
+        arch="s390x",
+        kernel_arch="s390",
+        kernelversion=KV,
+        package_version=PKGVER,
+        debian_arch="s390x",
+        localversion="-lusoris1-mainstream",
+        kernelrelease=KR,
+    )
     assert gate.check_kernel_image(KERNEL, exp) == [
         f"vmlinuz-{KR}: no image check is known for kernel architecture s390"
     ]
@@ -285,7 +328,10 @@ def test_a_dpkg_deb_that_fails_after_streaming_the_archive_is_refused(tmp_path):
     env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ.get('PATH', '')}"}
     result = _cli(out, env=env)
     assert result.returncode == 1
-    assert f"linux-image-{KR}_{PKGVER}_amd64.deb: dpkg-deb cannot read its data archive" in result.stderr
+    assert (
+        f"linux-image-{KR}_{PKGVER}_amd64.deb: dpkg-deb cannot read its data archive"
+        in result.stderr
+    )
 
 
 @needs_dpkg
@@ -294,15 +340,28 @@ def test_a_release_candidate_named_with_a_tilde_is_refused(tmp_path):
     out = tmp_path / "out"
     out.mkdir()
     image = {f"boot/vmlinuz-{kr}": bzimage(kr), f"boot/config-{kr}": CONFIG}
-    _deb(out, f"linux-image-{kr}", version="7.3~rc5-lusoris1", files=image,
-         name=f"linux-image-{kr}_7.3.rc5-lusoris1_amd64.deb")
-    _deb(out, f"linux-headers-{kr}", version="7.3~rc5-lusoris1", name=f"linux-headers-{kr}_7.3.rc5-lusoris1_amd64.deb")
+    _deb(
+        out,
+        f"linux-image-{kr}",
+        version="7.3~rc5-lusoris1",
+        files=image,
+        name=f"linux-image-{kr}_7.3.rc5-lusoris1_amd64.deb",
+    )
+    _deb(
+        out,
+        f"linux-headers-{kr}",
+        version="7.3~rc5-lusoris1",
+        name=f"linux-headers-{kr}_7.3.rc5-lusoris1_amd64.deb",
+    )
     _deb(out, "linux-libc-dev", version="7.3~rc5-lusoris1")
     (out / f"vmlinuz-{kr}").write_bytes(bzimage(kr))
     (out / f"kernel-bleeding-{ARCH}.config").write_bytes(CONFIG)
     result = _cli(out, kr, "bleeding")
     assert result.returncode == 1
-    assert "linux-libc-dev_7.3~rc5-lusoris1_amd64.deb: file name does not match linux-libc-dev_7.3.rc5-lusoris1_amd64.deb" in result.stderr
+    assert (
+        "linux-libc-dev_7.3~rc5-lusoris1_amd64.deb: file name does not match linux-libc-dev_7.3.rc5-lusoris1_amd64.deb"
+        in result.stderr
+    )
     next(out.glob("linux-libc-dev_*.deb")).rename(out / "linux-libc-dev_7.3.rc5-lusoris1_amd64.deb")
     result = _cli(out, kr, "bleeding")
     assert result.returncode == 0, result.stderr
@@ -313,22 +372,55 @@ def test_a_release_candidate_named_with_a_tilde_is_refused(tmp_path):
     ("mutate", "finding"),
     [
         (lambda out: next(out.glob("linux-libc-dev*.deb")).write_bytes(b""), "zero bytes"),
-        (lambda out: (out / "linux-libc-dev_7.2.8-lusoris1_amd64.deb").write_text("Lusoris Linux Libc Dev\n"),
-         "dpkg-deb cannot read Package, Version and Architecture"),
-        (lambda out: _deb(out, "linux-libc-dev", version="7.2.8-20260928-lusoris1",
-                          name="linux-libc-dev_7.2.8-lusoris1_amd64.deb"), "version 7.2.8-20260928-lusoris1"),
-        (lambda out: _deb(out, "linux-libc-dev", arch="arm64",
-                          name="linux-libc-dev_7.2.8-lusoris1_amd64.deb"), "architecture arm64, expected amd64"),
-        (lambda out: _deb(out, f"linux-image-{KR}-dbg"), f"package linux-image-{KR}-dbg is none of"),
+        (
+            lambda out: (out / "linux-libc-dev_7.2.8-lusoris1_amd64.deb").write_text(
+                "Lusoris Linux Libc Dev\n"
+            ),
+            "dpkg-deb cannot read Package, Version and Architecture",
+        ),
+        (
+            lambda out: _deb(
+                out,
+                "linux-libc-dev",
+                version="7.2.8-20260928-lusoris1",
+                name="linux-libc-dev_7.2.8-lusoris1_amd64.deb",
+            ),
+            "version 7.2.8-20260928-lusoris1",
+        ),
+        (
+            lambda out: _deb(
+                out, "linux-libc-dev", arch="arm64", name="linux-libc-dev_7.2.8-lusoris1_amd64.deb"
+            ),
+            "architecture arm64, expected amd64",
+        ),
+        (
+            lambda out: _deb(out, f"linux-image-{KR}-dbg"),
+            f"package linux-image-{KR}-dbg is none of",
+        ),
         (lambda out: _deb(out, "linux-libc-dev", name="libc-dev.deb"), "also in"),
-        (lambda out: (out / f"kernel-{STREAM}-{ARCH}.config").write_bytes(CONFIG + b"# CONFIG_X is not set\n"),
-         f"kernel-{STREAM}-{ARCH}.config: differs from ./boot/config-{KR}"),
-        (lambda out: (out / f"vmlinuz-{KR}").write_bytes(KERNEL[:-1] + b"!"),
-         f"vmlinuz-{KR}: differs from ./boot/vmlinuz-{KR}"),
-        (lambda out: _deb(out, f"linux-image-{KR}", files=_image_files(kernel=bzimage("7.2.8-lusoris1-lts")),
-                          name=next(out.glob("linux-image-*.deb")).name),
-         f"vmlinuz-{KR}: the bzImage reports '7.2.8-lusoris1-lts'"),
-        (lambda out: (out / "SHA256SUMS").write_text("x  y\n"), "SHA256SUMS: not an artifact of this build"),
+        (
+            lambda out: (out / f"kernel-{STREAM}-{ARCH}.config").write_bytes(
+                CONFIG + b"# CONFIG_X is not set\n"
+            ),
+            f"kernel-{STREAM}-{ARCH}.config: differs from ./boot/config-{KR}",
+        ),
+        (
+            lambda out: (out / f"vmlinuz-{KR}").write_bytes(KERNEL[:-1] + b"!"),
+            f"vmlinuz-{KR}: differs from ./boot/vmlinuz-{KR}",
+        ),
+        (
+            lambda out: _deb(
+                out,
+                f"linux-image-{KR}",
+                files=_image_files(kernel=bzimage("7.2.8-lusoris1-lts")),
+                name=next(out.glob("linux-image-*.deb")).name,
+            ),
+            f"vmlinuz-{KR}: the bzImage reports '7.2.8-lusoris1-lts'",
+        ),
+        (
+            lambda out: (out / "SHA256SUMS").write_text("x  y\n"),
+            "SHA256SUMS: not an artifact of this build",
+        ),
     ],
 )
 def test_every_misrepresentation_is_refused(tmp_path, mutate, finding):

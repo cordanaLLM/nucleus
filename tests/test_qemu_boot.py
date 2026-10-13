@@ -59,7 +59,11 @@ def test_initramfs_holds_the_init_and_a_console_node():
 
 def test_newc_padding_holds_for_every_length():
     for length in range(9):
-        entries = _read_newc(boot_smoke.newc_archive([boot_smoke.CpioEntry("f" * (length + 1), 0o100644, b"x" * length)]))
+        entries = _read_newc(
+            boot_smoke.newc_archive(
+                [boot_smoke.CpioEntry("f" * (length + 1), 0o100644, b"x" * length)]
+            )
+        )
         assert entries[0][2] == b"x" * length
 
 
@@ -103,9 +107,19 @@ def _cli(tmp_path: Path, stub: Path, *extra: str):
     init = tmp_path / "init"
     init.write_bytes(b"\x7fELF")
     return subprocess.run(
-        [sys.executable, str(SCRIPT), f"--kernel={kernel}", f"--kernelrelease={KR}",
-         f"--qemu={stub}", f"--init-binary={init}", f"--log={tmp_path / 'console.log'}", *extra],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--kernel={kernel}",
+            f"--kernelrelease={KR}",
+            f"--qemu={stub}",
+            f"--init-binary={init}",
+            f"--log={tmp_path / 'console.log'}",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -118,7 +132,9 @@ def test_a_kernel_that_reaches_userspace_passes(tmp_path):
 
 
 def test_a_kernel_that_panics_is_refused(tmp_path):
-    stub = _stub(tmp_path, f"printf '%s' '{BANNER}Kernel panic - not syncing: No working init found.'")
+    stub = _stub(
+        tmp_path, f"printf '%s' '{BANNER}Kernel panic - not syncing: No working init found.'"
+    )
     result = _cli(tmp_path, stub)
     assert result.returncode == 1
     assert "init never printed" in result.stderr and "Kernel panic" in result.stderr
@@ -141,9 +157,16 @@ def test_the_smoke_test_refuses_an_empty_kernel_image(tmp_path):
     kernel = tmp_path / "vmlinuz"
     kernel.write_bytes(b"")
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), f"--kernel={kernel}", f"--kernelrelease={KR}",
-         f"--qemu={_stub(tmp_path, 'exit 0')}"],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--kernel={kernel}",
+            f"--kernelrelease={KR}",
+            f"--qemu={_stub(tmp_path, 'exit 0')}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 2
     assert "is not a kernel image" in result.stderr

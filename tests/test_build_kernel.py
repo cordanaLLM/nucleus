@@ -82,12 +82,24 @@ def test_a_release_candidate_package_version_sorts_before_the_release(tmp_path):
     assert "<package>_7.3.rc5-lusoris1_amd64.deb" in result.stdout, "GitHub renames ~ in an asset"
     if shutil.which("dpkg"):
         compare = ["dpkg", "--compare-versions"]
-        assert subprocess.run([*compare, "7.3~rc5-lusoris1", "lt", "7.3-lusoris1"], check=False).returncode == 0
-        assert subprocess.run([*compare, "7.3-rc5-lusoris1", "lt", "7.3-lusoris1"], check=False).returncode != 0
+        assert (
+            subprocess.run(
+                [*compare, "7.3~rc5-lusoris1", "lt", "7.3-lusoris1"], check=False
+            ).returncode
+            == 0
+        )
+        assert (
+            subprocess.run(
+                [*compare, "7.3-rc5-lusoris1", "lt", "7.3-lusoris1"], check=False
+            ).returncode
+            != 0
+        )
 
 
 def test_revision_is_threaded_into_localversion_and_package_version(tmp_path):
-    result = _run(BUILD, "--stream=lts", "--arch=x86_64", "--revision=3", "--dry-run", *_dirs(tmp_path))
+    result = _run(
+        BUILD, "--stream=lts", "--arch=x86_64", "--revision=3", "--dry-run", *_dirs(tmp_path)
+    )
     assert result.returncode == 0, result.stderr
     version = VERSIONS["streams"]["lts"]["version"]
     assert f"LOCALVERSION=-lusoris3-lts KDEB_PKGVERSION={version}-lusoris3" in result.stdout
@@ -98,9 +110,15 @@ def test_revision_is_threaded_into_localversion_and_package_version(tmp_path):
 def test_a_later_revision_is_a_newer_package_version():
     """linux-libc-dev keeps its name across revisions, so dpkg must upgrade lusoris1 to lusoris2."""
     compare = ["dpkg", "--compare-versions"]
-    for older, newer in (("7.2.8-lusoris1", "7.2.8-lusoris2"), ("7.2.8-lusoris9", "7.2.8-lusoris10"),
-                         ("7.3~rc5-lusoris2", "7.3-lusoris1")):
-        assert subprocess.run([*compare, older, "lt", newer], check=False).returncode == 0, (older, newer)
+    for older, newer in (
+        ("7.2.8-lusoris1", "7.2.8-lusoris2"),
+        ("7.2.8-lusoris9", "7.2.8-lusoris10"),
+        ("7.3~rc5-lusoris2", "7.3-lusoris1"),
+    ):
+        assert subprocess.run([*compare, older, "lt", newer], check=False).returncode == 0, (
+            older,
+            newer,
+        )
 
 
 @pytest.mark.parametrize(
@@ -136,7 +154,9 @@ def test_a_source_tree_that_is_not_a_kernel_is_refused(tmp_path):
     fake = tmp_path / "fake"
     fake.mkdir()
     (fake / "Makefile").write_text("all:\n", encoding="utf-8")
-    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", f"--source-tree={fake}", *_dirs(tmp_path))
+    result = _run(
+        BUILD, "--stream=mainstream", "--arch=x86_64", f"--source-tree={fake}", *_dirs(tmp_path)
+    )
     assert result.returncode == 1
     assert "is not a kernel source tree" in result.stderr
     assert sorted(p.name for p in tmp_path.iterdir()) == ["fake"]
@@ -170,17 +190,42 @@ def _uutils_bin(tmp_path: Path, with_gnuinstall: bool) -> dict:
     """A PATH with every build tool stubbed, an install that reports uutils, and maybe gnuinstall."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for tool in ("bash", "python3", "uname", "nproc", "ls", "cat", "head", "mkdir", "ln", "realpath",
-                 "rm", "stat", "date", "dirname"):
+    for tool in (
+        "bash",
+        "python3",
+        "uname",
+        "nproc",
+        "ls",
+        "cat",
+        "head",
+        "mkdir",
+        "ln",
+        "realpath",
+        "rm",
+        "stat",
+        "date",
+        "dirname",
+    ):
         (bin_dir / tool).symlink_to(shutil.which(tool))
-    stubs = ["make", "dpkg-buildpackage", "dpkg-deb", "dh_testdir", "depmod", "cpio", "rsync", "tar",
-             VERSIONS["architectures"]["x86_64"]["cross_compile"] + "gcc"]
+    stubs = [
+        "make",
+        "dpkg-buildpackage",
+        "dpkg-deb",
+        "dh_testdir",
+        "depmod",
+        "cpio",
+        "rsync",
+        "tar",
+        VERSIONS["architectures"]["x86_64"]["cross_compile"] + "gcc",
+    ]
     if with_gnuinstall:
         stubs.append("gnuinstall")
     for tool in stubs:
         (bin_dir / tool).write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (bin_dir / tool).chmod(0o755)
-    (bin_dir / "install").write_text("#!/bin/sh\necho 'install (uutils coreutils) 0.8.0'\n", encoding="utf-8")
+    (bin_dir / "install").write_text(
+        "#!/bin/sh\necho 'install (uutils coreutils) 0.8.0'\n", encoding="utf-8"
+    )
     (bin_dir / "install").chmod(0o755)
     return {"PATH": str(bin_dir), "HOME": str(tmp_path)}
 
@@ -201,7 +246,14 @@ def test_a_uutils_install_is_shadowed_by_gnuinstall_for_the_build(tmp_path):
     (tree / "Makefile").write_text("VERSION = 7\n", encoding="utf-8")
     (tree / "scripts" / "package" / "builddeb").write_text("#!/bin/sh\n", encoding="utf-8")
     (tree / "scripts" / "package" / "builddeb").chmod(0o755)
-    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", f"--source-tree={tree}", *_dirs(tmp_path), env=env)
+    result = _run(
+        BUILD,
+        "--stream=mainstream",
+        "--arch=x86_64",
+        f"--source-tree={tree}",
+        *_dirs(tmp_path),
+        env=env,
+    )
     shim = tmp_path / "build" / "mainstream-x86_64" / "gnu-install" / "install"
     assert "install is not GNU coreutils; the build uses" in result.stdout, result.stderr
     assert shim.is_symlink() and Path(os.readlink(shim)).name == "gnuinstall"
@@ -219,7 +271,14 @@ def test_a_stale_build_record_is_removed_before_the_build(tmp_path):
     record = tmp_path / "build" / "mainstream-x86_64" / "build.json"
     record.parent.mkdir(parents=True)
     record.write_text('{"kernelrelease": "7.2.8-lusoris1-mainstream"}\n', encoding="utf-8")
-    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", f"--source-tree={tree}", *_dirs(tmp_path), env=env)
+    result = _run(
+        BUILD,
+        "--stream=mainstream",
+        "--arch=x86_64",
+        f"--source-tree={tree}",
+        *_dirs(tmp_path),
+        env=env,
+    )
     assert result.returncode == 1, "the stand-in tree cannot be resolved, so the build stops there"
     assert not record.exists()
 
@@ -242,7 +301,13 @@ def test_package_deb_refuses_production_without_a_source_tree(tmp_path):
 
 
 def test_package_deb_dry_run_delegates_to_the_build_and_writes_nothing(tmp_path):
-    result = _run(PACKAGE, "--stream=realtime", "--arch=riscv64", "--dry-run", f"--output-dir={tmp_path / 'o'}")
+    result = _run(
+        PACKAGE,
+        "--stream=realtime",
+        "--arch=riscv64",
+        "--dry-run",
+        f"--output-dir={tmp_path / 'o'}",
+    )
     assert result.returncode == 0, result.stderr
     assert "LOCALVERSION=-lusoris1-realtime" in result.stdout
     assert "[DRY-RUN] Nothing was fetched, compiled or written." in result.stdout

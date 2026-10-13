@@ -85,13 +85,13 @@ parse_args() {
 # scripts/versions_query.py, which checks its shape and refuses an unknown stream or architecture.
 load_manifest() {
   local output line
-  output="$(python3 scripts/versions_query.py source "${STREAM}")" ||
-    refuse "versions.json has no buildable stream '${STREAM}'"
+  output="$(python3 scripts/versions_query.py source "${STREAM}")" \
+    || refuse "versions.json has no buildable stream '${STREAM}'"
   while IFS= read -r line; do
     SRC["${line%%=*}"]="${line#*=}"
   done <<<"${output}"
-  output="$(python3 scripts/versions_query.py arch "${ARCH}")" ||
-    refuse "versions.json has no buildable architecture '${ARCH}'"
+  output="$(python3 scripts/versions_query.py arch "${ARCH}")" \
+    || refuse "versions.json has no buildable architecture '${ARCH}'"
   while IFS= read -r line; do
     ARC["${line%%=*}"]="${line#*=}"
   done <<<"${output}"
@@ -181,8 +181,8 @@ check_request() {
     refuse "${OUTPUT_DIR} is not an empty directory; remove it or pass another --output-dir"
   fi
   if [[ -n "${SOURCE_TREE}" ]]; then
-    [[ -f "${SOURCE_TREE}/Makefile" && -x "${SOURCE_TREE}/scripts/package/builddeb" ]] ||
-      refuse "${SOURCE_TREE} is not a kernel source tree"
+    [[ -f "${SOURCE_TREE}/Makefile" && -x "${SOURCE_TREE}/scripts/package/builddeb" ]] \
+      || refuse "${SOURCE_TREE} is not a kernel source tree"
   elif [[ -e "${WORK_DIR}/linux-${STREAM}" && -n "$(ls -A "${WORK_DIR}/linux-${STREAM}" 2>/dev/null)" ]]; then
     refuse "${WORK_DIR}/linux-${STREAM} already exists; pass --source-tree=${WORK_DIR}/linux-${STREAM} if fetch-kernel-source.sh wrote it, or remove it"
   fi

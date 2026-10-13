@@ -20,6 +20,7 @@ def test_kconfig_fragments_exist():
     assert (kconfig_dir / "riscv64.config").exists()
     assert (kconfig_dir / "security-hardened.config").exists()
 
+
 def test_kconfig_mandatory_options():
     """Ensure essential virtualization and network options are declared."""
     x86_config = (REPO_ROOT / "kconfig" / "x86_64.config").read_text(encoding="utf-8")
@@ -27,6 +28,7 @@ def test_kconfig_mandatory_options():
     assert "CONFIG_MQ_IOSCHED_DEADLINE=y" in x86_config
     assert "CONFIG_TCP_CONG_BBR=y" in x86_config
     assert "CONFIG_SCHED_CLASS_EXT=y" in x86_config
+
 
 def test_security_hardened_kconfig():
     """Ensure KSPP security options are enabled in security-hardened.config."""
@@ -66,7 +68,13 @@ def test_btf_is_declared_with_its_chain_wherever_sched_ext_is():
         config = vkr.read_config(KCONFIG / f"{arch}.config")
         if config.get("CONFIG_SCHED_CLASS_EXT") != "y":
             continue
-        for symbol in ("BPF_SYSCALL", "BPF_JIT", "DEBUG_KERNEL", "DEBUG_INFO_DWARF5", "DEBUG_INFO_BTF"):
+        for symbol in (
+            "BPF_SYSCALL",
+            "BPF_JIT",
+            "DEBUG_KERNEL",
+            "DEBUG_INFO_DWARF5",
+            "DEBUG_INFO_BTF",
+        ):
             assert config.get(f"CONFIG_{symbol}") == "y", (arch, symbol)
         assert config.get("CONFIG_DEBUG_INFO_REDUCED") in (None, "n"), arch
 
@@ -96,7 +104,12 @@ def test_a_built_in_virtio_fs_is_declared_with_a_built_in_fuse():
 
 
 # --- BPF trampolines (docs/adr/0011) ---------------------------------------------------------
-TRAMPOLINE_CHAIN = ("FTRACE", "FUNCTION_TRACER", "DYNAMIC_FTRACE", "DYNAMIC_FTRACE_WITH_DIRECT_CALLS")
+TRAMPOLINE_CHAIN = (
+    "FTRACE",
+    "FUNCTION_TRACER",
+    "DYNAMIC_FTRACE",
+    "DYNAMIC_FTRACE_WITH_DIRECT_CALLS",
+)
 
 
 def _layers() -> list[Path]:

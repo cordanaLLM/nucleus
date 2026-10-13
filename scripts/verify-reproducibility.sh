@@ -36,7 +36,7 @@ parse_arguments() {
         DRY_RUN="true"
         shift
         ;;
-      -h|--help)
+      -h | --help)
         show_usage
         exit 0
         ;;
@@ -94,8 +94,8 @@ main() {
     local mock_b
     mock_a="$(mktemp -d)"
     mock_b="$(mktemp -d)"
-    printf "reproducible-kernel-binary\n" > "${mock_a}/kernel.bin"
-    printf "reproducible-kernel-binary\n" > "${mock_b}/kernel.bin"
+    printf "reproducible-kernel-binary\n" >"${mock_a}/kernel.bin"
+    printf "reproducible-kernel-binary\n" >"${mock_b}/kernel.bin"
     compare_checksums "${mock_a}" "${mock_b}"
     rm -rf "${mock_a}" "${mock_b}"
     echo "    ✓ [DRY-RUN] Reproducibility verification passed."

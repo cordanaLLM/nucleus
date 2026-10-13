@@ -15,12 +15,14 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "publish_release.sh"
-RELEASE = ("linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb",
-           "linux-libc-dev_7.2.8-lusoris1_amd64.deb",
-           "vmlinuz-7.2.8-lusoris1-mainstream",
-           "kernel-mainstream-x86_64.config",
-           "kernel-mainstream.cdx.json",
-           "kernel-mainstream.spdx.json")
+RELEASE = (
+    "linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb",
+    "linux-libc-dev_7.2.8-lusoris1_amd64.deb",
+    "vmlinuz-7.2.8-lusoris1-mainstream",
+    "kernel-mainstream-x86_64.config",
+    "kernel-mainstream.cdx.json",
+    "kernel-mainstream.spdx.json",
+)
 
 
 def _run(out: Path, *args: str, path_prefix: Path | None = None, cwd: Path | None = None):

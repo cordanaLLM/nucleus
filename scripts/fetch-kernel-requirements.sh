@@ -46,7 +46,7 @@ parse_arguments() {
         OUT_DIR="${1#*=}"
         shift
         ;;
-      -h|--help)
+      -h | --help)
         show_usage
         exit 0
         ;;
@@ -94,7 +94,7 @@ dispatched_label() {
         refuse "dispatched path '$(shown "${PAYLOAD_PATH:-}")' is not ${path}, which versions.json declares for ${label} (${repo})"
       fi
     fi
-  done <<< "${rows}"
+  done <<<"${rows}"
   if [[ -z "${match}" ]]; then
     refuse "dispatch source '$(shown "${PAYLOAD_SOURCE:-}")' matches no dispatched requirement in ${VERSIONS}"
   fi
@@ -129,7 +129,7 @@ default_branch_commit() {
 fetch_document() {
   local label="$1" repo="$2" path="$3" ref="$4" target digest
   target="${OUT_DIR}/${label}.json"
-  if ! gh api -H "Accept: application/vnd.github.raw+json" "repos/${repo}/contents/${path}?ref=${ref}" > "${target}"; then
+  if ! gh api -H "Accept: application/vnd.github.raw+json" "repos/${repo}/contents/${path}?ref=${ref}" >"${target}"; then
     refuse "could not fetch ${repo}/${path} at ${ref}"
   fi
   digest="$(sha256sum "${target}" | cut -d' ' -f1)"
@@ -137,7 +137,7 @@ fetch_document() {
   {
     echo "--requirement=${label}=${target}"
     echo "--ref=${label}=${ref}"
-  } >> "${OUT_DIR}/args"
+  } >>"${OUT_DIR}/args"
 }
 
 main() {
@@ -148,7 +148,7 @@ main() {
     refuse "${VERSIONS} declares no downstream requirement"
   fi
   mkdir -p "${OUT_DIR}"
-  : > "${OUT_DIR}/args"
+  : >"${OUT_DIR}/args"
   if [[ "${EVENT_NAME:-}" == "repository_dispatch" ]]; then
     pinned="$(dispatched_label "${rows}")"
   fi
@@ -159,12 +159,12 @@ main() {
       {
         echo "--sha256=${label}=${PAYLOAD_SHA256}"
         echo "--correlation-id=${label}=${PAYLOAD_CORRELATION_ID}"
-      } >> "${OUT_DIR}/args"
+      } >>"${OUT_DIR}/args"
     else
       ref="$(default_branch_commit "${repo}")"
     fi
     fetch_document "${label}" "${repo}" "${path}" "${ref}"
-  done <<< "${rows}"
+  done <<<"${rows}"
 }
 
 main "$@"

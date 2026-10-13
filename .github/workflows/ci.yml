@@ -48,6 +48,7 @@ jobs:
       - name: Run Makefile Gates
         run: |
           make lint
+          make audit
           make test
 
       # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
