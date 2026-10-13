@@ -185,3 +185,27 @@ jobs:
             records/
           if-no-files-found: error
           retention-days: 7
+
+  # The local build container (docker/Dockerfile.builder) installs the toolchain with the same
+  # script as the matrix above; this job builds it and checks the toolchain inside it
+  # (tests/test_builder_image.py keeps the two from drifting apart).
+  builder-image:
+    name: Builder Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build docker/Dockerfile.builder
+        run: docker build -t nucleus-builder -f docker/Dockerfile.builder .
+      - name: Check the toolchain and plan a build inside it
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src nucleus-builder bash -c '
+            set -euo pipefail
+            for tool in make gcc aarch64-linux-gnu-gcc riscv64-linux-gnu-gcc pahole gnuinstall qemu-system-x86_64 ccache gpgv; do
+              command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 1; }
+            done
+            scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run'
