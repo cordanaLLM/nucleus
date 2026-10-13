@@ -115,7 +115,10 @@ three — release-please has no API to assign a milestone, a changelog reference
 issue, and it applies only the `autorelease: pending` label — so the metadata gates are
 waived for it, and only for it. Both the author and the branch prefix must match; a label
 alone does not waive anything, since a contributor can label their own pull request. The
-code gates (`ci`, `codeql`, `security-scans`) are never waived.
+code gates (`ci`, `codeql`, `security-scans`) are never waived. `tests/test_workflows.py` runs
+the gate's own script on release-please's pull request, which passes and says the waiver applied,
+and refuses a human author on that branch with the label, the bot on another branch, a branch
+that only contains the prefix, and an author that is not the bot account.
 
 **Keeping a branch up to date.** `main` requires signed commits and an up-to-date branch. Do not
 use GitHub's rebase-mode Update branch button: it rewrites the commits without a signature and
