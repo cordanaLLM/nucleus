@@ -191,7 +191,7 @@ verify-reproducibility: ## Run reproducible build attestation driver (DRY_RUN=tr
 	@echo "==> Running reproducibility attestation..."
 	@./scripts/verify-reproducibility.sh --dry-run
 
-docker-builder: ## Build hermetic multi-architecture builder container
+docker-builder: ## Build the local build container: the CI image and toolchain (docker/Dockerfile.builder)
 	@echo "==> Building lusoris-kernel-builder container..."
 	@docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
 

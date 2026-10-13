@@ -149,7 +149,7 @@ make verify-reproducibility
 # Run the hermetic tests of the boot smoke test
 make test-boot
 
-# Build hermetic multi-architecture container
+# Build the local build container (the CI image and toolchain)
 make docker-builder
 ```
 
