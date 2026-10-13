@@ -50,6 +50,7 @@ jobs:
           make lint
           make audit
           make test
+          make docs-build
 
       # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
       # commit carries fails only at "Set up job" of the workflow that uses it.
