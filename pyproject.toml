@@ -2,6 +2,14 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "nucleus"
+requires-python = ">=3.12"
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
@@ -33,7 +41,7 @@ show_missing = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 exclude = [
     ".git",
     ".pytest_cache",

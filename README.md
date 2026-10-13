@@ -106,7 +106,8 @@ For full artifact details, verification semantics, and current operational limit
   ```bash
   sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
-- The Python test and documentation dependencies, from the hash-pinned lock file
+- The Python test and documentation dependencies on Python 3.12 or later (CI runs the suite on
+  3.12 and on 3.14, the build container's `python3`), from the hash-pinned lock file
   ([CONTRIBUTING.md](CONTRIBUTING.md) says how it is compiled):
   ```bash
   pip install --require-hashes -r requirements-test.txt
