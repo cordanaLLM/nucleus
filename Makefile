@@ -13,6 +13,9 @@ SOURCE_TREE ?=
 # boot-smoke: the kernel image to boot and the release it must report.
 KERNEL ?=
 KERNELRELEASE ?=
+# verify-reproducibility: the two build output directories to compare.
+DIR_A ?=
+DIR_B ?=
 
 # praetorctl built from the commit PRAETOR_COMMIT in .github/workflows/ci.yml names, and a
 # praetor checkout at that commit for the catalog check (docs/repository-governance.md).
@@ -187,11 +190,10 @@ package-uki: ## Synthesize Unified Kernel Image (STREAM=<stream> ARCH=<arch> DRY
 		./scripts/package-uki.sh --stream="$(STREAM)" --arch="$(ARCH)" --vmlinuz="$(VMLINUZ)" $(if $(INITRD),--initrd="$(INITRD)"); \
 	fi
 
-verify-reproducibility: ## Run reproducible build attestation driver (DRY_RUN=true)
-	@echo "==> Running reproducibility attestation..."
-	@./scripts/verify-reproducibility.sh --dry-run
+verify-reproducibility: ## Compare two build output directories byte for byte (DIR_A=<dir> DIR_B=<dir>; DRY_RUN=true states the comparison only)
+	@./scripts/verify-reproducibility.sh --dir-a="$(DIR_A)" --dir-b="$(DIR_B)" $(if $(filter true,$(DRY_RUN)),--dry-run)
 
-docker-builder: ## Build hermetic multi-architecture builder container
+docker-builder: ## Build the local build container: the CI image and toolchain (docker/Dockerfile.builder)
 	@echo "==> Building lusoris-kernel-builder container..."
 	@docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
 
