@@ -138,8 +138,8 @@ listed_signer() {
 check_signature_status() {
   local status="$1" what="$2"
   local problems
-  problems="$(grep -Eo '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|NO_PUBKEY)' "${status}" |
-    cut -d' ' -f2 | sort -u | tr '\n' ' ' || true)"
+  problems="$(grep -Eo '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|NO_PUBKEY)' "${status}" \
+    | cut -d' ' -f2 | sort -u | tr '\n' ' ' || true)"
   [[ -z "${problems}" ]] || refuse "${what}: the signature does not verify (${problems% })"
   grep -q '^\[GNUPG:\] GOODSIG ' "${status}" || refuse "${what}: no good signature"
   local -a signed_by=()
@@ -228,8 +228,8 @@ fetch_git_tag() {
   object="$(git -C "${repo}" cat-file tag "refs/tags/${tag}")"
   name="$(awk '$1 == "tag" { print $2; exit }' <<<"${object}")"
   [[ "${name}" == "${tag}" ]] || refuse "the signed tag object names '${name}', not ${tag}"
-  commit="$(git -C "${repo}" rev-parse --verify --quiet "refs/tags/${tag}^{commit}")" ||
-    refuse "tag ${tag} does not point at a commit"
+  commit="$(git -C "${repo}" rev-parse --verify --quiet "refs/tags/${tag}^{commit}")" \
+    || refuse "tag ${tag} does not point at a commit"
   if [[ "${commit}" != "${SRC[commit]}" ]]; then
     refuse "tag ${tag} points at ${commit}; versions.json pins ${SRC[commit]}"
   fi

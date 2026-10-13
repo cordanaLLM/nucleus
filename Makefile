@@ -19,6 +19,9 @@ KERNELRELEASE ?=
 PRAETORCTL ?= praetorctl
 PRAETOR_SRC ?=
 
+# A check whose tool is missing fails and names it; it never passes by skipping.
+require-tool = command -v $(1) >/dev/null 2>&1 || { echo "==> ERROR: $(1) is not installed (pip install --require-hashes -r requirements-test.txt)." >&2; exit 1; }
+
 .PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean context ruleset governance-check
 
 help: ## Show this help message
@@ -30,27 +33,24 @@ init: ## Initialize environment and verify executable script permissions
 	@mkdir -p output dist build
 	@echo "==> Initialization complete."
 
-fmt: ## Format shell scripts, python files, and configs
+fmt: ## Format shell scripts and Python files (shfmt and ruff from requirements-test.txt)
 	@echo "==> Formatting shell scripts and code..."
-	@if command -v shfmt >/dev/null 2>&1; then \
-		shfmt -w -i 2 -bn -ci scripts/*.sh; \
-	fi
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff format tests/ .agents/hooks-scripts/ scripts/ 2>/dev/null || true; \
-	fi
+	@$(call require-tool,shfmt)
+	@$(call require-tool,ruff)
+	@shfmt -w -i 2 -bn -ci scripts/*.sh
+	@ruff format tests/ .agents/hooks-scripts/ scripts/
 	@echo "==> Formatting complete."
 
-fmt-check: ## Verify repository formatting without modifying files
+fmt-check: ## Verify formatting and Python lint without modifying files (shfmt, ruff format, ruff check)
 	@echo "==> Checking repository formatting..."
-	@if command -v shfmt >/dev/null 2>&1; then \
-		shfmt -d -i 2 -bn -ci scripts/*.sh; \
-	fi
-	@if command -v ruff >/dev/null 2>&1; then \
-		ruff format --check tests/ .agents/hooks-scripts/ scripts/ 2>/dev/null || true; \
-	fi
+	@$(call require-tool,shfmt)
+	@$(call require-tool,ruff)
+	@shfmt -d -i 2 -bn -ci scripts/*.sh
+	@ruff format --check tests/ .agents/hooks-scripts/ scripts/
+	@ruff check tests/ .agents/hooks-scripts/ scripts/
 	@echo "==> Format check passed."
 
-lint: lint-manifest lint-workflows ## Run ShellCheck, Yamllint, Actionlint, and manifest validation
+lint: lint-manifest lint-workflows fmt-check ## Run ShellCheck, Yamllint, Actionlint, format checks and manifest validation
 	@echo "==> Running ShellCheck on scripts..."
 	@shellcheck -s bash scripts/*.sh
 	@if command -v yamllint >/dev/null 2>&1; then \

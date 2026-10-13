@@ -134,7 +134,9 @@ def check_release(exp: Expectation) -> list[str]:
     problems = []
     base = exp.kernelversion
     if not (kr == base or kr.startswith(f"{base}-") or kr.startswith(f"{base}+")):
-        problems.append(f"kernelrelease {kr} does not start with the {exp.stream} kernel version {base}")
+        problems.append(
+            f"kernelrelease {kr} does not start with the {exp.stream} kernel version {base}"
+        )
     if not kr.endswith(exp.localversion):
         problems.append(f"kernelrelease {kr} does not end with the build's {exp.localversion}")
     return problems
@@ -356,11 +358,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     problems = evaluate(args.dir, exp)
     if problems:
-        print(f"Refused: {args.dir} ({exp.stream}/{exp.arch}, {exp.kernelrelease}):", file=sys.stderr)
+        print(
+            f"Refused: {args.dir} ({exp.stream}/{exp.arch}, {exp.kernelrelease}):", file=sys.stderr
+        )
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
-    print(f"==> Artifact gate passed: {args.dir} holds {exp.kernelrelease} for {exp.stream}/{exp.arch}")
+    print(
+        f"==> Artifact gate passed: {args.dir} holds {exp.kernelrelease} for {exp.stream}/{exp.arch}"
+    )
     return 0
 
 

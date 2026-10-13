@@ -189,7 +189,9 @@ def test_checker_knows_the_pe_machine_of_every_architecture_in_versions_json(arc
     assert arch in PE_MACHINE, (
         f"add the PE machine type for {arch} to this test and to check_uki.py"
     )
-    image = build_pe({**UKI_SECTIONS, ".linux": _kernel_pe(PE_MACHINE[arch])}, machine=PE_MACHINE[arch])
+    image = build_pe(
+        {**UKI_SECTIONS, ".linux": _kernel_pe(PE_MACHINE[arch])}, machine=PE_MACHINE[arch]
+    )
     assert CHECK_UKI.check_uki(image, arch)
 
 
@@ -444,7 +446,9 @@ def test_a_refused_run_after_a_dry_run_leaves_no_uki(tmp_path):
         ),
     ],
 )
-def test_a_refused_run_removes_what_an_earlier_run_left(tmp_path, output, exit_code, kernel, reason):
+def test_a_refused_run_removes_what_an_earlier_run_left(
+    tmp_path, output, exit_code, kernel, reason
+):
     bin_dir = _isolated_bin(tmp_path)
     _install_ukify_stub(bin_dir, VALID_UKI)
     assert _run(tmp_path, bin_dir, f"--vmlinuz={_fake_kernel(tmp_path)}").returncode == 0
@@ -556,9 +560,7 @@ def test_an_initrd_missing_from_the_image_is_refused(tmp_path):
         pytest.param(
             build_pe(_without(".linux")), 0, "missing section .linux", id="PE-without-linux"
         ),
-        pytest.param(
-            _with(".initrd", b"x"), 0, "no initrd was passed", id="unrequested-initrd"
-        ),
+        pytest.param(_with(".initrd", b"x"), 0, "no initrd was passed", id="unrequested-initrd"),
         pytest.param(
             _with(".cmdline", CMDLINE_PATH_AS_TEXT),
             0,

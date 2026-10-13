@@ -62,7 +62,7 @@ parse_arguments() {
         DRY_RUN="true"
         shift
         ;;
-      -h|--help)
+      -h | --help)
         show_usage
         exit 0
         ;;
@@ -76,10 +76,10 @@ parse_arguments() {
 
 resolve_efi_name() {
   case "${ARCH}" in
-    x86_64)  echo "BOOTX64.EFI" ;;
-    arm64)   echo "BOOTAA64.EFI" ;;
+    x86_64) echo "BOOTX64.EFI" ;;
+    arm64) echo "BOOTAA64.EFI" ;;
     riscv64) echo "BOOTRISCV64.EFI" ;;
-    *)       echo "BOOTUNKNOWN.EFI" ;;
+    *) echo "BOOTUNKNOWN.EFI" ;;
   esac
 }
 
@@ -88,10 +88,10 @@ resolve_efi_name() {
 # runner. Passing it makes a missing stub fail the build with an error naming the stub.
 resolve_efi_arch() {
   case "${ARCH}" in
-    x86_64)  echo "x64" ;;
-    arm64)   echo "aa64" ;;
+    x86_64) echo "x64" ;;
+    arm64) echo "aa64" ;;
     riscv64) echo "riscv64" ;;
-    *)       return 1 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -102,7 +102,7 @@ generate_uki_metadata() {
   echo "==> Preparing UKI sections (os-release, sbat, cmdline)..."
   mkdir -p "${staging_dir}"
 
-  cat <<EOF > "${staging_dir}/os-release"
+  cat <<EOF >"${staging_dir}/os-release"
 NAME="Lusoris Linux"
 ID=lusoris
 VERSION="${version}"
@@ -113,12 +113,12 @@ SUPPORT_URL="https://github.com/cordanaLLM/nucleus/discussions"
 BUG_REPORT_URL="https://github.com/cordanaLLM/nucleus/issues"
 EOF
 
-  cat <<'EOF' > "${staging_dir}/sbat.csv"
+  cat <<'EOF' >"${staging_dir}/sbat.csv"
 sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
 lusoris,1,Lusoris Linux,lusoris,1,https://github.com/cordanaLLM/nucleus
 EOF
 
-  echo -n "${CMDLINE_ARG}" > "${staging_dir}/cmdline"
+  echo -n "${CMDLINE_ARG}" >"${staging_dir}/cmdline"
 }
 
 # A dry run writes a marked text file, not an image, so it can exercise the pipeline
@@ -138,14 +138,14 @@ simulate_uki_binary() {
     printf 'Lusoris Unified Kernel Image %s (%s %s)\n' "${version}" "${STREAM}" "${ARCH}"
     cat "${staging_dir}/cmdline"
     echo ""
-  } > "${target_dir}/${simulated}"
+  } >"${target_dir}/${simulated}"
 
   # Calculate simulated TPM 2.0 PCR 11 measurement
   local pcr11_digest
   # Hash stdin: with a filename argument, sha256sum prefixes the digest with "\"
   # whenever the path contains a backslash, which corrupts the JSON below.
-  pcr11_digest="$(sha256sum < "${target_dir}/${simulated}" | awk '{print $1}')"
-  cat <<EOF > "${target_dir}/pcr11-measurements.json"
+  pcr11_digest="$(sha256sum <"${target_dir}/${simulated}" | awk '{print $1}')"
+  cat <<EOF >"${target_dir}/pcr11-measurements.json"
 {
   "stream": "${STREAM}",
   "version": "${version}",
@@ -245,7 +245,7 @@ build_uki_binary() {
     return 1
   fi
 
-  (cd "${target_dir}" && sha256sum "${efi_name}" > "${efi_name}.sha256")
+  (cd "${target_dir}" && sha256sum "${efi_name}" >"${efi_name}.sha256")
   echo "    ✓ Successfully synthesized ${target_efi}"
 }
 
