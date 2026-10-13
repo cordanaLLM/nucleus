@@ -1,66 +1,33 @@
 # Copyright 2026 The Lusoris Authors
 # SPDX-License-Identifier: EUPL-1.2
 #
-# docker/Dockerfile.builder — Hermetic Multi-Architecture Kernel Builder Container
-# Targets: x86_64, arm64, and riscv64 native and cross-compilation
+# docker/Dockerfile.builder — the kernel build environment CI uses, as a local container.
+#
+# The base is the ubuntu:26.04 digest every workflow pins, and the packages come from
+# scripts/install-build-toolchain.sh, the one list build-matrix.yml and publish-release.yml
+# install, so a local build compiles with the toolchain the matrix proved.
+# tests/test_builder_image.py keeps both in step; build-matrix.yml builds this image.
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
 LABEL org.opencontainers.image.title="lusoris-kernel-builder" \
-      org.opencontainers.image.description="Hermetic multi-architecture Linux kernel compiler and UKI synthesis engine" \
+      org.opencontainers.image.description="The nucleus kernel build environment: ubuntu:26.04 with scripts/install-build-toolchain.sh" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.licenses="EUPL-1.2" \
       org.opencontainers.image.source="https://github.com/cordanaLLM/nucleus"
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=Etc/UTC \
-    LANG=C.UTF-8 \
+ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    SOURCE_DATE_EPOCH=1700000000 \
-    KBUILD_BUILD_TIMESTAMP="Nov 15 2023"
+    TZ=UTC
 
-# Install hermetic toolchains, cross-compilers, packaging utilities, and QEMU microVM emulators
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    clang \
-    llvm \
-    lld \
-    gcc-aarch64-linux-gnu \
-    g++-aarch64-linux-gnu \
-    gcc-riscv64-linux-gnu \
-    g++-riscv64-linux-gnu \
-    bc \
-    bison \
-    flex \
-    libelf-dev \
-    libssl-dev \
-    libncurses-dev \
-    kmod \
-    cpio \
-    rsync \
-    git \
-    tar \
-    xz-utils \
-    zstd \
-    dpkg-dev \
-    debhelper \
-    diffoscope \
-    systemd-ukify \
-    sbsigntool \
-    dracut \
-    qemu-system-x86 \
-    qemu-system-arm \
-    qemu-system-misc \
-    python3 \
-    python3-pip \
-    ca-certificates \
-    curl \
+COPY scripts/install-build-toolchain.sh /usr/local/sbin/install-build-toolchain.sh
+RUN /usr/local/sbin/install-build-toolchain.sh --with-qemu \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up hermetic unprivileged build user
-RUN useradd -u 1000 -m -s /bin/bash builder \
-    && mkdir -p /opt/lusoris/src /opt/lusoris/output /opt/lusoris/build \
-    && chown -R builder:builder /opt/lusoris
+# The ubuntu image already holds a user with uid 1000, so builder takes the next free one.
+RUN useradd -m -s /bin/bash builder \
+    && mkdir -p /opt/lusoris/src \
+    && chown builder:builder /opt/lusoris/src
 
 USER builder
 WORKDIR /opt/lusoris/src

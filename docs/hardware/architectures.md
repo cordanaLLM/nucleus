@@ -73,7 +73,7 @@ All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collecti
 
 ## 4. Hermetic Cross-Compilation Pipeline
 
-Cross-compilation is executed without installing system-wide foreign packages through pinned OCI build images built from `docker/Dockerfile.builder`:
+`docker/Dockerfile.builder` is the CI build environment as a local container: it starts from the `ubuntu:26.04` image `build-matrix.yml` pins by digest and installs the toolchain with the same `scripts/install-build-toolchain.sh --with-qemu`, so a local build uses the compilers the matrix uses:
 
 ```bash
 # Build multi-architecture builder container
@@ -82,7 +82,7 @@ make docker-builder
 docker build -t lusoris-kernel-builder -f docker/Dockerfile.builder .
 ```
 
-The container provides LLVM/Clang, cross-compilers (`gcc-aarch64-linux-gnu`, `gcc-riscv64-linux-gnu`), `systemd-ukify`, `dracut`, `diffoscope`, and QEMU emulators.
+The container provides GCC with the cross-compilers (`gcc-aarch64-linux-gnu`, `gcc-riscv64-linux-gnu`), `pahole`, GNU `install` (`gnuinstall`), `ccache`, `gpgv` and `qemu-system-x86_64`, and nothing the matrix does not install; it carries no LLVM, `ukify`, `dracut` or `diffoscope`. `tests/test_builder_image.py` refuses a Dockerfile that drifts from the pinned image or installs packages of its own, and the `Builder Image` job in `build-matrix.yml` builds the container, checks those tools inside it and states a build plan there.
 
 Kernel compilation for target architectures is orchestrated using `make build-kernel` or directly via `scripts/build_kernel.sh`:
 
