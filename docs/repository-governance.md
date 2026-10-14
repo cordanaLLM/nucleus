@@ -121,10 +121,20 @@ detector-gated jobs in `security-scans.yml`. The gate also fails when it finds n
 run, or when the others are still running after 25 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
+Two forge behaviours shape the wait. A job that `needs` another one registers its check run
+only when it is queued, so `Security Scan Gate` and `Verify Requirements Against the Resolved
+KConfig` appear minutes after the rest; the gate passes only after two consecutive polls see the
+same check names with none pending. And the forge has left a finished check run at
+`in_progress` (the Gitleaks run on `e685ec1`, 2026-10-11, held the aggregator for its whole
+timeout); a run that carries a conclusion and a completion time counts as completed whatever
+its status says, and its conclusion is judged like any other. Both are tested in
+`tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
+
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
-lists, so none of its jobs is required: `Verify Downstream Kernel Requirements`, the
-`Resolve KConfig (<stream>)` legs and `Verify Requirements Against the Resolved KConfig`
-report on the pull requests they concern and gate nothing else. `build-matrix.yml` does not
+lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
+Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Against the
+Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
+for them and requires their success like any other check run. `build-matrix.yml` does not
 run on pull requests at all.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases

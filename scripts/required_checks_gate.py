@@ -17,6 +17,12 @@ runs on one commit (the metadata gate runs once per pull request edit); the newe
 highest id, stands for the name, as in branch protection. The gate fails when a check
 run ended in anything else, when no check run besides its own exists, and when the others
 have not completed before the timeout.
+
+A check run counts as completed when its status says so, or when it carries a conclusion and a
+completion time: the forge has left a finished run at ``in_progress`` before, and the gate then
+waited out its whole timeout on it. A job that ``needs`` another one registers its check run only
+when it is queued, so the gate passes only after two consecutive polls agree that nothing is
+pending and see the same check names.
 Exit status: 0 when every check run passed, 1 otherwise.
 """
 
@@ -38,7 +44,7 @@ def fetch(repo: str, ref: str) -> list[dict]:
             "--paginate",
             f"repos/{repo}/commits/{ref}/check-runs?per_page=100",
             "--jq",
-            ".check_runs[] | {id, name, status, conclusion}",
+            ".check_runs[] | {id, name, status, conclusion, completed_at}",
         ],
         capture_output=True,
         text=True,
@@ -56,8 +62,15 @@ def latest(runs: list[dict]) -> list[dict]:
     return list(newest.values())
 
 
+def finished(run: dict) -> bool:
+    """Completed by status, or by a conclusion and completion time under a stale status."""
+    if run["status"] == "completed":
+        return True
+    return run.get("conclusion") is not None and bool(run.get("completed_at"))
+
+
 def pending(runs: list[dict], self_name: str) -> list[str]:
-    return sorted(r["name"] for r in runs if r["name"] != self_name and r["status"] != "completed")
+    return sorted(r["name"] for r in runs if r["name"] != self_name and not finished(r))
 
 
 def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str]:
@@ -75,14 +88,23 @@ def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str
 
 
 def wait(args: argparse.Namespace) -> list[dict] | None:
-    """Poll until no other check run is pending; None when the timeout passes first."""
-    polls = max(1, args.timeout // max(1, args.interval) + 1)
+    """Poll until two consecutive polls see the same check names and none pending.
+
+    None when the timeout passes first.
+    """
+    polls = max(2, args.timeout // max(1, args.interval) + 1)
+    settled: set[str] | None = None
     for attempt in range(polls):
         runs = fetch(args.repo, args.ref)
         waiting = pending(runs, args.self_name)
-        if not waiting:
+        names = {r["name"] for r in runs}
+        if not waiting and names == settled:
             return runs
-        print(f"waiting on {len(waiting)}: {', '.join(waiting)}", flush=True)
+        if waiting:
+            print(f"waiting on {len(waiting)}: {', '.join(waiting)}", flush=True)
+        else:
+            print(f"nothing pending among {len(names)} check runs; polling once more", flush=True)
+        settled = None if waiting else names
         if attempt + 1 < polls:
             time.sleep(args.interval)
     return None
