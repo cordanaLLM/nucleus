@@ -75,6 +75,11 @@ def test_newc_padding_holds_for_every_length():
         (BANNER, ["init never printed"]),
         (BANNER.replace(KR, "7.2.80-lusoris1-mainstream") + MARKER, ["no 'Linux version"]),
         (BANNER + MARKER.replace(KR, "7.2.8-lusoris1-realtime"), ["init never printed"]),
+        # The kernel printed onto the init's line (build-matrix run 38525968854, lts x86_64).
+        (BANNER + MARKER.rstrip("\n") + "[    2.866941] input: ImExPS/2 Mouse\n", []),
+        (BANNER + MARKER.rstrip("\n") + "2\n", ["init never printed"]),
+        (BANNER + MARKER.rstrip("\n") + " trailing text\n", ["init never printed"]),
+        (BANNER + "noise " + MARKER, ["init never printed"]),
     ],
 )
 def test_verdict_needs_the_banner_and_the_init_line_for_this_release(console, missing):
