@@ -80,10 +80,10 @@ Confirm:
 
 ### Order 3: Inspect Stream Targets in `versions.json`
 Verify the target kernel streams:
-- `bleeding`: Linux 7.3-rc5, from the signed tag
-- `mainstream`: Linux 7.2.8
-- `lts`: Linux 6.18.54
-- `realtime`: Linux 7.2.8 with the in-tree `PREEMPT_RT`
+- `bleeding`: Linux 7.3-rc7, from the signed tag
+- `mainstream`: Linux 7.2.10
+- `lts`: Linux 6.18.56
+- `realtime`: Linux 7.2.10 with the in-tree `PREEMPT_RT`
 
 ---
 
@@ -101,8 +101,8 @@ use; a leg needs 8 to 16 GiB of disk, depending on the architecture
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64
 
 # Boot the result to userspace under QEMU
-python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstream \
-  --kernelrelease=7.2.8-lusoris1-mainstream
+python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
+  --kernelrelease=7.2.10-lusoris1-mainstream
 ```
 
 ### Recipe B: Adding a Curated Kernel Patch
