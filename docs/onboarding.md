@@ -53,7 +53,9 @@ sequenceDiagram
 When an autonomous agent is initialized in or migrated to this repository, it must execute the following sequential orders:
 
 ### Order 1: Verify Environment & Tools
+
 Verify that the host environment has GNU Make, Python 3.12+, ShellCheck, Yamllint, and kernel build utilities:
+
 ```bash
 make --version
 python3 --version
@@ -63,23 +65,30 @@ yamllint --version
 
 Install the test and documentation dependencies from the hash-pinned lock file
 ([Contributing](community/contributing.md) says how it is compiled):
+
 ```bash
 pip install --require-hashes -r requirements-test.txt
 ```
 
 ### Order 2: Validate Manifest & Invariants
+
 Run the local quality gates:
+
 ```bash
 make lint
 make test
 ```
+
 Confirm:
+
 - `versions.json` matches `versions.schema.json`.
 - Zero private RFC 1918 IPs exist across the codebase.
 - Zero developer workstation paths exist across the codebase.
 
 ### Order 3: Inspect Stream Targets in `versions.json`
+
 Verify the target kernel streams:
+
 - `bleeding`: Linux 7.3-rc5, from the signed tag
 - `mainstream`: Linux 7.2.8
 - `lts`: Linux 6.18.54
@@ -90,9 +99,11 @@ Verify the target kernel streams:
 ## 3. Operational Recipes
 
 ### Recipe A: Compiling a Kernel Locally
+
 Run it in `ubuntu:26.04` with `scripts/install-build-toolchain.sh`, the toolchain the workflows
 use; a leg needs 8 to 16 GiB of disk, depending on the architecture
 (`scripts/probe-build-space.sh`, and `disk_gib` in `build-matrix.yml`).
+
 ```bash
 # State the fetch, the resolution, the make command and the expected kernel release:
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run
@@ -106,18 +117,25 @@ python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lu
 ```
 
 ### Recipe B: Adding a Curated Kernel Patch
+
 The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. When preparing a patch candidate:
+
 1. Create a descriptive patch file under `patches/common/` or `patches/<stream>/`:
+
    ```bash
    # Example: patches/common/<patch-name>.patch
    ```
+
 2. Verify that the patch applies cleanly against the unpacked kernel source:
+
    ```bash
    patch -p1 --dry-run < patches/common/<patch-name>.patch
    ```
+
 3. Commit adhering to Conventional Commits: `feat(patches): add custom tuning patch for mainstream`.
 
 ### Recipe C: Bumping a Kernel Version
+
 1. Edit [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json): the new `version` and `tag`, and the `source` with them. For a tarball, the URL, the signature URL and the `sha256`, taken from kernel.org's `sha256sums.asc` after `gpgv` verifies it against the autosigner key in `keys/`; for a release candidate, the tag and the commit `git ls-remote <repository> 'refs/tags/<tag>^{}'` reports. [Kernel Streams](streams.md#3-sources-and-signatures) has the details.
 2. Prove it: `make fetch-source STREAM=<stream>`, then `make resolve-config STREAM=<stream> ARCH=<arch>` for each architecture. A symbol the new release dropped fails the survival check; fix the fragment, never the check.
 3. Update [`docs/streams.md`](streams.md) and [`README.md`](https://github.com/cordanaLLM/nucleus/blob/main/README.md) in the exact same commit.

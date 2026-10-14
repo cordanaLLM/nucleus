@@ -419,7 +419,9 @@ The repository does not orchestrate initramfs creation or provide dracut configu
 Not implemented: no APT archive is published; packages are GitHub Release assets.
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
+
 Planned: UKI binaries (`.efi`) are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. The image is unsigned today (section 3.1), and no workflow publishes or pushes one: CI builds one only to test it, and `publish-release.yml` publishes GitHub Release assets, none of them a UKI (section 5.3).
+
 ```bash
 # Packaging UKI as an OCI artifact using oras:
 oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
@@ -427,9 +429,11 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
 ```
+
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) are meant to pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
+
 `publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4). It builds
 the tagged stream for x86_64 with `scripts/build_kernel.sh`, in an `ubuntu:26.04` container pinned
 to the digest `build-matrix.yml` uses, that is given neither the job's token nor its OIDC

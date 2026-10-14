@@ -7,6 +7,7 @@
 ## 1. Scope & Level 2 Mandate
 
 The **CIS Distribution-Independent Linux Benchmark** categorizes security configurations into:
+
 - **Level 1 (Basic / Operational)**: Prudent security baselines achievable with minimal performance impact and broad software compatibility.
 - **Level 2 (High-Security / Defense-in-Depth)**: Specialized security controls for high-assurance, multi-tenant environments where attack surface minimization supersedes legacy backwards compatibility.
 
