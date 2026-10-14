@@ -142,7 +142,7 @@ sequenceDiagram
 ### 4.2 `sched-ext` & Realtime (`PREEMPT_RT`) Coexistence Contract
 
 - In standard kernels (`bleeding`, `mainstream`), `sched-ext` operates freely.
-- In the `realtime` (7.2.8, in-tree `PREEMPT_RT`) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
+- In the `realtime` (7.2.10, in-tree `PREEMPT_RT`) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
 
 ---
 

@@ -41,10 +41,10 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 | Stream | Linux Version | Status | Primary Target Workloads | Hardware Acceleration | Key Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`bleeding`** | `7.3-rc5` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090, CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
-| **`mainstream`** | `7.2.8` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610 | BBR congestion control, `mq-deadline`, Level Zero |
-| **`lts`** | `6.18.54` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | NVIDIA LTS drivers, Intel Arc Alchemist | Rock-solid stability, OpenZFS 2.3+ kmod stability, strict overcommit |
-| **`realtime`** | `7.2.8` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |
+| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090, CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
+| **`mainstream`** | `7.2.10` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610 | BBR congestion control, `mq-deadline`, Level Zero |
+| **`lts`** | `6.18.56` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | NVIDIA LTS drivers, Intel Arc Alchemist | Rock-solid stability, OpenZFS 2.3+ kmod stability, strict overcommit |
+| **`realtime`** | `7.2.10` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |
 
 ---
 
