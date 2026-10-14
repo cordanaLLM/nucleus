@@ -1,7 +1,8 @@
 ---
 # Single required status check for branch protection.
-# Protects main on THIS job only. It waits for every other check run on the commit and fails
-# unless each one succeeded (scripts/required_checks_gate.py). A skipped check counts only
+# Protects main on THIS job only. It waits for every other check run on the commit, including
+# jobs that register late and runs whose forge status went stale, and fails unless each one
+# succeeded (scripts/required_checks_gate.py). A skipped check counts only
 # when it is named with --allow-skip: Semgrep and Trivy, which the change detector in
 # security-scans.yml may exclude, and whose skip the required Security Scan Gate judges.
 # Branch protection: require the "required-checks" status check.

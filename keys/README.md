@@ -65,7 +65,7 @@ therefore dearmors the keys of the stream's signers into a binary keyring first:
 
 ```bash
 gpg --dearmor --output - < keys/647F28654894E3BD457199BE38DBBDC86092693E.asc > signers.gpg
-xz -cd linux-7.2.8.tar.xz | gpgv --keyring ./signers.gpg linux-7.2.8.tar.sign -
+xz -cd linux-7.2.10.tar.xz | gpgv --keyring ./signers.gpg linux-7.2.10.tar.sign -
 ```
 
 `gpgv` also reads a `--keyring` name without a slash from its home directory, so the path must
