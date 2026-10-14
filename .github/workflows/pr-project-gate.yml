@@ -60,7 +60,7 @@ jobs:
 
           # 1. Milestone Check (with live query fallback if event payload lagged)
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
-            PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title 2>/dev/null || true)"
+            PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title)"
           fi
 
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
@@ -79,7 +79,7 @@ jobs:
           if echo "${PR_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
             HAS_VALID_LABEL=true
           else
-            LIVE_LABELS="$(gh pr view "${PR_NUMBER}" --json labels --jq '[.labels[].name] | @json' 2>/dev/null || true)"
+            LIVE_LABELS="$(gh pr view "${PR_NUMBER}" --json labels --jq '[.labels[].name] | @json')"
             if echo "${LIVE_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
               HAS_VALID_LABEL=true
             fi
