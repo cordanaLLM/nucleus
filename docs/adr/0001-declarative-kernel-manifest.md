@@ -10,9 +10,10 @@ Accepted
 
 ## Context
 
-`cordanaLLM/nucleus` compiles, patches, hardens, and packages four concurrent Linux kernel release streams (`bleeding`, `mainstream`, `lts`, `realtime`) across three hardware architectures (`x86_64`, `arm64`, `riscv64`). 
+`cordanaLLM/nucleus` compiles, patches, hardens, and packages four concurrent Linux kernel release streams (`bleeding`, `mainstream`, `lts`, `realtime`) across three hardware architectures (`x86_64`, `arm64`, `riscv64`).
 
 In traditional kernel packaging setups, release numbers, Git commit hashes, upstream tarball URLs, and architecture targets are frequently scattered across Makefiles, shell build scripts, Dockerfiles, and GitHub Actions workflow YAML files. This fragmentation leads to:
+
 1. **Configuration Drift**: A version bumped in a build script may be omitted in the packaging or CI matrix workflow, causing mismatched binaries.
 2. **Brittle Automation**: Automated dependency bots (e.g. Renovate) cannot reliably locate and update versions buried within procedural shell logic or multi-line command strings.
 3. **Lack of Validation**: Invalid URLs, malformed semver strings, or missing target architectures are only detected hours into a failed build pipeline.
@@ -41,11 +42,13 @@ graph TD
 ## Consequences
 
 ### Positive
+
 - **Deterministic Builds**: Compiler drivers and CI jobs always build the exact versions specified in the central manifest.
 - **Automated Upstream Tracking**: Upstream point releases from `kernel.org` can be detected by Renovate and committed directly to `versions.json`.
 - **Early Failure**: Malformed versions or syntax errors fail instantaneously during local `make lint` before any heavy compilation occurs.
 
 ### Negative
+
 - **JSON Parsing Prerequisite**: Build scripts must rely on `jq` or `python3` being present in the execution environment to parse manifest fields.
 
 ---
@@ -53,10 +56,13 @@ graph TD
 ## Compliance
 
 Ongoing adherence is strictly enforced by automated quality gates:
+
 1. **Local Linter (`make lint`)**:
+
    ```bash
    python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('versions.json')), json.load(open('versions.schema.json'))); print('versions.json is valid')"
    ```
+
 2. **Automated Pytest Suite (`tests/test_manifest.py`)**:
    - `test_manifest_schema_validation`: Validates complete manifest structure against `versions.schema.json`.
    - `test_manifest_streams`: Asserts the presence of all 4 required streams (`bleeding`, `mainstream`, `lts`, `realtime`).
