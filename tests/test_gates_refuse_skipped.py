@@ -136,12 +136,22 @@ def test_no_other_check_run_is_a_failure():
     assert gate.evaluate([_run("required-checks", None, "in_progress")], "required-checks", set())
 
 
-def _main_with_stub(tmp_path, lines: str, *extra: str) -> subprocess.CompletedProcess:
+def _main_with_polls(tmp_path, polls: list[str], *extra: str) -> subprocess.CompletedProcess:
+    """Run the gate against a gh stub that answers the n-th poll with polls[n], then the last."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (tmp_path / "runs.jsonl").write_text(lines, encoding="utf-8")
+    for index, lines in enumerate(polls):
+        (tmp_path / f"poll{index}.jsonl").write_text(lines, encoding="utf-8")
+    counter = tmp_path / "count"
+    counter.write_text("0", encoding="utf-8")
     stub = bin_dir / "gh"
-    stub.write_text(f"#!/usr/bin/env bash\ncat {tmp_path / 'runs.jsonl'}\n", encoding="utf-8")
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f"n=$(cat {counter}); echo $((n + 1)) >{counter}\n"
+        f'[ "$n" -lt {len(polls)} ] || n={len(polls) - 1}\n'
+        f'cat "{tmp_path}/poll$n.jsonl"\n',
+        encoding="utf-8",
+    )
     stub.chmod(0o755)
     env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
     args = [
@@ -155,6 +165,10 @@ def _main_with_stub(tmp_path, lines: str, *extra: str) -> subprocess.CompletedPr
         "required-checks",
     ]
     return subprocess.run([*args, *extra], capture_output=True, text=True, env=env, check=False)
+
+
+def _main_with_stub(tmp_path, lines: str, *extra: str) -> subprocess.CompletedProcess:
+    return _main_with_polls(tmp_path, [lines], "--interval", "0", *extra)
 
 
 def test_the_script_fails_on_a_skipped_check_and_names_it(tmp_path):
@@ -175,9 +189,67 @@ def test_the_script_passes_when_every_check_succeeded(tmp_path):
 
 def test_the_script_fails_when_checks_stay_pending(tmp_path):
     lines = '{"id":1,"name":"REUSE lint","status":"in_progress","conclusion":null}\n'
-    result = _main_with_stub(tmp_path, lines, "--interval", "1", "--timeout", "0")
+    result = _main_with_stub(tmp_path, lines, "--timeout", "0")
     assert result.returncode == 1
     assert "pending" in result.stderr
+
+
+# A forge status left at in_progress after the run finished (BACKLOG 2026-10-11: the Gitleaks
+# check run on e685ec1 held the aggregator for its whole 30 minute timeout).
+STALE = {"status": "in_progress", "conclusion": "success", "completed_at": "2026-10-11T19:00:00Z"}
+
+
+@pytest.mark.parametrize(
+    ("run", "done"),
+    [
+        pytest.param({**STALE}, True, id="stale-status-with-conclusion-and-time"),
+        pytest.param({**STALE, "conclusion": None}, False, id="no-conclusion"),
+        pytest.param({**STALE, "completed_at": None}, False, id="no-completion-time"),
+        pytest.param(
+            {**STALE, "status": "queued", "conclusion": None, "completed_at": None},
+            False,
+            id="queued",
+        ),
+        pytest.param({"status": "completed", "conclusion": "failure"}, True, id="completed"),
+    ],
+)
+def test_a_run_counts_as_finished_by_status_or_by_conclusion_and_time(run, done):
+    assert gate.finished({"id": 1, "name": "Gitleaks History Scan", **run}) is done
+
+
+def test_the_script_does_not_wait_on_a_stale_status(tmp_path):
+    lines = (
+        '{"id":1,"name":"Gitleaks History Scan","status":"in_progress","conclusion":"success",'
+        '"completed_at":"2026-10-11T19:00:00Z"}\n'
+    )
+    result = _main_with_stub(tmp_path, lines, "--timeout", "5")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_stale_status_still_reports_its_conclusion(tmp_path):
+    lines = (
+        '{"id":1,"name":"Gitleaks History Scan","status":"in_progress","conclusion":"failure",'
+        '"completed_at":"2026-10-11T19:00:00Z"}\n'
+    )
+    result = _main_with_stub(tmp_path, lines, "--timeout", "5")
+    assert result.returncode == 1
+    assert "::error::Gitleaks History Scan: failure" in result.stderr
+
+
+LINT_OK = '{"id":1,"name":"REUSE lint","status":"completed","conclusion":"success"}\n'
+GATE_QUEUED = '{"id":2,"name":"Security Scan Gate","status":"queued","conclusion":null}\n'
+
+
+@pytest.mark.parametrize(("late", "code"), [("failure", 1), ("success", 0)])
+def test_a_check_that_registers_after_the_others_finished_is_waited_for(tmp_path, late, code):
+    """A job that needs another one appears only once queued; one quiet poll must not pass."""
+    gate_done = (
+        f'{{"id":2,"name":"Security Scan Gate","status":"completed","conclusion":"{late}"}}\n'
+    )
+    polls = [LINT_OK, LINT_OK + GATE_QUEUED, LINT_OK + gate_done]
+    result = _main_with_polls(tmp_path, polls, "--interval", "0", "--timeout", "5")
+    assert result.returncode == code, result.stdout + result.stderr
+    assert "Security Scan Gate" in result.stdout
 
 
 def test_the_aggregator_runs_the_gate_and_allows_only_detector_gated_skips():
