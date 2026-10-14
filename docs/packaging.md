@@ -541,7 +541,7 @@ weekly, on every push to `main` and on pull requests that touch `versions.json`,
 
 - **What is pinned.** `modules.openzfs` in `versions.json` names the OpenZFS version, its
   tarball and detached signature, the tarball's `sha256`, the accepted signer
-  (`keys/4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc`, see [`keys/README.md`](../keys/README.md))
+  (`keys/4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc`, see [`keys/README.md`](https://github.com/cordanaLLM/nucleus/blob/main/keys/README.md))
   and the Linux range the release declares in its `META` file (`linux_minimum`,
   `linux_maximum`).
 - **Which streams.** The plan job builds every stream whose `major.minor` lies in that range
