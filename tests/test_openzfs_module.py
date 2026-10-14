@@ -141,7 +141,7 @@ def test_openzfs_workflow_shape():
     run_script = build_mod_step["run"]
     assert "cosign verify-blob" in run_script
     assert ".github/workflows/publish-release.yml@refs/tags/" in run_script
-    assert "https://token.actions.githubusercontent.com" in run_script
+    assert '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"' in run_script
 
 
 @needs_dpkg
