@@ -11,6 +11,7 @@
 ## 1. Mission & Architecture
 
 `cordanaLLM/nucleus` decouples low-level kernel compilation from cloud image creation:
+
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, OpenZFS 2.3 kmod compatibility, and NVMe-oF TCP optimizations.
@@ -101,18 +102,23 @@ sudo dpkg -i linux-image-*.deb linux-headers-*.deb
 For full artifact details, verification semantics, and current operational limits, see [Verify and Install a Release](docs/install.md).
 
 ### Prerequisites
+
 - An Ubuntu 26.04 host or container with the kernel build toolchain; the build workflows install
   it with the same script:
+
   ```bash
   sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
+
 - The Python test and documentation dependencies, from the hash-pinned lock file
   ([CONTRIBUTING.md](CONTRIBUTING.md) says how it is compiled):
+
   ```bash
   pip install --require-hashes -r requirements-test.txt
   ```
 
 ### Build & Packaging Recipes
+
 ```bash
 # Display all ergonomic developer targets
 make help
@@ -178,7 +184,7 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 
 ## 4. Repository Structure
 
-```
+```text
 .
 ├── .config/archetypes/         # praetor policy catalog, pinned by .standards.lock
 ├── .github/rulesets/main.json  # Branch ruleset rendered by `make ruleset`

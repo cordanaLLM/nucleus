@@ -32,8 +32,10 @@ To prevent architectural drift and preserve institutional knowledge across human
 | **Maintainer** | Triaging issues, reviewing PRs, maintaining CI/CD runners, managing signing keys, publishing official kernel releases | Direct merge rights on `main`, release signing authority, repository settings administration |
 | **Contributor** | Submitting code patches, kconfig improvements, test additions, documenting bugs, refining guides | Branch creation, PR submission, community discussion |
 
-### Becoming a Maintainer:
+### Becoming a Maintainer
+
 Contributors who consistently demonstrate:
+
 1. Strict adherence to code quality gates (NASA/JPL Power of 10, clean ShellCheck, test coverage).
 2. Deep understanding of Linux kernel configuration and packaging contracts.
 3. Constructive, collaborative code reviews across multiple release cycles.

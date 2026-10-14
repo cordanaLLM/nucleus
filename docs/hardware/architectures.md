@@ -42,6 +42,7 @@ All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collecti
 ## 3. Architecture-Specific Kernel Configurations
 
 ### 3.1 `x86_64` (AMD64)
+
 - **Architecture Level**: Built with `CONFIG_GENERIC_CPU=y` with microarchitecture level `v3` baseline (`AVX2`, `BMI1`, `BMI2`, `FMA`).
 - **Memory Management**: 5-level paging enabled (`CONFIG_X86_5LEVEL=y`) supporting up to 4 PB physical memory and 128 PB virtual address space.
 - **Microcode Loader**: Early microcode updating (`CONFIG_MICROCODE=y`) built-in for early speculative execution mitigation (Spectre v2, Retbleed, Downfall, SRSO).
@@ -49,6 +50,7 @@ All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collecti
 - **Requirement Prerequisites** (`kconfig/x86_64.config`): `CONFIG_IKCONFIG_PROC` for the `/proc/config.gz` probe; `CONFIG_DEBUG_KERNEL` and `CONFIG_DEBUG_INFO_DWARF5` so that `CONFIG_DEBUG_INFO_BTF` survives `olddefconfig` (the build host needs pahole 1.22 or newer); `CONFIG_BPF_LSM`; `CONFIG_POWERCAP` with `CONFIG_INTEL_RAPL=m`. The requirement documents and their bindings are in [Kernel Streams](../streams.md#5-consumer-bindings).
 
 ### 3.2 `arm64` (AArch64)
+
 - **Architecture Level**: Enforces ARMv8.2-A with Crypto Extensions (`CONFIG_ARM64_CRYPTO=y`, AES/SHA2/SHA3 accelerated via NEON/SVE).
 - **Pointer Authentication & BTI**:
   - `CONFIG_ARM64_PTR_AUTH=y`: In-kernel pointer authentication preventing return address hijacking.
@@ -61,6 +63,7 @@ All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collecti
 - **BPF trampolines**: the arm64 defconfig unsets `CONFIG_FTRACE`; the security baseline sets it with `CONFIG_FUNCTION_TRACER`, `CONFIG_DYNAMIC_FTRACE` and `CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS`. Direct calls need GCC's `-fpatchable-function-entry` (`DYNAMIC_FTRACE_WITH_ARGS`) and, before Linux 7.3, `DYNAMIC_FTRACE_WITH_CALL_OPS`, which a `CFI` or size-optimized build loses ([ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
 
 ### 3.3 `riscv64` (RISC-V 64-bit)
+
 - **Profile Alignment**: RVA22 / RVA23 profiles with standard extensions: `rv64imafdc_zicsr_zifencei_zba_zbb_zbs_zicboz_zicbom`.
 - **Vector Extension**: `CONFIG_RISCV_ISA_V=y` enabling hardware vector computing (RVV 1.0) for in-kernel cryptographic hashing and user-space AI workloads.
 - **Advanced Interrupt Architecture (AIA)**:
@@ -95,6 +98,7 @@ make build-kernel STREAM=mainstream ARCH=arm64 DRY_RUN=false
 ```
 
 Or directly via the build script:
+
 ```bash
 ./scripts/build_kernel.sh --stream=mainstream --arch=arm64 --dry-run
 ./scripts/build_kernel.sh --stream=mainstream --arch=arm64
@@ -114,6 +118,7 @@ python3 scripts/boot_smoke.py \
 ```
 
 The smoke test verifies:
+
 1. Detection of `Linux version <kernelrelease>` from the serial console.
 2. The static `/init` printed its `NUCLEUS-BOOT-SMOKE release=<kernelrelease>` line.
 3. QEMU exited before the timeout: the init powers the machine off with `reboot(RB_POWER_OFF)`, and a run killed at the timeout fails.
