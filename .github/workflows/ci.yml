@@ -25,7 +25,7 @@ jobs:
   lint-and-test:
     name: Lint & Pytest Quality Gates
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -43,10 +43,15 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      # 3.12 is the floor pyproject.toml declares and stays the default python (setup-python
+      # makes the last listed version the default); 3.14 is the python3 of ubuntu:26.04, which
+      # runs the artifact gate, the boot test and the manifest in every build and release.
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
-          python-version: "3.12"
+          python-version: |
+            3.14
+            3.12
 
       - name: Install System Dependencies
         run: |
@@ -65,6 +70,15 @@ jobs:
           make audit
           make test
           make docs-build
+
+      # The same lock and suite on the build container's interpreter. The job keeps one
+      # name, so the required check context the ruleset names does not change.
+      - name: Pytest on Python 3.14
+        run: |
+          set -euo pipefail
+          python3.14 -m venv "${RUNNER_TEMP}/py314"
+          "${RUNNER_TEMP}/py314/bin/pip" install --no-cache-dir --require-hashes -r requirements-test.txt
+          PATH="${RUNNER_TEMP}/py314/bin:${PATH}" python -m pytest -q -p no:cacheprovider
 
       # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
       # commit carries fails only at "Set up job" of the workflow that uses it.
