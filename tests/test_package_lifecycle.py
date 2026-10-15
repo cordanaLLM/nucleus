@@ -105,44 +105,11 @@ def test_find_package_debs_refuses_missing_or_duplicate(tmp_path: Path) -> None:
         plc.find_package_debs(tmp_path, kr)
 
 
-@pytest.fixture
-def mock_lifecycle_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Set up mock release assets, fake root tree, and stub dpkg/dpkg-query tools."""
-    fake_root = tmp_path / "root"
-    fake_root.mkdir()
-    (fake_root / "boot").mkdir()
-    (fake_root / "lib" / "modules").mkdir(parents=True)
-    (fake_root / "usr" / "src").mkdir(parents=True)
-
-    prev_dir = tmp_path / "prev_release"
-    prev_dir.mkdir()
-    prev_kr = "7.2.8-lusoris1-mainstream"
-    (prev_dir / f"vmlinuz-{prev_kr}").write_bytes(b"VMLINUZ_PREV_12345")
-    (prev_dir / "kernel-mainstream-x86_64.config").write_bytes(b"CONFIG_PREV_12345")
-    (prev_dir / f"linux-image-{prev_kr}_7.2.8-lusoris1_amd64.deb").write_bytes(b"deb")
-    (prev_dir / f"linux-headers-{prev_kr}_7.2.8-lusoris1_amd64.deb").write_bytes(b"deb")
-
-    rel_dir = tmp_path / "target_release"
-    rel_dir.mkdir()
-    rel_kr = "7.2.8-lusoris2-mainstream"
-    (rel_dir / f"vmlinuz-{rel_kr}").write_bytes(b"VMLINUZ_TARGET_67890")
-    (rel_dir / "kernel-mainstream-x86_64.config").write_bytes(b"CONFIG_TARGET_67890")
-    (rel_dir / f"linux-image-{rel_kr}_7.2.8-lusoris2_amd64.deb").write_bytes(b"deb")
-    (rel_dir / f"linux-headers-{rel_kr}_7.2.8-lusoris2_amd64.deb").write_bytes(b"deb")
-
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-
-    dpkg_query_script = bin_dir / "dpkg-query"
-    dpkg_query_script.write_text("#!/bin/sh\necho 'install ok installed'\n", encoding="utf-8")
-    dpkg_query_script.chmod(dpkg_query_script.stat().st_mode | stat.S_IEXEC)
-
-    dpkg_script = bin_dir / "dpkg"
-    dpkg_script_content = f"""#!/bin/sh
+DPKG_STUB = """#!/bin/sh
 set -e
 action="$1"
 shift
-ROOT="{fake_root}"
+ROOT="@ROOT@"
 if [ "$action" = "-i" ]; then
   for deb in "$@"; do
     base=$(basename "$deb")
@@ -150,7 +117,7 @@ if [ "$action" = "-i" ]; then
     case "$base" in
       linux-image-*)
         kr=$(echo "$base" | sed -E 's/^linux-image-([^_]+)_.*$/\\1/')
-        if [ "${{CLOBBER_OTHER_KERNELS:-}}" = "1" ]; then
+        if [ "${CLOBBER_OTHER_KERNELS:-}" = "1" ]; then
           rm -f "$ROOT"/boot/vmlinuz-*
         fi
         mkdir -p "$ROOT/boot" "$ROOT/lib/modules/$kr"
@@ -170,18 +137,53 @@ elif [ "$action" = "--purge" ]; then
   for pkg in "$@"; do
     case "$pkg" in
       linux-image-*)
-        kr=${{pkg#linux-image-}}
+        kr=${pkg#linux-image-}
         rm -f "$ROOT/boot/vmlinuz-$kr" "$ROOT/boot/config-$kr" "$ROOT/boot/System.map-$kr" "$ROOT/boot/initrd.img-$kr"
         rm -rf "$ROOT/lib/modules/$kr"
         ;;
       linux-headers-*)
-        kr=${{pkg#linux-headers-}}
+        kr=${pkg#linux-headers-}
         rm -rf "$ROOT/usr/src/linux-headers-$kr"
         ;;
     esac
   done
 fi
 """
+
+
+def _write_release(directory: Path, kr: str, version: str, mark: str) -> Path:
+    """A release directory with the kernel, its config and the image and headers packages."""
+    directory.mkdir()
+    (directory / f"vmlinuz-{kr}").write_bytes(f"VMLINUZ_{mark}".encode())
+    (directory / "kernel-mainstream-x86_64.config").write_bytes(f"CONFIG_{mark}".encode())
+    (directory / f"linux-image-{kr}_{version}_amd64.deb").write_bytes(b"deb")
+    (directory / f"linux-headers-{kr}_{version}_amd64.deb").write_bytes(b"deb")
+    return directory
+
+
+@pytest.fixture
+def mock_lifecycle_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Set up mock release assets, fake root tree, and stub dpkg/dpkg-query tools."""
+    fake_root = tmp_path / "root"
+    fake_root.mkdir()
+    (fake_root / "boot").mkdir()
+    (fake_root / "lib" / "modules").mkdir(parents=True)
+    (fake_root / "usr" / "src").mkdir(parents=True)
+
+    prev_kr = "7.2.8-lusoris1-mainstream"
+    prev_dir = _write_release(tmp_path / "prev_release", prev_kr, "7.2.8-lusoris1", "PREV_12345")
+    rel_kr = "7.2.8-lusoris2-mainstream"
+    rel_dir = _write_release(tmp_path / "target_release", rel_kr, "7.2.8-lusoris2", "TARGET_67890")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    dpkg_query_script = bin_dir / "dpkg-query"
+    dpkg_query_script.write_text("#!/bin/sh\necho 'install ok installed'\n", encoding="utf-8")
+    dpkg_query_script.chmod(dpkg_query_script.stat().st_mode | stat.S_IEXEC)
+
+    dpkg_script = bin_dir / "dpkg"
+    dpkg_script_content = DPKG_STUB.replace("@ROOT@", str(fake_root))
     dpkg_script.write_text(dpkg_script_content, encoding="utf-8")
     dpkg_script.chmod(dpkg_script.stat().st_mode | stat.S_IEXEC)
 
