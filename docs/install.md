@@ -8,7 +8,7 @@
 
 A kernel release is tagged `v<version>-<stream>-lusoris<N>` ([Packaging](packaging.md), section 5.4). Pick the tag from the [releases list](https://github.com/cordanaLLM/nucleus/releases), not from the forge's "Latest release" link: tags of the form `nucleus-v<X.Y.Z>` are releases of the repository tooling, carry no kernel, and can be the latest one.
 
-Each kernel release carries ten assets, the files the `Publish to GitHub Release` step of `.github/workflows/publish-release.yml` uploads:
+Each kernel release carries eleven assets, the files the `Publish to GitHub Release` step of `.github/workflows/publish-release.yml` uploads:
 
 | Asset | Content |
 | :--- | :--- |
@@ -22,6 +22,7 @@ Each kernel release carries ten assets, the files the `Publish to GitHub Release
 | `kernel-<stream>.manifest.json` | Digests and provenance for `cordanaLLM/imago` (`imago.nucleus.kernel-artifact.v1`) |
 | `SHA256SUMS` | Checksums of the seven files above the manifest |
 | `SHA256SUMS.bundle` | Keyless cosign signature and certificate over `SHA256SUMS` |
+| `kernel-<stream>.provenance.sigstore.json` | SLSA Build Level 3 build provenance attestation bundle (`actions/attest-build-provenance`) |
 
 For a stable version, `<kernelrelease>` is `<version>-lusoris<N>-<stream>` and `<pkgversion>` is `<version>-lusoris<N>`. A release candidate is spelled differently in both; [Packaging](packaging.md), section 2.2, gives the rule.
 
@@ -38,16 +39,26 @@ The same files are on the release's page in the releases list.
 Check the signature over the checksum file first, then the files against it. The certificate names the workflow and the tag that built the release:
 
 ```bash
-cosign verify-blob --bundle SHA256SUMS.bundle --certificate-identity "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/<release-tag>" --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+cosign verify-blob --bundle SHA256SUMS.bundle --certificate-identity "https://github.com/cordanaLLM/nucleus/.github/workflows/release-build.yml@refs/tags/<release-tag>" --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
 ```
 
 `cosign` prints `Verified OK`. It refuses a `SHA256SUMS` with a changed byte, and a certificate that another workflow obtained.
+
+For releases built under SLSA Build Level 3, the signer identity is `https://github.com/cordanaLLM/nucleus/.github/workflows/release-build.yml@refs/tags/<release-tag>`. The 20 legacy tags listed in `release-signers.json` (every kernel release published up to 2026-10-15) were built and signed directly by `.github/workflows/publish-release.yml` (`https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/<release-tag>`). You can run `python3 scripts/release_signer_identity.py --repo cordanaLLM/nucleus --tag <release-tag>` to print the exact expected identity for any release tag.
+
+To verify SLSA Build Level 3 build provenance for any published release artifact:
+
+```bash
+gh attestation verify <file> -R cordanaLLM/nucleus
+```
+
+Offline, pass the release's own attestation bundle: `gh attestation verify <file> -R cordanaLLM/nucleus --bundle kernel-<stream>.provenance.sigstore.json`. Releases among the 20 legacy tags carry no attestation.
 
 ```bash
 sha256sum -c SHA256SUMS
 ```
 
-Seven lines end in `OK`. The manifest and the bundle are not listed, because the workflow writes both after the checksum file.
+Seven lines end in `OK`. The manifest, the provenance bundle, and the cosign bundle are not listed, because the workflow writes them after the checksum file.
 
 Before the workflow signs, `scripts/check_kernel_artifacts.py` has opened every package and `scripts/boot_smoke.py` has booted the kernel under QEMU ([Packaging](packaging.md), sections 2.4 and 2.5).
 

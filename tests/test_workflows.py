@@ -24,9 +24,9 @@ EVERY_RUN_CONDITIONS = {"always()", "!cancelled()", "success()||failure()", "fai
 
 
 def test_workflows_count():
-    """Ensure all 16 production CI/CD workflows exist."""
+    """Ensure all 17 production CI/CD workflows exist."""
     workflows = list(WORKFLOWS_DIR.glob("*.yml"))
-    assert len(workflows) == 16, f"Expected exactly 16 workflows, found {len(workflows)}"
+    assert len(workflows) == 17, f"Expected exactly 17 workflows, found {len(workflows)}"
 
 
 def test_workflows_least_privilege_permissions():
@@ -45,20 +45,22 @@ def test_workflows_least_privilege_permissions():
             )
 
 
-def test_publish_release_ships_kernel_artifact_manifest():
-    """Ensure publish-release.yml generates, uploads, and announces the imago kernel artifact manifest."""
-    workflow = WORKFLOWS_DIR / "publish-release.yml"
-    parsed = yaml.safe_load(workflow.read_text(encoding="utf-8"))
-    steps = parsed["jobs"]["publish"]["steps"]
-    names = [step.get("name", "") for step in steps]
+def _release_build_steps():
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "release-build.yml").read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["build"]["steps"]
+    return steps, [step.get("name", "") for step in steps]
 
-    build = names.index("Build and Boot the Tagged Stream")
-    gate = names.index("Gate the Kernel Artifacts")
-    sign = names.index("Checksum and Sign the Release")
-    manifest = names.index("Generate Kernel Artifact Manifest")
-    publish = names.index("Publish to GitHub Release")
-    assert build < gate < sign < manifest < publish, "gate before checksums, manifest after signing"
-    run = steps[manifest]["run"]
+
+def test_publish_release_ships_kernel_artifact_manifest():
+    """Ensure publish-release.yml and release-build.yml generate, upload, and announce the imago kernel artifact manifest."""
+    build_steps, build_names = _release_build_steps()
+    build = build_names.index("Build and Boot the Tagged Stream")
+    gate = build_names.index("Gate the Kernel Artifacts")
+    sign = build_names.index("Sign and Verify the Release")
+    manifest = build_names.index("Generate Kernel Artifact Manifest")
+    upload = build_names.index("Upload Release Artifacts")
+    assert build < gate < sign < manifest < upload, "gate before checksums, manifest after signing"
+    run = build_steps[manifest]["run"]
     assert "python3 scripts/kernel_artifact_manifest.py --dir=output" in run
     bound = {
         "--stream": "STREAM",
@@ -72,17 +74,24 @@ def test_publish_release_ships_kernel_artifact_manifest():
     for option, variable in bound.items():
         assert f'{option}="${{{variable}}}"' in run, f"the manifest step must pass {option}"
 
-    files = steps[publish]["with"]["files"]
+    publish_wf = WORKFLOWS_DIR / "publish-release.yml"
+    publish_parsed = yaml.safe_load(publish_wf.read_text(encoding="utf-8"))
+    publish_steps = publish_parsed["jobs"]["publish"]["steps"]
+    publish_names = [step.get("name", "") for step in publish_steps]
+    publish = publish_names.index("Publish to GitHub Release")
+
+    files = publish_steps[publish]["with"]["files"]
     for pattern in (
         "output/*.deb",
         "output/vmlinuz-*",
         "output/*.manifest.json",
         "output/*.config",
         "output/SHA256SUMS*",
+        "output/*.provenance.sigstore.json",
     ):
         assert pattern in files, f"release upload must include {pattern}"
 
-    dispatch = steps[names.index("Dispatch Downstream Notification to imago")]
+    dispatch = publish_steps[publish_names.index("Dispatch Downstream Notification to imago")]
     payload = dispatch["with"]["client-payload"]
     for key in ("stream", "version", "tag"):
         assert f'"{key}"' in payload, f"downstream payload must carry {key}"
@@ -90,7 +99,7 @@ def test_publish_release_ships_kernel_artifact_manifest():
 
 def test_publish_release_builds_gates_and_records_what_it_built():
     """Issue #18: a real build of the tagged stream, gated, with the measured release in the manifest."""
-    steps, names = _publish_release_steps()
+    steps, names = _release_build_steps()
     build = steps[names.index("Build and Boot the Tagged Stream")]
     assert "./scripts/build_kernel.sh" in build["run"] and "--arch=x86_64" in build["run"]
     assert '--revision="${REVISION}"' in build["run"]
@@ -103,16 +112,26 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert "--cross" not in gate["run"], (
         "the release builds natively and must ship its headers package"
     )
-    sign = steps[names.index("Checksum and Sign the Release")]["run"]
-    assert sign.index("publish_release.sh") < sign.index("cosign sign-blob")
-    assert "OUTPUT_DIR=output" in sign and "|| true" not in sign
+    assert (
+        names.index("Write SBOMs and Checksum the Release")
+        < names.index("Attest Build Provenance")
+        < names.index("Sign and Verify the Release")
+    )
+    checksum_run = steps[names.index("Write SBOMs and Checksum the Release")]["run"]
+    assert (
+        "publish_release.sh" in checksum_run
+        and "OUTPUT_DIR=output" in checksum_run
+        and "|| true" not in checksum_run
+    )
+    sign_run = steps[names.index("Sign and Verify the Release")]["run"]
+    assert "cosign sign-blob" in sign_run
     manifest = steps[names.index("Generate Kernel Artifact Manifest")]
     assert manifest["env"]["KERNELRELEASE"] == "${{ steps.gate.outputs.kernelrelease }}"
     assert manifest["env"]["REVISION"] == "${{ steps.rev.outputs.revision }}"
     assert '--kernelrelease="${KERNELRELEASE}"' in manifest["run"]
     assert '--revision="${REVISION}"' in manifest["run"]
     assert "GITHUB_SHA" not in manifest["run"]
-    text = (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
+    text = (WORKFLOWS_DIR / "release-build.yml").read_text(encoding="utf-8")
     assert "-lusoris1" not in text, "no hardcoded revision"
     assert "/dev/urandom" not in text
     checkout = steps[names.index("Checkout Repository")]
@@ -120,10 +139,10 @@ def test_publish_release_builds_gates_and_records_what_it_built():
 
 
 def test_publish_release_refuses_existing_release():
-    """publish-release.yml refuses to run for a tag whose release already exists (gap row C14-2)."""
-    steps, names = _publish_release_steps()
+    """release-build.yml refuses to run for a tag whose release already exists (gap row C14-2)."""
+    steps, names = _release_build_steps()
     step_name = "Refuse Existing Release"
-    assert step_name in names, f"'{step_name}' step missing from publish-release.yml"
+    assert step_name in names, f"'{step_name}' step missing from release-build.yml"
     refuse_idx = names.index(step_name)
     meta_idx = names.index("Resolve Stream and Version")
     build_idx = names.index("Build and Boot the Tagged Stream")
@@ -303,7 +322,7 @@ def test_build_matrix_compiler_cache_is_restored_by_prefix_and_saved_under_a_new
 
 def test_publish_release_container_cannot_rewrite_what_the_host_runs_next():
     """The checkout is read-only in the build container; only output/, records/ and work dirs are not."""
-    steps, names = _publish_release_steps()
+    steps, names = _release_build_steps()
     run = steps[names.index("Build and Boot the Tagged Stream")]["run"]
     mounts = re.findall(r'-v "?([^"\s)]+)"?', run)
     assert "${GITHUB_WORKSPACE}:/forge:ro" in mounts
@@ -320,13 +339,13 @@ def test_publish_release_container_cannot_rewrite_what_the_host_runs_next():
 
 
 def test_publish_release_boots_the_kernel_before_anything_is_signed():
-    steps, names = _publish_release_steps()
+    steps, names = _release_build_steps()
     run = steps[names.index("Build and Boot the Tagged Stream")]["run"]
     assert run.index("./scripts/build_kernel.sh") < run.index("python3 scripts/boot_smoke.py")
     assert '--log="records/boot-${STREAM}-x86_64.log"' in run
     assert 'exit "${status}"' in run and "|| status=$?" in run
     assert names.index("Build and Boot the Tagged Stream") < names.index(
-        "Checksum and Sign the Release"
+        "Sign and Verify the Release"
     )
     keep = steps[names.index("Keep the Build Record and Boot Log")]
     assert keep["if"] == "always()" and keep["with"]["path"] == "records/"
@@ -344,7 +363,7 @@ def test_every_ubuntu_26_04_container_is_pinned_to_one_digest():
     assert len(found) == 1, found
     image, users = next(iter(found.items()))
     assert "@sha256:" in image
-    for name in ("build-matrix.yml", "publish-release.yml", "ci.yml", "verify-requirements.yml"):
+    for name in ("build-matrix.yml", "release-build.yml", "ci.yml", "verify-requirements.yml"):
         assert name in users, name
 
 
@@ -572,7 +591,7 @@ def _publish_release_steps():
 
 def test_publish_release_resolves_tags_without_fallback():
     """A kernel tag must resolve to exactly one versions.json stream; there is no default."""
-    steps, names = _publish_release_steps()
+    steps, names = _release_build_steps()
     resolve = steps[names.index("Resolve Stream and Version")]
     assert resolve["id"] == "meta"
     assert "scripts/resolve_release_tag.py" in resolve["run"]
@@ -585,17 +604,20 @@ def test_publish_release_resolves_tags_without_fallback():
 
 def test_publish_release_tag_and_ref_cannot_diverge():
     """A dispatched run must start from the tag it releases, and the release names that tag."""
-    steps, names = _publish_release_steps()
-    resolve = steps[names.index("Resolve Stream and Version")]
+    build_steps, build_names = _release_build_steps()
+    resolve = build_steps[build_names.index("Resolve Stream and Version")]
     assert '--ref "${GITHUB_REF}"' in resolve["run"], (
         "the resolver must compare the run's ref with the tag"
     )
-    release = steps[names.index("Publish to GitHub Release")]
-    assert release["with"]["tag_name"] == "${{ steps.meta.outputs.release_tag }}"
+    publish_steps, publish_names = _publish_release_steps()
+    release = publish_steps[publish_names.index("Publish to GitHub Release")]
+    assert release["with"]["tag_name"] == "${{ needs.build.outputs.release_tag }}"
 
 
 def _guard_step():
-    steps, names = _publish_release_steps()
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["preflight"]["steps"]
+    names = [step.get("name", "") for step in steps]
     return (
         steps,
         names,
@@ -618,31 +640,33 @@ def _run_guard(token_set: str) -> subprocess.CompletedProcess:
 
 def test_publish_release_dispatch_requires_kernel_forge_token():
     """GITHUB_TOKEN cannot dispatch to another repository, so nothing falls back to it."""
-    steps, names, guard = _guard_step()
-    dispatch = steps[names.index("Dispatch Downstream Notification to imago")]
+    _, _, guard = _guard_step()
+    publish_steps, publish_names = _publish_release_steps()
+    dispatch = publish_steps[publish_names.index("Dispatch Downstream Notification to imago")]
     assert dispatch["with"]["token"] == "${{ secrets.KERNEL_FORGE_TOKEN }}"
     assert guard["env"] == {"KERNEL_FORGE_TOKEN_SET": "${{ secrets.KERNEL_FORGE_TOKEN != '' }}"}
     assert "${{" not in guard["run"], "the guard reads its env, never an inline expression"
     payload = dispatch["with"]["client-payload"]
-    assert "steps.meta.outputs.release_version" in payload
-    assert "steps.meta.outputs.release_tag" in payload
+    assert "needs.build.outputs.release_version" in payload
+    assert "needs.build.outputs.release_tag" in payload
 
 
 def test_publish_release_stops_before_building_or_publishing_without_the_token():
-    """A missing credential must publish nothing: the guard runs before every other step."""
-    _, names, _ = _guard_step()
-    guard = names.index("Require KERNEL_FORGE_TOKEN for the Downstream Dispatch")
-    for later in ("Build and Boot the Tagged Stream", "Publish to GitHub Release"):
-        assert guard < names.index(later), f"the guard must run before {later!r}"
+    """A missing credential must publish nothing: preflight runs before build and publish."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8"))
+    jobs = parsed["jobs"]
+    assert "preflight" in jobs
+    assert "build" in jobs and jobs["build"].get("needs") == "preflight"
+    assert "publish" in jobs and jobs["publish"].get("needs") == "build"
 
 
 def test_publish_release_secret_is_read_only_by_the_dispatch_step():
     """ADR-0005: the token value reaches the dispatch step alone; the guard sees a boolean."""
-    steps, names, _ = _guard_step()
-    dispatch = names.index("Dispatch Downstream Notification to imago")
+    publish_steps, publish_names = _publish_release_steps()
+    dispatch = publish_names.index("Dispatch Downstream Notification to imago")
     text = (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
     plain = re.findall(r"secrets\.KERNEL_FORGE_TOKEN(?! != '')", text)
-    assert len(plain) == 1 and "secrets.KERNEL_FORGE_TOKEN" in str(steps[dispatch])
+    assert len(plain) == 1 and "secrets.KERNEL_FORGE_TOKEN" in str(publish_steps[dispatch])
     assert "secrets.GITHUB_TOKEN" not in text, "there is no fallback to GITHUB_TOKEN"
 
 
@@ -1042,12 +1066,8 @@ def test_package_lifecycle_workflow_contract():
 
     # cosign identity string
     assert "cosign verify-blob" in combined_run
-    assert (
-        "--certificate-identity" in combined_run
-        and "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/publish-release.yml"
-        "@refs/tags/${tag}"
-        in combined_run
-    )
+    assert '--certificate-identity "${identity}"' in combined_run
+    assert "scripts/release_signer_identity.py" in combined_run
     assert "cordanaLLM/nucleus" not in workflow_path.read_text(encoding="utf-8"), (
         "a fork verifies its own releases"
     )

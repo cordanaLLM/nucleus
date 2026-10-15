@@ -165,6 +165,18 @@ def test_a_file_that_is_not_listed_is_refused(release):
     _refused(release, "not listed in SHA256SUMS: planted.deb")
 
 
+def test_the_provenance_bundle_written_after_checksumming_is_accepted(release):
+    """release-build.yml writes the attestation bundle after SHA256SUMS; it is not a stranger."""
+    (release / f"kernel-{STREAM}.provenance.sigstore.json").write_bytes(b"{}")
+    result = _run(release)
+    assert result.returncode == 0, result.stderr
+
+
+def test_a_provenance_bundle_of_another_stream_is_refused(release):
+    (release / "kernel-lts.provenance.sigstore.json").write_bytes(b"{}")
+    _refused(release, "not listed in SHA256SUMS: kernel-lts.provenance.sigstore.json")
+
+
 def test_an_unsigned_release_is_refused(release):
     (release / "SHA256SUMS.bundle").unlink()
     _refused(release, "SHA256SUMS has not been signed")

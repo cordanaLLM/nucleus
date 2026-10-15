@@ -111,11 +111,12 @@ def test_openzfs_workflow_shape():
     assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
     assert on_triggers["push"]["branches"] == ["main"]
 
-    # Container image digest equals publish-release.yml
-    publish_parsed = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))
+    # Container image digest equals release-build.yml
+    release_build_workflow = REPO_ROOT / ".github" / "workflows" / "release-build.yml"
+    build_parsed = yaml.safe_load(release_build_workflow.read_text(encoding="utf-8"))
     build_step = next(
         s
-        for s in publish_parsed["jobs"]["publish"]["steps"]
+        for s in build_parsed["jobs"]["build"]["steps"]
         if s.get("name") == "Build and Boot the Tagged Stream"
     )
     expected_image = build_step["env"]["BUILD_IMAGE"]
@@ -140,7 +141,7 @@ def test_openzfs_workflow_shape():
     )
     run_script = build_mod_step["run"]
     assert "cosign verify-blob" in run_script
-    assert ".github/workflows/publish-release.yml@refs/tags/" in run_script
+    assert "scripts/release_signer_identity.py" in run_script
     assert '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"' in run_script
 
 

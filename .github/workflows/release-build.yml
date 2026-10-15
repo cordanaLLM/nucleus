@@ -1,0 +1,223 @@
+---
+name: release-build
+
+# Reusable release build (ADR-0012). It compiles, gates, boots, generates SBOMs,
+# attests SLSA Build Level 3 provenance in the same job, signs SHA256SUMS keyless
+# with cosign, and uploads the artifacts for the caller's publish job. The
+# attestation is signed with this workflow's identity, isolated from the caller.
+# No artifact is downloaded or restored from cache before the attestation.
+# publish-release.yml is the caller.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Kernel release tag (optional; passed from caller workflow_dispatch)"
+        type: string
+        required: false
+    outputs:
+      stream:
+        description: "Kernel stream name"
+        value: ${{ jobs.build.outputs.stream }}
+      release_version:
+        description: "Package version <version>-lusoris<N>"
+        value: ${{ jobs.build.outputs.release_version }}
+      release_tag:
+        description: "Release tag v<version>-<stream>-lusoris<N>"
+        value: ${{ jobs.build.outputs.release_tag }}
+      artifact-name:
+        description: "Name of the uploaded artifact containing release files"
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, Gate, Attest, and Sign Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    outputs:
+      stream: ${{ steps.meta.outputs.stream }}
+      release_version: ${{ steps.meta.outputs.release_version }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      artifact-name: ${{ steps.package.outputs.artifact-name }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
+
+      - name: Resolve Stream and Version
+        id: meta
+        env:
+          TAG_INPUT: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --ref "${GITHUB_REF}" --github-output "${GITHUB_OUTPUT}"
+
+      - name: Refuse Existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          ./scripts/refuse_existing_release.sh --repo "${REPO}" --tag "${RELEASE_TAG}"
+
+      - name: Record the Tagged Revision
+        id: rev
+        run: |
+          set -euo pipefail
+          built="$(git rev-parse --verify 'HEAD^{commit}')"
+          tagged="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
+          if [[ "${built}" != "${tagged}" ]]; then
+            echo "::error title=Revision mismatch::checked out ${built}, the run's ref is ${tagged}" >&2
+            exit 1
+          fi
+          echo "revision=${built}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and Boot the Tagged Stream
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          REVISION: ${{ steps.meta.outputs.rev }}
+          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+        run: |
+          set -euo pipefail
+          make build-kernel STREAM="${STREAM}" ARCH=x86_64 DRY_RUN=true
+          mkdir -p output records "${RUNNER_TEMP}/nucleus-build"
+          mounts=(-v "${GITHUB_WORKSPACE}:/forge:ro" -v "${GITHUB_WORKSPACE}/output:/forge/output"
+            -v "${GITHUB_WORKSPACE}/records:/forge/records" -v "${RUNNER_TEMP}/nucleus-build:/work/temp")
+          if [[ -d /mnt ]]; then
+            sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/nucleus-build
+            mounts+=(-v /mnt/nucleus-build:/work/mnt)
+          fi
+          docker run --rm "${mounts[@]}" -w /forge \
+            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
+              set -euo pipefail
+              bash ./scripts/install-build-toolchain.sh --with-qemu
+              candidates=(/work/temp)
+              if [[ -d /work/mnt ]]; then candidates+=(/work/mnt); fi
+              base="$(./scripts/probe-build-space.sh "${candidates[@]}")"
+              status=0
+              ./scripts/build_kernel.sh --stream="${STREAM}" --arch=x86_64 --revision="${REVISION}" \
+                --work-dir="${base}/nucleus-build" --output-dir=output || status=$?
+              if [[ -f "${base}/nucleus-build/${STREAM}-x86_64/build.json" ]]; then
+                cp "${base}/nucleus-build/${STREAM}-x86_64/build.json" records/build.json
+              fi
+              if [[ "${status}" -eq 0 ]]; then
+                kernels=(output/vmlinuz-*)
+                python3 scripts/boot_smoke.py --kernel="${kernels[0]}" \
+                  --kernelrelease="${kernels[0]#output/vmlinuz-}" --timeout=300 \
+                  --log="records/boot-${STREAM}-x86_64.log" || status=$?
+              fi
+              chown -R "${HOST_UID}:${HOST_GID}" output records
+              exit "${status}"'
+
+      - name: Gate the Kernel Artifacts
+        id: gate
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          REVISION: ${{ steps.meta.outputs.rev }}
+        run: |
+          set -euo pipefail
+          if [[ -L records/build.json || ! -f records/build.json ]]; then
+            echo "::error title=No build record::records/build.json is missing or not a regular file" >&2
+            exit 1
+          fi
+          kernelrelease="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["kernelrelease"])' records/build.json)"
+          python3 scripts/check_kernel_artifacts.py --dir=output --stream="${STREAM}" --arch=x86_64 \
+            --revision="${REVISION}" --kernelrelease="${kernelrelease}"
+          echo "kernelrelease=${kernelrelease}" >> "${GITHUB_OUTPUT}"
+
+      - name: Keep the Build Record and Boot Log
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: release-records
+          path: records/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Write SBOMs and Checksum the Release
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"
+          syft dir:output/ -o "spdx-json=output/kernel-${STREAM}.spdx.json"
+          OUTPUT_DIR=output ./scripts/publish_release.sh "${RELEASE_TAG}"
+
+      - name: Attest Build Provenance
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            output/*.deb
+            output/vmlinuz-*
+            output/*.config
+            output/*.cdx.json
+            output/*.spdx.json
+
+      - name: Keep the Provenance Bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          STREAM: ${{ steps.meta.outputs.stream }}
+        run: |
+          set -euo pipefail
+          cp "${BUNDLE}" "output/kernel-${STREAM}.provenance.sigstore.json"
+
+      - name: Sign and Verify the Release
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
+          cosign verify-blob \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-build.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --bundle output/SHA256SUMS.bundle \
+            output/SHA256SUMS
+          (cd output && sha256sum --check SHA256SUMS)
+
+      - name: Generate Kernel Artifact Manifest
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          VERSION: ${{ steps.meta.outputs.release_version }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          KERNELRELEASE: ${{ steps.gate.outputs.kernelrelease }}
+          REVISION: ${{ steps.rev.outputs.revision }}
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release-build.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python3 scripts/kernel_artifact_manifest.py --dir=output --stream="${STREAM}" \
+            --version="${VERSION}" --kernelrelease="${KERNELRELEASE}" --tag="${RELEASE_TAG}" \
+            --revision="${REVISION}" --repository="${GITHUB_REPOSITORY}" \
+            --signer-identity="${SIGNER_IDENTITY}"
+
+      - name: Record Artifact Name
+        id: package
+        run: |
+          set -euo pipefail
+          echo "artifact-name=kernel-release-${{ steps.meta.outputs.release_tag }}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: ${{ steps.package.outputs.artifact-name }}
+          path: output/
+          if-no-files-found: error

@@ -85,15 +85,16 @@ def read_checksums(out: Path) -> list[tuple[str, str]]:
     return entries
 
 
-def check_complete(out: Path, entries: list[tuple[str, str]], target: str) -> None:
-    """Every file in the directory is listed, apart from the checksums, bundle and manifest."""
+def check_complete(out: Path, entries: list[tuple[str, str]], target: str, provenance: str) -> None:
+    """Every file in the directory is listed, apart from the checksums, bundle, manifest and
+    provenance bundle, which actions/attest-build-provenance writes after SHA256SUMS."""
     if not regular_file(out / BUNDLE):
         raise ManifestError(f"{out / BUNDLE} is missing: SHA256SUMS has not been signed")
     listed = {name for name, _ in entries}
     unlisted = sorted(
         path.name
         for path in out.iterdir()
-        if path.name not in listed and path.name not in (CHECKSUMS, BUNDLE, target)
+        if path.name not in listed and path.name not in (CHECKSUMS, BUNDLE, target, provenance)
     )
     if unlisted:
         raise ManifestError(f"not listed in {CHECKSUMS}: {', '.join(unlisted)}")
@@ -103,7 +104,12 @@ def build_manifest(args: argparse.Namespace) -> dict:
     out: Path = args.dir
     config = f"kernel-{args.stream}-{ARCH}.config"
     entries = read_checksums(out)
-    check_complete(out, entries, f"kernel-{args.stream}.manifest.json")
+    check_complete(
+        out,
+        entries,
+        f"kernel-{args.stream}.manifest.json",
+        f"kernel-{args.stream}.provenance.sigstore.json",
+    )
     digests = dict(entries)
     if config not in digests:
         raise ManifestError(f"{config} is not in {CHECKSUMS}: there is no configuration to digest")

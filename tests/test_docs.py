@@ -99,14 +99,16 @@ def test_adr_files_complete():
         assert f"adr/{adr.name}" in nav_paths, f"{adr.name} is missing from mkdocs.yml nav"
 
 
-def _check_certificate_identity(workflow: dict, install_content: str, readme_content: str) -> None:
+def _check_certificate_identity(
+    build_workflow: dict, install_content: str, readme_content: str
+) -> None:
     signer_identity_raw = None
-    for step in workflow.get("jobs", {}).get("publish", {}).get("steps", []):
+    for step in build_workflow.get("jobs", {}).get("build", {}).get("steps", []):
         env = step.get("env", {})
         if "SIGNER_IDENTITY" in env:
             signer_identity_raw = env["SIGNER_IDENTITY"]
             break
-    assert signer_identity_raw is not None, "SIGNER_IDENTITY missing in publish-release.yml"
+    assert signer_identity_raw is not None, "SIGNER_IDENTITY missing in release-build.yml"
 
     m = re.search(
         r"https://github\.com/\$\{\{\s*github\.repository\s*\}\}/([^@]+)@", signer_identity_raw
@@ -160,8 +162,8 @@ def _check_table_assets_match_publish_globs(workflow: dict, install_content: str
     ]
 
     table_assets = re.findall(r"^\|\s*`([^`]+)`\s*\|", install_content, re.MULTILINE)
-    assert len(table_assets) == 10, (
-        f"Expected 10 table assets in docs/install.md, found {len(table_assets)}: {table_assets}"
+    assert len(table_assets) == 11, (
+        f"Expected 11 table assets in docs/install.md, found {len(table_assets)}: {table_assets}"
     )
     for asset in table_assets:
         matched = any(fnmatch.fnmatch(asset, g) for g in globs)
@@ -203,7 +205,12 @@ def test_install_page_matches_release_workflow():
     with open(workflow_file, encoding="utf-8") as f:
         workflow = yaml.load(f, Loader=MkDocsYamlLoader)
 
-    _check_certificate_identity(workflow, install_content, readme_content)
+    build_workflow_file = REPO_ROOT / ".github" / "workflows" / "release-build.yml"
+    assert build_workflow_file.exists(), ".github/workflows/release-build.yml must exist"
+    with open(build_workflow_file, encoding="utf-8") as f:
+        build_workflow = yaml.load(f, Loader=MkDocsYamlLoader)
+
+    _check_certificate_identity(build_workflow, install_content, readme_content)
     _check_oidc_issuer(install_content, readme_content)
     _check_table_assets_match_publish_globs(workflow, install_content)
     _check_no_kernel_version_literals(install_content, readme_content)

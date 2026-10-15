@@ -243,9 +243,10 @@ jobs:
           PY
 
           RELEASE_TAG="$(cat release_assets/release_tag.txt)"
+          SIGNER_IDENTITY="$(python3 scripts/release_signer_identity.py --repo "${GITHUB_REPOSITORY}" --tag "${RELEASE_TAG}" --server "${GITHUB_SERVER_URL}")"
           cosign verify-blob \
             --bundle release_assets/SHA256SUMS.bundle \
-            --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/publish-release.yml@refs/tags/${RELEASE_TAG}" \
+            --certificate-identity "${SIGNER_IDENTITY}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             release_assets/SHA256SUMS
 
