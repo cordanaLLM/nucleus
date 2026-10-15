@@ -90,7 +90,8 @@ CONFIG_PCI_PRI=y
 CONFIG_PCI_PASID=y
 ```
 
-### Architectural Details:
+### Architectural Details
+
 1. **`CONFIG_DRM_XE_SRIOV=y`**: Enables Single-Root I/O Virtualization on supported Battlemage GPUs, allowing a single physical GPU to be partitioned into up to 8 isolated Virtual Functions (VFs) for pass-through into KVM/Proxmox guest microVMs.
 2. **`CONFIG_INTEL_IOMMU_SVM=y`**: Enables Shared Virtual Memory via Intel VT-d (Virtualization Technology for Directed I/O), allowing GPU kernels to dereference native CPU virtual addresses without manual pinning.
 3. **`CONFIG_DRM_XE_DEBUG=n`**: Disables verbose assertion checking and VM lock tracing, eliminating 15–20% CPU submission overhead in production.
@@ -114,13 +115,16 @@ This pins the Battlemage PCI device IDs (`e20b`, `e20c`, `e20d`) exclusively to 
 
 The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline semaphores for high-throughput, low-jitter compute queue dispatch:
 
-### User-Space Device Nodes:
+### User-Space Device Nodes
+
 - Primary render node: `/dev/dri/renderD128`
 - Level Zero discovery: `/sys/class/drm/card0/device/`
 - Hardware telemetry: `/sys/class/drm/card0/device/tile0/gt0/freq0/act_freq`
 
-### MicroVM Passthrough Contract:
+### MicroVM Passthrough Contract
+
 When provisioning virtual machines in `cordanaLLM/imago`, the render node is passed into container runtimes (`crun` or `containerd`) with strict cgroup device rules:
+
 ```text
 c 226:128 rwm
 ```
@@ -148,4 +152,5 @@ except FileNotFoundError:
     print('clinfo not installed; check /dev/dri/renderD128')
 "
 ```
+
 A successful initialization logs `xe 0000:03:00.0: [drm] Initialized xe for 0000:03:00.0 on minor 0` and confirms GUC/HUC firmware authenticated successfully.

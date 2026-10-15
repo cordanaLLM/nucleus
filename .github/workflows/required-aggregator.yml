@@ -1,14 +1,18 @@
 ---
 # Single required status check for branch protection.
-# Protects main on THIS job only. It waits for every other check run on the commit and fails
-# unless each one succeeded (scripts/required_checks_gate.py). A skipped check counts only
+# Protects main on THIS job only. It waits for every other check run on the commit, including
+# jobs that register late and runs whose forge status went stale, and fails unless each one
+# succeeded (scripts/required_checks_gate.py). A skipped check counts only
 # when it is named with --allow-skip: Semgrep and Trivy, which the change detector in
 # security-scans.yml may exclude, and whose skip the required Security Scan Gate judges.
+# The wait covers build-matrix.yml on a pull request that touches the build path: its longest
+# leg may run 90 minutes (arm64), and the longest measured leg took 40 minutes (run 36507112520).
 # Branch protection: require the "required-checks" status check.
 
 name: required-aggregator
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -20,8 +24,22 @@ jobs:
   required-checks:
     name: required-checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The gate's own --timeout plus ten minutes for the checkout and the last poll.
+    timeout-minutes: 110
     steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -32,5 +50,5 @@ jobs:
           REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           python3 scripts/required_checks_gate.py --repo "${REPO}" --ref "${REF}"
-          --self required-checks --interval 20 --timeout 1500
+          --self required-checks --interval 20 --timeout 6000
           --allow-skip "Semgrep SAST" --allow-skip "Trivy Filesystem CVE Scan"

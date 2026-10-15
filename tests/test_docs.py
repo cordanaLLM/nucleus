@@ -99,22 +99,7 @@ def test_adr_files_complete():
         assert f"adr/{adr.name}" in nav_paths, f"{adr.name} is missing from mkdocs.yml nav"
 
 
-def test_install_page_matches_release_workflow():
-    """Ensure docs/install.md and README.md match release workflow signing and publishing contracts."""
-    install_file = REPO_ROOT / "docs" / "install.md"
-    assert install_file.exists(), "docs/install.md must exist"
-    install_content = install_file.read_text(encoding="utf-8")
-
-    readme_file = REPO_ROOT / "README.md"
-    assert readme_file.exists(), "README.md must exist"
-    readme_content = readme_file.read_text(encoding="utf-8")
-
-    workflow_file = REPO_ROOT / ".github" / "workflows" / "publish-release.yml"
-    assert workflow_file.exists(), ".github/workflows/publish-release.yml must exist"
-    with open(workflow_file, encoding="utf-8") as f:
-        workflow = yaml.load(f, Loader=MkDocsYamlLoader)
-
-    # (a) Verify certificate identity workflow path
+def _check_certificate_identity(workflow: dict, install_content: str, readme_content: str) -> None:
     signer_identity_raw = None
     for step in workflow.get("jobs", {}).get("publish", {}).get("steps", []):
         env = step.get("env", {})
@@ -149,7 +134,8 @@ def test_install_page_matches_release_workflow():
             f"Referenced workflow file {doc_workflow_path} in {doc_name} does not exist"
         )
 
-    # (b) Verify OIDC issuer string exactly
+
+def _check_oidc_issuer(install_content: str, readme_content: str) -> None:
     expected_issuer = "https://token.actions.githubusercontent.com"
     for doc_name, doc_text in [("docs/install.md", install_content), ("README.md", readme_content)]:
         issuer_match = re.search(r"--certificate-oidc-issuer\s+([^\s\\]+)", doc_text)
@@ -158,7 +144,8 @@ def test_install_page_matches_release_workflow():
             f"OIDC issuer in {doc_name} is '{issuer_match.group(1)}', expected '{expected_issuer}'"
         )
 
-    # (c) Every asset pattern the table names matches one 'files:' glob of 'Publish to GitHub Release'
+
+def _check_table_assets_match_publish_globs(workflow: dict, install_content: str) -> None:
     publish_step = None
     for step in workflow.get("jobs", {}).get("publish", {}).get("steps", []):
         if step.get("name") == "Publish to GitHub Release":
@@ -182,7 +169,8 @@ def test_install_page_matches_release_workflow():
             f"Asset pattern '{asset}' in docs/install.md does not match any 'files:' glob in publish-release.yml: {globs}"
         )
 
-    # (d) docs/install.md and README.md carry no kernel version literal inside the install section
+
+def _check_no_kernel_version_literals(install_content: str, readme_content: str) -> None:
     version_regex = re.compile(r"\d+\.\d+\.\d+|-rc\d+")
     m_install = version_regex.search(install_content)
     assert m_install is None, (
@@ -198,6 +186,27 @@ def test_install_page_matches_release_workflow():
     assert m_readme is None, (
         f"Kernel version literal '{m_readme.group(0) if m_readme else ''}' found in README.md install section"
     )
+
+
+def test_install_page_matches_release_workflow():
+    """Ensure docs/install.md and README.md match release workflow signing and publishing contracts."""
+    install_file = REPO_ROOT / "docs" / "install.md"
+    assert install_file.exists(), "docs/install.md must exist"
+    install_content = install_file.read_text(encoding="utf-8")
+
+    readme_file = REPO_ROOT / "README.md"
+    assert readme_file.exists(), "README.md must exist"
+    readme_content = readme_file.read_text(encoding="utf-8")
+
+    workflow_file = REPO_ROOT / ".github" / "workflows" / "publish-release.yml"
+    assert workflow_file.exists(), ".github/workflows/publish-release.yml must exist"
+    with open(workflow_file, encoding="utf-8") as f:
+        workflow = yaml.load(f, Loader=MkDocsYamlLoader)
+
+    _check_certificate_identity(workflow, install_content, readme_content)
+    _check_oidc_issuer(install_content, readme_content)
+    _check_table_assets_match_publish_globs(workflow, install_content)
+    _check_no_kernel_version_literals(install_content, readme_content)
 
 
 PATH_MENTION_PATTERN = re.compile(

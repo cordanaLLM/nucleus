@@ -122,8 +122,12 @@ compare_directories() {
     return 0
   fi
   echo "Error: the builds differ:" >&2
+  local status=0
   diff <(printf '%s\n' "${manifest_a}") <(printf '%s\n' "${manifest_b}") \
-    | sed -n 's/^\([<>]\) [a-z]* [^ ]* /    \1 /p' | sort -u >&2 || true
+    | sed -n 's/^\([<>]\) [a-z]* [^ ]* /    \1 /p' | sort -u >&2 || status="${PIPESTATUS[0]}"
+  if [[ "${status}" -gt 1 ]]; then
+    echo "Error: diff failed with status ${status}." >&2
+  fi
   explain_difference
   return 1
 }
