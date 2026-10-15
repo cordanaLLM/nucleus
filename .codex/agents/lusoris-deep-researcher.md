@@ -1,7 +1,6 @@
 ---
 name: lusoris-deep-researcher
 description: "Autonomous Systems Research Analyst specialized in upstream kernel tracking, CVE research, hardware patch analysis, and ADR authoring."
-model: flash
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto

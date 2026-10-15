@@ -1,7 +1,6 @@
 ---
 name: lusoris-kernel-architect
 description: "Principal Linux Kernel Architect specialized in kernel versioning, kconfig layering, patch curation, and toolchain optimization."
-model: flash
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto

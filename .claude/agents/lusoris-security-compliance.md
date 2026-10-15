@@ -1,7 +1,7 @@
 ---
 name: lusoris-security-compliance
 description: "Principal Security & Compliance Auditor specialized in KSPP kernel self-protection, CIS Linux Benchmark L2, eBPF containment, and privacy audits."
-model: flash
+model: haiku
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto
