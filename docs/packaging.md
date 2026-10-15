@@ -184,7 +184,9 @@ and up to 40 minutes on arm64. With the cache the x86_64 and riscv64 compiles to
 
 Measured sizes of the local builds (2026-09-29, `docker` `ubuntu:26.04` on an x86_64 host, 32
 threads, so arm64 and riscv64 were cross-compiled there and have no headers package; riscv64
-carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact:
+carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact,
+and `scripts/check_kernel_artifacts.py` refuses a larger artifact before checksumming
+(`test_an_artifact_above_the_imago_bound_is_refused`):
 
 | Leg | image package | headers | libc-dev | `vmlinuz` | object tree | compile |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -201,7 +203,7 @@ Nothing is checksummed before `scripts/check_kernel_artifacts.py` has opened it.
 of every build and again in `publish-release.yml` before the SBOMs, `SHA256SUMS` and the
 signature, and refuses the directory unless:
 
-- it holds only non-empty regular files: packages, `vmlinuz-<kernelrelease>` and
+- it holds only non-empty regular files of at most 512 MiB: packages, `vmlinuz-<kernelrelease>` and
   `kernel-<stream>-<arch>.config`;
 - `dpkg-deb -f` reads every package as `linux-image-<kernelrelease>`,
   `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<debian_version>-lusoris<N>` and the
