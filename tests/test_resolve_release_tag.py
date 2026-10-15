@@ -53,9 +53,12 @@ def _run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Comple
 
 def _expected_outputs(stream: str, rev: int = 1) -> str:
     version = STREAMS[stream]
+    make_latest = "true" if stream == "mainstream" else "false"
+    prerelease = "true" if "-rc" in version or "~rc" in version else "false"
     return (
         f"stream={stream}\nversion={version}\nrev={rev}\n"
         f"release_tag={_tag(version, stream, rev)}\nrelease_version={version}-lusoris{rev}\n"
+        f"make_latest={make_latest}\nprerelease={prerelease}\n"
     )
 
 
@@ -70,6 +73,40 @@ def test_each_stream_tag_resolves_to_that_stream(stream):
     assert (resolution.stream, resolution.version, resolution.rev) == (stream, version, 1)
     assert resolution.release_tag == _tag(version, stream)
     assert resolution.release_version == f"{version}-lusoris1"
+    assert resolution.make_latest == ("true" if stream == "mainstream" else "false")
+    assert resolution.prerelease == ("true" if "-rc" in version or "~rc" in version else "false")
+
+
+@pytest.mark.parametrize(
+    ("stream", "expected_latest", "expected_prerelease"),
+    [
+        ("mainstream", "true", "false"),
+        ("bleeding", "false", "true"),
+        ("lts", "false", "false"),
+        ("realtime", "false", "false"),
+    ],
+)
+def test_make_latest_and_prerelease_flags(stream, expected_latest, expected_prerelease):
+    """make_latest is true only for mainstream; prerelease is true for rc versions."""
+    version = STREAMS[stream]
+    resolution = resolver.resolve(_tag(version, stream), STREAMS)
+    assert resolution.make_latest == expected_latest
+    assert resolution.prerelease == expected_prerelease
+
+
+def test_custom_rc_version_resolves_as_prerelease():
+    streams = {"mainstream": "7.4-rc1", "canary": "8.0~rc2", "stable": "7.4.0"}
+    res1 = resolver.resolve("v7.4-rc1-mainstream-lusoris1", streams)
+    assert res1.make_latest == "true"
+    assert res1.prerelease == "true"
+
+    res2 = resolver.resolve("v8.0~rc2-canary-lusoris1", streams)
+    assert res2.make_latest == "false"
+    assert res2.prerelease == "true"
+
+    res3 = resolver.resolve("v7.4.0-stable-lusoris1", streams)
+    assert res3.make_latest == "false"
+    assert res3.prerelease == "false"
 
 
 @pytest.mark.parametrize("rev", [2, 3, 12, 9999])

@@ -27,6 +27,12 @@ on:
       artifact-name:
         description: "Name of the uploaded artifact containing release files"
         value: ${{ jobs.build.outputs.artifact-name }}
+      make_latest:
+        description: "Whether to set the release as latest (true only for mainstream)"
+        value: ${{ jobs.build.outputs.make_latest }}
+      prerelease:
+        description: "Whether this release is a prerelease (true for rc versions)"
+        value: ${{ jobs.build.outputs.prerelease }}
 
 permissions:
   contents: read
@@ -46,6 +52,8 @@ jobs:
       release_version: ${{ steps.meta.outputs.release_version }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
       artifact-name: ${{ steps.package.outputs.artifact-name }}
+      make_latest: ${{ steps.meta.outputs.make_latest }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

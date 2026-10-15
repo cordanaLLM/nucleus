@@ -6,7 +6,7 @@
 
 ## 1. What a Release Contains
 
-A kernel release is tagged `v<version>-<stream>-lusoris<N>` ([Packaging](packaging.md), section 5.4). Pick the tag from the [releases list](https://github.com/cordanaLLM/nucleus/releases), not from the forge's "Latest release" link: tags of the form `nucleus-v<X.Y.Z>` are releases of the repository tooling, carry no kernel, and can be the latest one.
+A kernel release is tagged `v<version>-<stream>-lusoris<N>` ([Packaging](packaging.md), section 5.4). Pick the tag from the [releases list](https://github.com/cordanaLLM/nucleus/releases): on the forge, Latest marks the newest `mainstream` kernel release, while release candidates (`~rc` versions) are marked as prereleases and repository tooling releases (`nucleus-v*`) are not-latest. Releases published before this rule took effect keep their old marking, so a tooling release can still show as Latest until the next `mainstream` release.
 
 Each kernel release carries eleven assets, the files the `Publish to GitHub Release` step of `.github/workflows/publish-release.yml` uploads:
 
