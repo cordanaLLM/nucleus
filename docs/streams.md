@@ -15,9 +15,9 @@
   (Linux 7.3-rc7)      (Linux 7.2.10)      (Linux 6.18.56)   (Linux 7.2.10 + RT)
         │                   │                    │                   │
         ▼                   ▼                    ▼                   ▼
-  Blackwell B200       Intel Xe2 Arc        Enterprise K8s      Game Servers
-  RTX 5090 / CXL 3.0   AMD ROCm 10          OpenZFS 2.3 kmod    Low-latency UDP
-  sched-ext eBPF       NVIDIA 565/610       CloudNativePG       WireGuard Gateway
+  Blackwell B200       Intel Xe2 Arc (xe)   Enterprise K8s      Game Servers
+  RTX 5090 / CXL 3.0   AMD ROCm (amdgpu)    OpenZFS 2.3 kmod    Low-latency UDP
+  sched-ext eBPF       Kubernetes node      CloudNativePG       WireGuard Gateway
 ```
 
 The versions above are the pins of `versions.json` on 2026-10-14; `versions.json` is the
@@ -30,14 +30,14 @@ authority, and section 3 says how each source is proven.
 ### 2.1 Bleeding Stream (`bleeding`)
 
 - **Upstream Release**: Linux 7.3-rc7 (Mainline release candidate, from the signed tag)
-- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, PCIe 6.0 / CXL 3.0 interconnects.
+- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, whose driver is out of tree and not built here; PCIe 6.0 / CXL 3.0 interconnects.
 - **Key Features**: sched-ext user-space eBPF scheduler support, cutting-edge DRMs, prototype memory tiering.
 - **Flavors**: `ai-infer-nvidia-bleeding`, `k8s-node-nvidia-bleeding`, `docker-nvidia-bleeding`.
 
 ### 2.2 Mainstream Stream (`mainstream`)
 
 - **Upstream Release**: Linux 7.2.10 (Stable)
-- **Target Hardware**: Intel Arc Battlemage Xe2, AMD Radeon RX 7000/8000 (ROCm 10), NVIDIA Ada/Ampere (565/610).
+- **Target Hardware**: Intel Arc Battlemage Xe2 on `xe`, AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's driver is out of tree and not built here. Section 4.1 lists the symbols and the check that refuses a build without them.
 - **Key Features**: BBR congestion control, `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
@@ -92,14 +92,15 @@ the source names the stream's release.
 ## 4. Stream Fragments and the Resolved Configuration
 
 `scripts/merge-config.sh --stream=<stream>` layers `kconfig/streams/<stream>.config` after
-`kconfig/security-hardened.config` and the architecture fragment. The last line for a symbol
+`kconfig/security-hardened.config`, the architecture fragment and `kconfig/k8s-node.config`
+(section 4.1). The last line for a symbol
 wins, and a `# CONFIG_X is not set` line in a later fragment unsets an earlier assignment. A
 stream without a fragment builds the architecture configuration unchanged.
 
 | Stream | Fragment | What it declares |
 | :--- | :--- | :--- |
 | `realtime` | `kconfig/streams/realtime.config` | `CONFIG_PREEMPT_RT=y` and `CONFIG_HZ_1000=y`, which Aegis-OS asks for together (`REQ-P07-01`), and `CONFIG_EXPERT=y`, because `PREEMPT_RT` depends on `EXPERT && ARCH_SUPPORTS_RT` (`kernel/Kconfig.preempt`); x86, arm64 and riscv select `ARCH_SUPPORTS_RT` in 6.18.56, 7.2.10 and 7.3-rc7 |
-| `bleeding`, `mainstream`, `lts` | none | nothing beyond the architecture fragment |
+| `bleeding`, `mainstream`, `lts` | none | nothing beyond the architecture and Kubernetes node fragments |
 
 Every leg also carries the baseline, `kconfig/security-hardened.config`. It requests the chain
 BPF trampolines need, so that BPF LSM, `fentry` and `fexit` programs can attach: `FTRACE`,
@@ -170,6 +171,53 @@ packages install next to the earlier one's ([packaging section 5.4](packaging.md
 `build-matrix.yml` compiles every stream for x86_64, arm64 and riscv64, opens every package with
 the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the packages;
 `publish-release.yml` boots the release kernel the same way before it signs anything.
+
+### 4.1 The Kubernetes Node Fragment and the Required-Config Check
+
+Every stream on every architecture is built to run a Kubernetes node with a container runtime
+and the Cilium network plugin (imago `FLAVOR-K8S-NODE`). `kconfig/k8s-node.config` holds what
+that needs: overlayfs, veth, VXLAN, Geneve, the bridge with `br_netfilter`, 802.1Q VLANs,
+nf_tables, ip_set and the xtables matches and targets of Cilium's iptables mode, the tc
+ingress hook with the BPF classifier, dm-crypt, iSCSI and NVMe authentication, vsock, UIO and
+iommufd. The x86_64 fragment adds the platform drivers a reference node loads (AES-NI and
+Camellia for dm-crypt, the AMD crypto coprocessor, VM generation ID, the QEMU firmware
+configuration, VMware sockets, Intel platform telemetry) and the GPU drivers `mainstream`
+claims: `xe` for Intel Arc Battlemage with the MEI GSC clients and the card's flash, and
+`amdgpu` with `HSA_AMD` for ROCm. The list was taken from the modules a running node loads that
+the `7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is
+there.
+
+`kconfig/required-config.json` lists every claim this documentation makes about what a stream
+builds, with the streams and architectures it covers and the symbols that back it:
+
+| Claim | Streams | Architectures | Backed by |
+| :--- | :--- | :--- | :--- |
+| `k8s-node` | all | all | every symbol of `kconfig/k8s-node.config` |
+| `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
+| `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
+| `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
+| `sched-ext` | all | x86_64, arm64 | `SCHED_CLASS_EXT=y` (riscv64 builds no BTF) |
+| `realtime` | `realtime` | all | `PREEMPT_RT=y` |
+
+`scripts/check_required_config.py` refuses a configuration in which a listed symbol is off
+(exit status 1), naming the symbol, its value and the claim. A symbol listed `built` must be
+`=y` or `=m`, one listed `y` must be `=y`. `scripts/merge-config.sh --source-tree` runs it on
+every resolved configuration after the survival check, so the build (`scripts/build_kernel.sh`)
+and the resolution of all twelve legs in `verify-requirements.yml` stop before a configuration
+is written. The survival check proves that the fragments hold; this check proves that the
+fragments still carry what is claimed: deleting `CONFIG_OVERLAY_FS=m` from the fragment passes
+the survival check and is refused here. `tests/test_required_config.py` checks the declared
+fragments of every leg against the list, that the list covers every line of
+`kconfig/k8s-node.config`, and each way a configuration or the list can be wrong.
+
+```bash
+# Check a resolved configuration against the claims for its stream and architecture
+python3 scripts/check_required_config.py --config output/kernel-mainstream-x86_64.config \
+  --stream mainstream --arch x86_64
+```
+
+A claim that this documentation adds or a driver it names is added to the list in the same
+change; a claim the forge cannot build is removed from the documentation instead.
 
 ---
 

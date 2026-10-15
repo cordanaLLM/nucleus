@@ -453,6 +453,7 @@ def test_kvm_guest_does_not_answer_for_kvm():
 
 
 def _kconfig(tmp_path: Path, **fragments: str) -> Path:
+    fragments = {"k8s-node": "", **fragments}
     for name, body in fragments.items():
         path = tmp_path / (name.replace("__", "/") + ".config")
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -460,18 +461,25 @@ def _kconfig(tmp_path: Path, **fragments: str) -> Path:
     return tmp_path
 
 
-def test_merge_order_is_baseline_then_architecture_then_stream(tmp_path):
+def test_merge_order_is_baseline_then_architecture_then_k8s_node_then_stream(tmp_path):
     kdir = _kconfig(
         tmp_path,
         **{
             "security-hardened": "CONFIG_A=y\nCONFIG_B=y\n",
-            "x86_64": "CONFIG_B=m\nCONFIG_C=y\n",
-            "streams__alpha": "CONFIG_C=m\n",
+            "x86_64": "CONFIG_B=m\nCONFIG_C=y\nCONFIG_D=y\n",
+            "k8s-node": "CONFIG_D=m\nCONFIG_E=y\n",
+            "streams__alpha": "CONFIG_C=m\nCONFIG_E=m\n",
         },
     )
     merged = vkr.declared_config(kdir, "x86_64", "alpha")
-    assert merged == {"CONFIG_A": "y", "CONFIG_B": "m", "CONFIG_C": "m"}
-    assert vkr.declared_config(kdir, "x86_64", "beta")["CONFIG_C"] == "y"
+    assert merged == {
+        "CONFIG_A": "y",
+        "CONFIG_B": "m",
+        "CONFIG_C": "m",
+        "CONFIG_D": "m",
+        "CONFIG_E": "m",
+    }
+    assert vkr.declared_config(kdir, "x86_64", "beta")["CONFIG_E"] == "y"
 
 
 def test_an_unset_in_a_later_fragment_overrides_an_earlier_assignment(tmp_path):

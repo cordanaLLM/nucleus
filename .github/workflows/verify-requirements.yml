@@ -39,6 +39,7 @@ on:
       - "scripts/fetch-kernel-source.sh"
       - "scripts/check_requirement_schema.py"
       - "scripts/kconfig_survival.py"
+      - "scripts/check_required_config.py"
       - "scripts/versions_query.py"
       - "scripts/verify_kernel_requirement.py"
       - "tests/test_requirement_schema.py"
@@ -46,6 +47,7 @@ on:
       - "tests/test_fetch_kernel_requirements.py"
       - "tests/test_fetch_kernel_source.py"
       - "tests/test_kconfig_survival.py"
+      - "tests/test_required_config.py"
       - "tests/fixtures/kernel-requirement/**"
       - "versions.json"
       - "versions.schema.json"
@@ -60,6 +62,7 @@ on:
       - "scripts/fetch-kernel-source.sh"
       - "scripts/check_requirement_schema.py"
       - "scripts/kconfig_survival.py"
+      - "scripts/check_required_config.py"
       - "scripts/versions_query.py"
       - "scripts/verify_kernel_requirement.py"
       - "tests/test_requirement_schema.py"
@@ -67,6 +70,7 @@ on:
       - "tests/test_fetch_kernel_requirements.py"
       - "tests/test_fetch_kernel_source.py"
       - "tests/test_kconfig_survival.py"
+      - "tests/test_required_config.py"
       - "tests/fixtures/kernel-requirement/**"
       - "versions.json"
       - "versions.schema.json"
@@ -134,7 +138,7 @@ jobs:
           set -euo pipefail
           pytest tests/test_verify_kernel_requirement.py tests/test_fetch_kernel_requirements.py \
             tests/test_kconfig_survival.py tests/test_fetch_kernel_source.py \
-            tests/test_requirement_schema.py -v
+            tests/test_requirement_schema.py tests/test_required_config.py -v
 
       # Every client_payload field arrives from another repository, so each is passed through
       # env and validated by the script; none is interpolated into a run: block.

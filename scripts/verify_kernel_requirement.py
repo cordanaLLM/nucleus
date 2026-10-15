@@ -589,7 +589,11 @@ def read_config(path: Path) -> dict[str, str]:
 
 def fragment_layers(kconfig_dir: Path, arch: str, stream: str) -> list[Path]:
     """The fragments merge-config.sh merges for arch and stream, in merge order."""
-    layers = [kconfig_dir / "security-hardened.config", kconfig_dir / f"{arch}.config"]
+    layers = [
+        kconfig_dir / "security-hardened.config",
+        kconfig_dir / f"{arch}.config",
+        kconfig_dir / "k8s-node.config",
+    ]
     stream_fragment = kconfig_dir / "streams" / f"{stream}.config"
     if stream_fragment.is_file():
         layers.append(stream_fragment)
