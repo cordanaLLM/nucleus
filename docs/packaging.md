@@ -456,6 +456,16 @@ written to `records/boot-<stream>-x86_64.log`; `records/` is uploaded as the run
 - `SHA256SUMS`, over exactly the files above, and `SHA256SUMS.bundle`;
 - `kernel-<stream>.manifest.json`.
 
+After every successful run, `supply-chain.yml` downloads the release and verifies it with
+`scripts/verify-release.sh`: the cosign bundle against the release workflow's identity at the tag,
+every asset against `SHA256SUMS`, no asset outside it, and the manifest's tag, signer identity and
+`SHA256SUMS` digest. The same script verifies a release by hand:
+
+```bash
+gh release download <release-tag> --repo cordanaLLM/nucleus --dir release
+./scripts/verify-release.sh release <release-tag> cordanaLLM/nucleus
+```
+
 A release is x86_64 only: `imago.nucleus.kernel-artifact.v1` has no architecture field. No UKI
 (`.efi`) is built or uploaded: `publish-release.yml` does not call `scripts/package-uki.sh`.
 
