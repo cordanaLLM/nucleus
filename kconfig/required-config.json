@@ -9,8 +9,10 @@
       "architectures": "all",
       "symbols": {
         "CONFIG_NAMESPACES": "y",
+        "CONFIG_USER_NS": "y",
         "CONFIG_OVERLAY_FS": "built",
         "CONFIG_VETH": "built",
+        "CONFIG_PSI": "y",
         "CONFIG_VXLAN": "built",
         "CONFIG_GENEVE": "built",
         "CONFIG_NET_SCHED": "y",
@@ -44,7 +46,12 @@
         "CONFIG_NETFILTER_XT_TARGET_TPROXY": "built",
         "CONFIG_BLK_DEV_DM": "y",
         "CONFIG_DM_CRYPT": "built",
+        "CONFIG_DM_THIN_PROVISIONING": "built",
         "CONFIG_SCSI_ISCSI_ATTRS": "built",
+        "CONFIG_ISCSI_TCP": "built",
+        "CONFIG_XFS_FS": "built",
+        "CONFIG_ZRAM": "built",
+        "CONFIG_BLK_DEV_NBD": "built",
         "CONFIG_NVME_HOST_AUTH": "y",
         "CONFIG_VSOCKETS": "built",
         "CONFIG_VSOCKETS_LOOPBACK": "built",
@@ -61,6 +68,21 @@
         "CONFIG_MTD": "built",
         "CONFIG_MTD_CMDLINE_PARTS": "built",
         "CONFIG_I2C_MUX": "built"
+      }
+    },
+    {
+      "id": "k8s-node-iptables-legacy",
+      "claim": "a Kubernetes node keeps the legacy iptables raw table where upstream allows it (not with PREEMPT_RT)",
+      "streams": [
+        "bleeding",
+        "mainstream",
+        "lts"
+      ],
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_NETFILTER_XTABLES_LEGACY": "y",
+        "CONFIG_IP_NF_IPTABLES_LEGACY": "built",
+        "CONFIG_IP_NF_RAW": "built"
       }
     },
     {

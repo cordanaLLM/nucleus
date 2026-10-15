@@ -100,7 +100,7 @@ stream without a fragment builds the architecture configuration unchanged.
 | Stream | Fragment | What it declares |
 | :--- | :--- | :--- |
 | `realtime` | `kconfig/streams/realtime.config` | `CONFIG_PREEMPT_RT=y` and `CONFIG_HZ_1000=y`, which Aegis-OS asks for together (`REQ-P07-01`), and `CONFIG_EXPERT=y`, because `PREEMPT_RT` depends on `EXPERT && ARCH_SUPPORTS_RT` (`kernel/Kconfig.preempt`); x86, arm64 and riscv select `ARCH_SUPPORTS_RT` in 6.18.56, 7.2.10 and 7.3-rc7 |
-| `bleeding`, `mainstream`, `lts` | none | nothing beyond the architecture and Kubernetes node fragments |
+| `bleeding`, `mainstream`, `lts` | `kconfig/streams/<stream>.config` | `CONFIG_NETFILTER_XTABLES_LEGACY=y`, `CONFIG_IP_NF_IPTABLES_LEGACY=m`, `CONFIG_IP_NF_RAW=m` for kube-proxy and Cilium iptables mode (section 4.1) |
 
 Every leg also carries the baseline, `kconfig/security-hardened.config`. It requests the chain
 BPF trampolines need, so that BPF LSM, `fentry` and `fexit` programs can attach: `FTRACE`,
@@ -178,23 +178,28 @@ the artifact gate, and boots every x86_64 kernel under QEMU before it keeps the 
 
 Every stream on every architecture is built to run a Kubernetes node with a container runtime
 and the Cilium network plugin (imago `FLAVOR-K8S-NODE`). `kconfig/k8s-node.config` holds what
-that needs: overlayfs, veth, VXLAN, Geneve, the bridge with `br_netfilter`, 802.1Q VLANs,
-nf_tables, ip_set and the xtables matches and targets of Cilium's iptables mode, the tc
-ingress hook with the BPF classifier, dm-crypt, iSCSI and NVMe authentication, vsock, UIO and
-iommufd. The x86_64 fragment adds the platform drivers a reference node loads (AES-NI and
-Camellia for dm-crypt, the AMD crypto coprocessor, VM generation ID, the QEMU firmware
-configuration, VMware sockets, Intel platform telemetry) and the GPU drivers `mainstream`
-claims: `xe` for Intel Arc Battlemage with the MEI GSC clients and the card's flash, and
-`amdgpu` with `HSA_AMD` for ROCm. The list was taken from the modules a running node loads that
-the `7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is
-there.
+that needs: overlayfs, veth, user namespaces, pressure stall information (PSI) for the kubelet
+and cgroup v2, VXLAN, Geneve, the bridge with `br_netfilter`, 802.1Q VLANs, nf_tables, ip_set,
+the xtables matches and targets of Cilium's transparent proxy, the tc ingress hook with the
+BPF classifier, dm-crypt, dm-thin, the iSCSI TCP initiator and transport class, XFS, ZRAM swap,
+network block devices (NBD), NVMe authentication, vsock, UIO and iommufd. The legacy iptables raw
+table for kube-proxy and Cilium iptables mode comes from the stream fragments of `bleeding`,
+`mainstream` and `lts` (`kconfig/streams/{bleeding,mainstream,lts}.config`); `realtime` has none
+because upstream forbids legacy xtables with `PREEMPT_RT` (kube-proxy nftables mode and Cilium
+eBPF mode do not need it). The x86_64 fragment adds the platform drivers a reference node loads
+(AES-NI and Camellia for dm-crypt, the AMD crypto coprocessor, VM generation ID, the QEMU firmware
+configuration, VMware sockets, Intel platform telemetry) and the GPU drivers `mainstream` claims:
+`xe` for Intel Arc Battlemage with the MEI GSC clients and the card's flash, and `amdgpu` with
+`HSA_AMD` for ROCm. The list was taken from the modules a running node loads that the
+`7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is there.
 
 `kconfig/required-config.json` lists every claim this documentation makes about what a stream
 builds, with the streams and architectures it covers and the symbols that back it:
 
 | Claim | Streams | Architectures | Backed by |
 | :--- | :--- | :--- | :--- |
-| `k8s-node` | all | all | every symbol of `kconfig/k8s-node.config` |
+| `k8s-node` | all | all | the common symbols of `kconfig/k8s-node.config` |
+| `k8s-node-iptables-legacy` | `bleeding`, `mainstream`, `lts` | all | `NETFILTER_XTABLES_LEGACY=y`, `IP_NF_IPTABLES_LEGACY`, `IP_NF_RAW` |
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
 | `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |

@@ -230,6 +230,9 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 │   ├── x86_64.config           # AMD64 virtualization & bare-metal baseline
 │   ├── arm64.config            # AArch64 Neoverse & Apple Silicon baseline
 │   ├── riscv64.config          # RISC-V 64-bit baseline
+│   ├── streams/bleeding.config # Bleeding stream layer (legacy xtables raw table)
+│   ├── streams/mainstream.config # Mainstream stream layer (legacy xtables raw table)
+│   ├── streams/lts.config      # LTS stream layer (legacy xtables raw table)
 │   ├── streams/realtime.config # PREEMPT_RT stream layer
 │   └── security-hardened.config# Kernel Self-Protection Project (KSPP) baseline
 ├── patches/                    # Curated patch queues partitioned by stream
