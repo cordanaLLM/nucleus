@@ -101,6 +101,10 @@ validate_arguments() {
       [[ -d "${WORK}" ]] || refuse "work: ${WORK} exists and is not a directory"
       [[ -z "$(ls -A "${WORK}")" ]] || refuse "work: ${WORK} is not empty; an empty directory is required"
     fi
+    # ./configure runs inside the source tree, so every path under WORK must be absolute.
+    mkdir -p "${WORK}" || refuse "work: cannot create ${WORK}"
+    WORK="$(cd "${WORK}" && pwd)" || refuse "work: cannot resolve ${WORK}"
+    echo "==> Work directory ${WORK}"
   fi
   [[ -f "${VERSIONS}" ]] || refuse "manifest file '${VERSIONS}' not found"
   [[ -d "${KEYS_DIR}" ]] || refuse "keys directory '${KEYS_DIR}' not found"

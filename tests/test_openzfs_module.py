@@ -248,6 +248,42 @@ exit 0
     assert "sha256" in res.stderr.lower(), f"Expected sha256 refusal in stderr:\n{res.stderr}"
 
 
+@needs_dpkg
+def test_check_openzfs_module_resolves_a_relative_work_directory(tmp_path: Path):
+    """A relative --work, as the workflow passes it, is made absolute before ./configure runs.
+
+    ./configure runs inside WORK/src, so a relative headers path given to --with-linux would
+    name a directory that does not exist there.
+    """
+    deb = _make_fake_headers_deb(tmp_path, "7.2.8-lusoris1-mainstream")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl_stub = bin_dir / "curl"
+    curl_stub.write_text("#!/usr/bin/env bash\nexit 22\n", encoding="utf-8")
+    curl_stub.chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    res = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT),
+            f"--headers-deb={deb}",
+            "--work=zfs-work-mainstream",
+            f"--versions={REPO_ROOT / 'versions.json'}",
+            f"--keys={REPO_ROOT / 'keys'}",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert f"==> Work directory {tmp_path / 'zfs-work-mainstream'}" in res.stdout, (
+        res.stdout + res.stderr
+    )
+
+
 def test_openzfs_workflow_names_no_repository_and_bounds_every_job():
     """Ensure a fork runs the workflow against its own releases, and no job or download can hang."""
     text = WORKFLOW_FILE.read_text(encoding="utf-8")
