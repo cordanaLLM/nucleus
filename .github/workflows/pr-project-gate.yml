@@ -2,7 +2,7 @@
 name: pr-project-gate
 on:
   pull_request:
-    types: [opened, reopened, edited, labeled, unlabeled, synchronize, milestoned]
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize, milestoned, ready_for_review]
 
 permissions:
   contents: read
@@ -16,6 +16,19 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -60,7 +73,7 @@ jobs:
 
           # 1. Milestone Check (with live query fallback if event payload lagged)
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
-            PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title 2>/dev/null || true)"
+            PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title)"
           fi
 
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
@@ -79,7 +92,7 @@ jobs:
           if echo "${PR_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
             HAS_VALID_LABEL=true
           else
-            LIVE_LABELS="$(gh pr view "${PR_NUMBER}" --json labels --jq '[.labels[].name] | @json' 2>/dev/null || true)"
+            LIVE_LABELS="$(gh pr view "${PR_NUMBER}" --json labels --jq '[.labels[].name] | @json')"
             if echo "${LIVE_LABELS}" | grep -Eq '"(tier/[^"]+|area/[^"]+)"'; then
               HAS_VALID_LABEL=true
             fi
