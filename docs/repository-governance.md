@@ -177,7 +177,9 @@ only `required-checks`, was removed on 2026-09-29. Under the ruleset:
 
 - Every commit of a pull request must carry a verified signature, not only the merge result.
 - Review threads must be resolved before a merge.
-- No role bypasses the ruleset; the ruleset declares no bypass actors.
+- The repository admin role (`RepositoryRole` 5) may bypass the ruleset, and only through a pull
+  request (`bypass_mode: pull_request`); nobody pushes to `main` outside a pull request.
+  The bypass was applied to ruleset 24167009 on 2026-10-15 with the agent kit (#129).
 
 The signature rule has one trap. The ruleset also requires an up-to-date branch, and GitHub's
 **Update branch** button in rebase mode (`gh pr update-branch --rebase`) rewrites the pull
