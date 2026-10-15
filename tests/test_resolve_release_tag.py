@@ -83,9 +83,9 @@ def test_a_revision_above_one_resolves(rev):
 
 def _publish_steps() -> dict:
     workflow = yaml.safe_load(
-        (REPO_ROOT / ".github" / "workflows" / "publish-release.yml").read_text(encoding="utf-8")
+        (REPO_ROOT / ".github" / "workflows" / "release-build.yml").read_text(encoding="utf-8")
     )
-    return {step.get("name"): step for step in workflow["jobs"]["publish"]["steps"]}
+    return {step.get("name"): step for step in workflow["jobs"]["build"]["steps"]}
 
 
 def test_the_release_builds_gates_and_names_the_revision_the_tag_names():

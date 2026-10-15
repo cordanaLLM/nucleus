@@ -55,7 +55,7 @@ check_listing() {
   for path in "${dir}"/*; do
     name="$(basename "${path}")"
     case "${name}" in
-      SHA256SUMS | SHA256SUMS.bundle | "kernel-${stream}.manifest.json") continue ;;
+      SHA256SUMS | SHA256SUMS.bundle | "kernel-${stream}.manifest.json" | "kernel-${stream}.provenance.sigstore.json") continue ;;
     esac
     printf '%s\n' "${listed[@]}" | grep -Fqx -- "${name}" \
       || die "asset not listed in SHA256SUMS: ${name}"
@@ -93,7 +93,10 @@ main() {
   check_args "${dir}" "${tag}" "${repo}"
   local stream="${tag%-lusoris*}"
   stream="${stream##*-}"
-  local identity="https://github.com/${repo}/.github/workflows/publish-release.yml@refs/tags/${tag}"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local identity
+  identity="$(python3 "${script_dir}/release_signer_identity.py" --repo "${repo}" --tag "${tag}")"
   check_listing "${dir}" "${stream}"
   check_signature "${dir}" "${identity}"
   local sums_digest

@@ -14,19 +14,17 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Publish Kernel Release & Notify Downstream
+  # GITHUB_TOKEN is scoped to this repository and cannot dispatch to cordanaLLM/imago, so
+  # there is no fallback to it: without KERNEL_FORGE_TOKEN the run stops here, before
+  # anything is built, signed or published, and says so. The step sees only whether the
+  # secret is set, never its value; the dispatch step below is the one place that reads it.
+  preflight:
+    name: Preflight Token Check
     runs-on: ubuntu-24.04
-    # One x86_64 kernel compile (see build-matrix.yml for the measurement) plus signing.
-    timeout-minutes: 120
+    timeout-minutes: 10
     permissions:
-      contents: write
-      id-token: write
+      contents: read
     steps:
-      # GITHUB_TOKEN is scoped to this repository and cannot dispatch to cordanaLLM/imago, so
-      # there is no fallback to it: without KERNEL_FORGE_TOKEN the run stops here, before
-      # anything is built, signed or published, and says so. The step sees only whether the
-      # secret is set, never its value; the dispatch step below is the one place that reads it.
       - name: Require KERNEL_FORGE_TOKEN for the Downstream Dispatch
         env:
           KERNEL_FORGE_TOKEN_SET: ${{ secrets.KERNEL_FORGE_TOKEN != '' }}
@@ -39,174 +37,36 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  build:
+    name: Reusable Release Build
+    needs: preflight
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ github.event.inputs.tag || '' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+
+  publish:
+    name: Publish Kernel Release & Notify Downstream
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          # The kernel build below runs in a container over this checkout; it gets no token.
-          persist-credentials: false
-
-      - name: Setup Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.12"
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
-
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
-
-      # A kernel release tag is v<version>-<stream>-lusoris<N> and must name exactly one
-      # versions.json stream at exactly its version. Anything else, including the
-      # repository's own nucleus-v<X.Y.Z> tags, is refused here and nothing is published.
-      # The run must also have started from that tag (--ref): checkout, the signer identity
-      # and the release all follow GITHUB_REF, so a manual dispatch of tag X from another ref
-      # would otherwise release the assets under the wrong tag.
-      # Outputs: stream, version, rev, release_tag, release_version (<version>-lusoris<N>).
-      - name: Resolve Stream and Version
-        id: meta
-        env:
-          TAG_INPUT: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --ref "${GITHUB_REF}" --github-output "${GITHUB_OUTPUT}"
-
-      # Refuse execution if a GitHub release already exists for this tag. Kernel packages
-      # are not reproducible (module signatures and debian/changelog date differ per build),
-      # so a re-run would upload different digests under the same tag via action-gh-release,
-      # breaking downstream consumers pinned to the first digests. To release again after a
-      # fix, cut revision lusoris<N+1>; deleting an existing release is the operator's act.
-      - name: Refuse Existing Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
-        run: |
-          set -euo pipefail
-          ./scripts/refuse_existing_release.sh --repo "${REPO}" --tag "${RELEASE_TAG}"
-
-      # provenance.revision is the commit the release was built from: the tag's commit, which
-      # the resolver above has made the run's ref.
-      - name: Record the Tagged Revision
-        id: rev
-        run: |
-          set -euo pipefail
-          built="$(git rev-parse --verify 'HEAD^{commit}')"
-          tagged="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
-          if [[ "${built}" != "${tagged}" ]]; then
-            echo "::error title=Revision mismatch::checked out ${built}, the run's ref is ${tagged}" >&2
-            exit 1
-          fi
-          echo "revision=${built}" >> "${GITHUB_OUTPUT}"
-
-      # The kernel compiles in the pinned Ubuntu 26.04 image build-matrix.yml proves, in a
-      # container that sees neither the job's token nor its OIDC credentials. The container
-      # cannot change what the later steps of this job run: the checkout is mounted read-only,
-      # and only output/, records/ and two build directories outside the checkout are writable.
-      # Inside, build_kernel.sh passes the kernel through the artifact gate, and the kernel then
-      # boots to userspace under QEMU (scripts/boot_smoke.py) before this step succeeds; the
-      # console goes to records/. The v1 artifact contract (imago.nucleus.kernel-artifact.v1)
-      # has no architecture field, so a release is x86_64.
-      - name: Build and Boot the Tagged Stream
-        env:
-          STREAM: ${{ steps.meta.outputs.stream }}
-          REVISION: ${{ steps.meta.outputs.rev }}
-          # One digest for every workflow that runs ubuntu:26.04 (tests/test_workflows.py).
-          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
-        run: |
-          set -euo pipefail
-          mkdir -p output records "${RUNNER_TEMP}/nucleus-build"
-          mounts=(-v "${GITHUB_WORKSPACE}:/forge:ro" -v "${GITHUB_WORKSPACE}/output:/forge/output"
-            -v "${GITHUB_WORKSPACE}/records:/forge/records" -v "${RUNNER_TEMP}/nucleus-build:/work/temp")
-          # The hosted runners keep a larger scratch disk at /mnt; the build may use a directory there.
-          if [[ -d /mnt ]]; then
-            sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/nucleus-build
-            mounts+=(-v /mnt/nucleus-build:/work/mnt)
-          fi
-          docker run --rm "${mounts[@]}" -w /forge \
-            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
-              set -euo pipefail
-              bash ./scripts/install-build-toolchain.sh --with-qemu
-              candidates=(/work/temp)
-              if [[ -d /work/mnt ]]; then candidates+=(/work/mnt); fi
-              base="$(./scripts/probe-build-space.sh "${candidates[@]}")"
-              status=0
-              ./scripts/build_kernel.sh --stream="${STREAM}" --arch=x86_64 --revision="${REVISION}" \
-                --work-dir="${base}/nucleus-build" --output-dir=output || status=$?
-              if [[ -f "${base}/nucleus-build/${STREAM}-x86_64/build.json" ]]; then
-                cp "${base}/nucleus-build/${STREAM}-x86_64/build.json" records/build.json
-              fi
-              if [[ "${status}" -eq 0 ]]; then
-                # The gate has passed, so output/ holds exactly one vmlinuz-<kernelrelease>.
-                kernels=(output/vmlinuz-*)
-                python3 scripts/boot_smoke.py --kernel="${kernels[0]}" \
-                  --kernelrelease="${kernels[0]#output/vmlinuz-}" --timeout=300 \
-                  --log="records/boot-${STREAM}-x86_64.log" || status=$?
-              fi
-              chown -R "${HOST_UID}:${HOST_GID}" output records
-              exit "${status}"'
-
-      # The gate runs again, on this host, over exactly the directory that is checksummed and
-      # signed next: every package opened, its version, architecture, kernel image and config
-      # checked. The build is native (x86_64 on x86_64), so the headers package is required.
-      - name: Gate the Kernel Artifacts
-        id: gate
-        env:
-          STREAM: ${{ steps.meta.outputs.stream }}
-          REVISION: ${{ steps.meta.outputs.rev }}
-        run: |
-          set -euo pipefail
-          if [[ -L records/build.json || ! -f records/build.json ]]; then
-            echo "::error title=No build record::records/build.json is missing or not a regular file" >&2
-            exit 1
-          fi
-          kernelrelease="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["kernelrelease"])' records/build.json)"
-          python3 scripts/check_kernel_artifacts.py --dir=output --stream="${STREAM}" --arch=x86_64 \
-            --revision="${REVISION}" --kernelrelease="${kernelrelease}"
-          echo "kernelrelease=${kernelrelease}" >> "${GITHUB_OUTPUT}"
-
-      - name: Keep the Build Record and Boot Log
-        if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-records
-          path: records/
-          if-no-files-found: ignore
-          retention-days: 90
-
-      - name: Checksum and Sign the Release
-        env:
-          STREAM: ${{ steps.meta.outputs.stream }}
-          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
-        run: |
-          set -euo pipefail
-          syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"
-          syft dir:output/ -o "spdx-json=output/kernel-${STREAM}.spdx.json"
-          OUTPUT_DIR=output ./scripts/publish_release.sh "${RELEASE_TAG}"
-          cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
-
-      # imago.nucleus.kernel-artifact.v1 is owned by cordanaLLM/imago (pkg/kernel). The manifest
-      # is written after SHA256SUMS is signed and is deliberately absent from it: imago verifies
-      # the cosign bundle, the SHA256SUMS digest, and every artifact digest before pinning the stream.
-      - name: Generate Kernel Artifact Manifest
-        env:
-          STREAM: ${{ steps.meta.outputs.stream }}
-          VERSION: ${{ steps.meta.outputs.release_version }}
-          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
-          KERNELRELEASE: ${{ steps.gate.outputs.kernelrelease }}
-          REVISION: ${{ steps.rev.outputs.revision }}
-          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish-release.yml@${{ github.ref }}
-        run: |
-          set -euo pipefail
-          python3 scripts/kernel_artifact_manifest.py --dir=output --stream="${STREAM}" \
-            --version="${VERSION}" --kernelrelease="${KERNELRELEASE}" --tag="${RELEASE_TAG}" \
-            --revision="${REVISION}" --repository="${GITHUB_REPOSITORY}" \
-            --signer-identity="${SIGNER_IDENTITY}"
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: output
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
-          tag_name: ${{ steps.meta.outputs.release_tag }}
+          tag_name: ${{ needs.build.outputs.release_tag }}
           files: |
             output/*.deb
             output/vmlinuz-*
@@ -215,6 +75,7 @@ jobs:
             output/*.spdx.json
             output/*.manifest.json
             output/SHA256SUMS*
+            output/*.provenance.sigstore.json
 
       - name: Dispatch Downstream Notification to imago
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
@@ -222,4 +83,5 @@ jobs:
           token: ${{ secrets.KERNEL_FORGE_TOKEN }}
           repository: cordanaLLM/imago
           event-type: kernel_release_published
-          client-payload: '{"stream": "${{ steps.meta.outputs.stream }}", "version": "${{ steps.meta.outputs.release_version }}", "tag": "${{ steps.meta.outputs.release_tag }}"}'
+          client-payload: >-
+            {"stream": "${{ needs.build.outputs.stream }}", "version": "${{ needs.build.outputs.release_version }}", "tag": "${{ needs.build.outputs.release_tag }}"}

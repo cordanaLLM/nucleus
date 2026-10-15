@@ -38,13 +38,14 @@ We treat all security vulnerability disclosures with utmost urgency and confiden
 
 ## 3. Cryptographic Supply Chain & Build Attestation
 
-A published release carries a keyless Cosign signature over its checksum file. This section states what that signature covers, how to verify it, what is checked before signing, and what is not provided:
+A published release carries a keyless Cosign signature over its checksum file and an SLSA Build Level 3 build provenance attestation. This section states what that signature covers, how to verify it, what is checked before signing, and what is not provided:
 
 1. **Release Checksums and Signatures**:
-   - Every release runs `scripts/publish_release.sh` in `.github/workflows/publish-release.yml` to generate `SHA256SUMS` over all publishable assets in the release directory.
+   - Every release runs `scripts/publish_release.sh` in the reusable `.github/workflows/release-build.yml` workflow called by `.github/workflows/publish-release.yml` to generate `SHA256SUMS` over all publishable assets in the release directory.
+   - The reusable workflow attests SLSA Build Level 3 build provenance (`actions/attest-build-provenance`) in the build job, saving the attestation as `kernel-<stream>.provenance.sigstore.json`.
    - The workflow signs `SHA256SUMS` using keyless Cosign (`cosign sign-blob`) and publishes the signature as `SHA256SUMS.bundle`.
    - The signed `SHA256SUMS` file covers the Debian packages (`*.deb`), the extracted kernel image (`vmlinuz-<kernelrelease>`), the resolved kernel configuration (`kernel-<stream>-x86_64.config`), and the Syft SBOM files (`kernel-<stream>.cdx.json` and `kernel-<stream>.spdx.json`).
-   - The signature does not cover `kernel-<stream>.manifest.json`, which the workflow writes after `SHA256SUMS` is signed. The manifest is unsigned; a consumer checks the digests it carries against the signed `SHA256SUMS`.
+   - The signature does not cover `kernel-<stream>.manifest.json` or `kernel-<stream>.provenance.sigstore.json`, which the workflow writes after `SHA256SUMS` is signed. The manifest is unsigned; a consumer checks the digests it carries against the signed `SHA256SUMS`.
    - `.github/workflows/supply-chain.yml` builds and signs nothing. After every successful `publish-release` run, and on dispatch for a kernel release tag, it downloads the release and runs `scripts/verify-release.sh` over it, the checks of the next section (`tests/test_supply_chain_workflow.py`). It does not run on the release event: the release workflow creates the release with `GITHUB_TOKEN`, and GitHub starts no workflow on an event that token raised.
    - Unified Kernel Images (`.efi`) are not signed yet. `sbsign` Secure Boot signing is not wired into `scripts/package-uki.sh`, and no release workflow publishes a UKI, so the release **Cosign** signature over `SHA256SUMS` covers no UKI. Both are planned.
 
@@ -54,13 +55,22 @@ A published release carries a keyless Cosign signature over its checksum file. T
      ```bash
      cosign verify-blob \
        --bundle SHA256SUMS.bundle \
-       --certificate-identity "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/<release-tag>" \
+       --certificate-identity "https://github.com/cordanaLLM/nucleus/.github/workflows/release-build.yml@refs/tags/<release-tag>" \
        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
        SHA256SUMS
      sha256sum -c SHA256SUMS
      ```
 
+   - Releases following the SLSA Build Level 3 transition are built and signed inside `.github/workflows/release-build.yml`, so the expected certificate identity is `https://github.com/cordanaLLM/nucleus/.github/workflows/release-build.yml@refs/tags/<release-tag>`.
+   - The 20 legacy tags listed in `release-signers.json` were built directly by `.github/workflows/publish-release.yml`, so their expected certificate identity is `https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/<release-tag>`.
+   - The script `scripts/release_signer_identity.py --repo cordanaLLM/nucleus --tag <release-tag>` evaluates `release-signers.json` and prints the exact identity for any given tag.
    - `cosign verify-blob` refuses a `SHA256SUMS` with one changed byte and a certificate from any other workflow.
+   - Verify SLSA Build Level 3 provenance for published release assets using GitHub CLI:
+
+     ```bash
+     gh attestation verify <file> -R cordanaLLM/nucleus
+     ```
+
    - `scripts/verify-release.sh <asset-dir> <release-tag> cordanaLLM/nucleus` runs both commands, and also refuses an asset that `SHA256SUMS` does not list and a manifest whose tag, signer identity or `SHA256SUMS` digest is not the verified one. It needs `cosign`, `sha256sum` and `jq`.
    - `cordanaLLM/imago` consumes `kernel-<stream>.manifest.json` (`imago.nucleus.kernel-artifact.v1`) and verifies `SHA256SUMS.bundle`, the `SHA256SUMS` digest, and every artifact digest before an image build uses a kernel.
 

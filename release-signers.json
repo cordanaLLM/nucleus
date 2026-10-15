@@ -1,0 +1,27 @@
+{
+  "schema": "nucleus.release-signers.v1",
+  "legacy_workflow": "publish-release.yml",
+  "workflow": "release-build.yml",
+  "legacy_tags": [
+    "v7.3-rc7-bleeding-lusoris3",
+    "v7.2.10-mainstream-lusoris3",
+    "v7.2.10-realtime-lusoris3",
+    "v6.18.56-lts-lusoris3",
+    "v6.18.56-lts-lusoris2",
+    "v7.2.10-mainstream-lusoris2",
+    "v7.3-rc7-bleeding-lusoris2",
+    "v7.2.10-realtime-lusoris2",
+    "v7.2.10-mainstream-lusoris1",
+    "v6.18.56-lts-lusoris1",
+    "v7.2.10-realtime-lusoris1",
+    "v7.3-rc7-bleeding-lusoris1",
+    "v7.3-rc5-bleeding-lusoris2",
+    "v6.18.54-lts-lusoris2",
+    "v7.2.8-mainstream-lusoris2",
+    "v7.2.8-realtime-lusoris2",
+    "v7.2.8-mainstream-lusoris1",
+    "v6.18.54-lts-lusoris1",
+    "v7.3-rc5-bleeding-lusoris1",
+    "v7.2.8-realtime-lusoris1"
+  ]
+}

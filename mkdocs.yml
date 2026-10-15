@@ -84,6 +84,7 @@ nav:
       - ADR-0009 Kernel Compilation & Artifact Gate: adr/0009-kernel-compilation-and-artifact-gate.md
       - ADR-0010 Owner JSON Schema for Requirements: adr/0010-owner-json-schema-for-requirement-documents.md
       - ADR-0011 BPF Trampolines & Release Revisions: adr/0011-bpf-trampoline-ftrace-and-release-revisions.md
+      - ADR-0012 SLSA Build Level 3 Reusable Workflow: adr/0012-slsa-build-level-3-reusable-workflow.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

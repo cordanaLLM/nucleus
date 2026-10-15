@@ -191,6 +191,8 @@ jobs:
             local tag="$1"
             local dir="$2"
             mkdir -p "${dir}"
+            local identity
+            identity="$(python3 scripts/release_signer_identity.py --repo "${GITHUB_REPOSITORY}" --tag "${tag}" --server "${GITHUB_SERVER_URL}")"
             echo "==> Downloading assets for ${tag} into ${dir}..."
             gh release download "${tag}" -R "${GITHUB_REPOSITORY}" -D "${dir}"
             echo "==> Verifying cosign signature for ${tag}..."
@@ -198,7 +200,7 @@ jobs:
               cd "${dir}"
               cosign verify-blob \
                 --bundle SHA256SUMS.bundle \
-                --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/publish-release.yml@refs/tags/${tag}" \
+                --certificate-identity "${identity}" \
                 --certificate-oidc-issuer https://token.actions.githubusercontent.com \
                 SHA256SUMS
               echo "==> Verifying SHA256SUMS for ${tag}..."
