@@ -12,6 +12,7 @@ on:
       - "scripts/merge-config.sh"
       - "scripts/fetch-kernel-source.sh"
       - "scripts/kconfig_survival.py"
+      - "scripts/check_required_config.py"
       - "scripts/verify_kernel_requirement.py"
       - "scripts/versions_query.py"
       - "scripts/install-build-toolchain.sh"

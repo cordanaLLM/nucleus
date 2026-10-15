@@ -11,7 +11,9 @@
 #                architecture's defconfig, then scripts/kconfig/merge_config.sh -m with the
 #                fragments, then make olddefconfig, then the survival check
 #                (scripts/kconfig_survival.py), which refuses the result when a requested
-#                value did not survive. A run that does not finish leaves no configuration
+#                value did not survive, and the required-config check
+#                (scripts/check_required_config.py), which refuses it when an option
+#                kconfig/required-config.json claims for the stream is off. A run that does not finish leaves no configuration
 #                behind, neither at the output path nor in the build directory.
 #                docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md.
 set -euo pipefail
@@ -81,8 +83,8 @@ Options:
   -h, --help           Show this help message
 
 Fragments merge in this order, the last assignment of a symbol winning:
-  kconfig/security-hardened.config, kconfig/<arch>.config, kconfig/streams/<stream>.config,
-  then each extra fragment. The output is byte-reproducible: sorted by symbol, no timestamp.
+  kconfig/security-hardened.config, kconfig/<arch>.config, kconfig/k8s-node.config,
+  kconfig/streams/<stream>.config, then each extra fragment. The output is byte-reproducible: sorted by symbol, no timestamp.
 With --source-tree the output is the resolved .config, which carries no timestamp either.
 EOF
 }
@@ -148,6 +150,10 @@ validate_environment() {
     echo "Error: Security baseline kconfig/security-hardened.config not found" >&2
     return 1
   fi
+  if [[ ! -f "kconfig/k8s-node.config" ]]; then
+    echo "Error: Kubernetes node fragment kconfig/k8s-node.config not found" >&2
+    return 1
+  fi
   # A stream must be one versions.json publishes: an unknown name would silently merge
   # no stream fragment, and the name is used to build a path.
   if [[ -n "${STREAM}" ]] && ! declared_in_versions streams "${STREAM}"; then
@@ -161,6 +167,7 @@ validate_environment() {
 fragment_sources() {
   echo "kconfig/security-hardened.config"
   echo "kconfig/${ARCH}.config"
+  echo "kconfig/k8s-node.config"
   if [[ -n "${STREAM}" && -f "kconfig/streams/${STREAM}.config" ]]; then
     echo "kconfig/streams/${STREAM}.config"
   fi
@@ -319,6 +326,8 @@ resolve_config() {
   echo "==> Resolving: make olddefconfig"
   kernel_make olddefconfig
   python3 scripts/kconfig_survival.py --config "${BUILD_DIR}/.config" "${sources[@]}"
+  python3 scripts/check_required_config.py --config "${BUILD_DIR}/.config" --stream "${STREAM}" \
+    --arch "${ARCH}"
   verify_security_symbols "${BUILD_DIR}/.config"
   mkdir -p "$(dirname "${OUTPUT_FILE}")"
   cp "${BUILD_DIR}/.config" "${OUTPUT_FILE}"

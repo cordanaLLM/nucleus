@@ -1,0 +1,151 @@
+{
+  "schema": "nucleus.required-config.v1",
+  "$comment": "What the documentation claims each stream builds, per architecture. scripts/check_required_config.py refuses a configuration in which a listed symbol is off; scripts/merge-config.sh runs it on every resolved configuration. built = y or m.",
+  "claims": [
+    {
+      "id": "k8s-node",
+      "claim": "a Kubernetes node with a container runtime and Cilium (kconfig/k8s-node.config, imago FLAVOR-K8S-NODE)",
+      "streams": "all",
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_NAMESPACES": "y",
+        "CONFIG_OVERLAY_FS": "built",
+        "CONFIG_VETH": "built",
+        "CONFIG_VXLAN": "built",
+        "CONFIG_GENEVE": "built",
+        "CONFIG_NET_SCHED": "y",
+        "CONFIG_NET_SCH_INGRESS": "built",
+        "CONFIG_NET_SCH_FQ_CODEL": "built",
+        "CONFIG_NET_CLS_BPF": "built",
+        "CONFIG_NET_CLS_ACT": "y",
+        "CONFIG_INET_DIAG": "built",
+        "CONFIG_INET_UDP_DIAG": "built",
+        "CONFIG_BRIDGE": "built",
+        "CONFIG_BRIDGE_NETFILTER": "built",
+        "CONFIG_VLAN_8021Q": "built",
+        "CONFIG_VLAN_8021Q_GVRP": "y",
+        "CONFIG_VLAN_8021Q_MVRP": "y",
+        "CONFIG_NETFILTER": "y",
+        "CONFIG_NETFILTER_ADVANCED": "y",
+        "CONFIG_NF_TABLES": "built",
+        "CONFIG_NF_TABLES_INET": "y",
+        "CONFIG_NFT_NAT": "built",
+        "CONFIG_NFT_COMPAT": "built",
+        "CONFIG_NFT_CT": "built",
+        "CONFIG_NFT_MASQ": "built",
+        "CONFIG_IP_SET": "built",
+        "CONFIG_IP_SET_HASH_IP": "built",
+        "CONFIG_IP_SET_HASH_NET": "built",
+        "CONFIG_NETFILTER_XT_SET": "built",
+        "CONFIG_NETFILTER_XT_MATCH_COMMENT": "built",
+        "CONFIG_NETFILTER_XT_TARGET_CT": "built",
+        "CONFIG_NETFILTER_XT_NAT": "built",
+        "CONFIG_NETFILTER_XT_MATCH_SOCKET": "built",
+        "CONFIG_NETFILTER_XT_TARGET_TPROXY": "built",
+        "CONFIG_BLK_DEV_DM": "y",
+        "CONFIG_DM_CRYPT": "built",
+        "CONFIG_SCSI_ISCSI_ATTRS": "built",
+        "CONFIG_NVME_HOST_AUTH": "y",
+        "CONFIG_VSOCKETS": "built",
+        "CONFIG_VSOCKETS_LOOPBACK": "built",
+        "CONFIG_VIRTIO_VSOCKETS": "built",
+        "CONFIG_QRTR": "built",
+        "CONFIG_UIO": "built",
+        "CONFIG_UIO_PCI_GENERIC": "built",
+        "CONFIG_IOMMUFD": "built",
+        "CONFIG_CRYPTO_USER_API_HASH": "built",
+        "CONFIG_INPUT_JOYDEV": "built",
+        "CONFIG_SERIO_RAW": "built",
+        "CONFIG_RC_CORE": "built",
+        "CONFIG_DMI_SYSFS": "built",
+        "CONFIG_MTD": "built",
+        "CONFIG_MTD_CMDLINE_PARTS": "built",
+        "CONFIG_I2C_MUX": "built"
+      }
+    },
+    {
+      "id": "k8s-node-x86_64",
+      "claim": "the x86_64 platform drivers of a Kubernetes node (kconfig/x86_64.config)",
+      "streams": "all",
+      "architectures": [
+        "x86_64"
+      ],
+      "symbols": {
+        "CONFIG_CRYPTO_AES_NI_INTEL": "built",
+        "CONFIG_CRYPTO_CAMELLIA_X86_64": "built",
+        "CONFIG_CRYPTO_CAMELLIA_AESNI_AVX_X86_64": "built",
+        "CONFIG_CRYPTO_CAMELLIA_AESNI_AVX2_X86_64": "built",
+        "CONFIG_CRYPTO_DEV_CCP": "y",
+        "CONFIG_CRYPTO_DEV_CCP_DD": "built",
+        "CONFIG_LPC_ICH": "built",
+        "CONFIG_FW_CFG_SYSFS": "built",
+        "CONFIG_VIRT_DRIVERS": "y",
+        "CONFIG_VMGENID": "y",
+        "CONFIG_VMWARE_VMCI": "built",
+        "CONFIG_VMWARE_VMCI_VSOCKETS": "built",
+        "CONFIG_PSTORE": "y",
+        "CONFIG_EFI_VARS_PSTORE": "built",
+        "CONFIG_X86_PLATFORM_DEVICES": "y",
+        "CONFIG_INTEL_VSEC": "built",
+        "CONFIG_INTEL_PMT_TELEMETRY": "built",
+        "CONFIG_INTEL_PMT_CRASHLOG": "built",
+        "CONFIG_INTEL_PMT_DISCOVERY": "built"
+      }
+    },
+    {
+      "id": "mainstream-gpu",
+      "claim": "Intel Arc Battlemage (Xe2) on xe and AMD Radeon for ROCm on amdgpu with KFD (README.md, docs/streams.md)",
+      "streams": [
+        "mainstream"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "symbols": {
+        "CONFIG_DRM_XE": "built",
+        "CONFIG_INTEL_MEI": "built",
+        "CONFIG_INTEL_MEI_ME": "built",
+        "CONFIG_INTEL_MEI_GSC": "built",
+        "CONFIG_INTEL_MEI_GSC_PROXY": "built",
+        "CONFIG_INTEL_MEI_LB": "built",
+        "CONFIG_MTD_INTEL_DG": "built",
+        "CONFIG_DRM_AMDGPU": "built",
+        "CONFIG_HSA_AMD": "y"
+      }
+    },
+    {
+      "id": "bbr",
+      "claim": "BBR congestion control and mq-deadline (README.md, docs/streams.md)",
+      "streams": "all",
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_TCP_CONG_BBR": "y",
+        "CONFIG_DEFAULT_BBR": "y",
+        "CONFIG_MQ_IOSCHED_DEADLINE": "y"
+      }
+    },
+    {
+      "id": "sched-ext",
+      "claim": "sched-ext eBPF schedulers (docs/streams.md); riscv64 builds no BTF",
+      "streams": "all",
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ],
+      "symbols": {
+        "CONFIG_SCHED_CLASS_EXT": "y"
+      }
+    },
+    {
+      "id": "realtime",
+      "claim": "the in-tree PREEMPT_RT preemption model (docs/streams.md)",
+      "streams": [
+        "realtime"
+      ],
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_PREEMPT_RT": "y"
+      }
+    }
+  ]
+}
