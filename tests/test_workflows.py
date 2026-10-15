@@ -24,9 +24,9 @@ EVERY_RUN_CONDITIONS = {"always()", "!cancelled()", "success()||failure()", "fai
 
 
 def test_workflows_count():
-    """Ensure all 14 production CI/CD workflows exist."""
+    """Ensure all 15 production CI/CD workflows exist."""
     workflows = list(WORKFLOWS_DIR.glob("*.yml"))
-    assert len(workflows) == 14, f"Expected exactly 14 workflows, found {len(workflows)}"
+    assert len(workflows) == 15, f"Expected exactly 15 workflows, found {len(workflows)}"
 
 
 def test_workflows_least_privilege_permissions():
@@ -1003,6 +1003,83 @@ def test_release_waiver_does_not_exempt_a_skip_marker():
     )
     assert result.returncode == 1
     assert "skip marker" in result.stdout + result.stderr
+
+
+def test_package_lifecycle_workflow_contract():
+    """Verify package-lifecycle.yml structure, triggers, permissions, cosign identity, and container execution."""
+    workflow_path = WORKFLOWS_DIR / "package-lifecycle.yml"
+    parsed = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    # Triggers
+    on = parsed.get("on", parsed.get(True, {}))
+    assert "pull_request" in on, "pull_request trigger required"
+    assert on["pull_request"]["paths"] == [
+        "scripts/package_lifecycle.py",
+        ".github/workflows/package-lifecycle.yml",
+    ]
+    assert "schedule" in on, "schedule trigger required"
+    cron = on["schedule"][0]["cron"]
+    assert cron != "0 2 * * 0", "cron must be distinct from build-matrix.yml"
+    assert "workflow_dispatch" in on, "workflow_dispatch trigger required"
+
+    # Least privilege permissions
+    assert parsed.get("permissions") == {"contents": "read"}
+    for job_id, job in parsed.get("jobs", {}).items():
+        assert job.get("permissions") == {"contents": "read"}, (
+            f"job {job_id} must restrict permissions"
+        )
+
+    # Matrix derivation: plan job outputs matrix from versions.json
+    plan_steps = parsed["jobs"]["plan"]["steps"]
+    plan_run = "\n".join(s.get("run", "") for s in plan_steps)
+    assert "versions.json" in plan_run
+    assert "matrix=" in plan_run
+
+    # Lifecycle job: cosign verification, sha256sum -c before docker run, image digest, NUCLEUS_DISPOSABLE_ROOT
+    lifecycle_steps = parsed["jobs"]["lifecycle"]["steps"]
+    step_runs = [s.get("run", "") for s in lifecycle_steps]
+    combined_run = "\n".join(step_runs)
+
+    # cosign identity string
+    assert "cosign verify-blob" in combined_run
+    assert (
+        "--certificate-identity" in combined_run
+        and "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/publish-release.yml"
+        "@refs/tags/${tag}"
+        in combined_run
+    )
+    assert "cordanaLLM/nucleus" not in workflow_path.read_text(encoding="utf-8"), (
+        "a fork verifies its own releases"
+    )
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in combined_run
+
+
+def test_package_lifecycle_runs_verified_assets_in_the_build_image():
+    """package-lifecycle.yml checks SHA256SUMS before docker run, in build-matrix's image."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "package-lifecycle.yml").read_text(encoding="utf-8"))
+    lifecycle_steps = parsed["jobs"]["lifecycle"]["steps"]
+    combined_run = "\n".join(s.get("run", "") for s in lifecycle_steps)
+
+    # sha256sum -c before docker run
+    sha256_index = combined_run.index("sha256sum -c SHA256SUMS")
+    docker_index = combined_run.index("docker run")
+    assert sha256_index < docker_index, "sha256sum -c must run before docker run"
+
+    # image digest equals build-matrix's
+    parsed_bm = yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))
+    bm_image = parsed_bm["jobs"]["build"]["container"]["image"]
+    run_step = next(
+        s
+        for s in lifecycle_steps
+        if s.get("name") == "Run Package Lifecycle in Disposable Container"
+    )
+    assert run_step["env"]["BUILD_IMAGE"] == bm_image
+
+    # NUCLEUS_DISPOSABLE_ROOT passed
+    assert "-e NUCLEUS_DISPOSABLE_ROOT=1" in combined_run
+    # The arguments reach the script as "$@", never word-split into the command string.
+    assert 'package_lifecycle.py "$@"' in combined_run
+    assert '"${cmd_args[@]}"' in combined_run and "${cmd_args[*]}" not in combined_run
 
 
 RELEASE_PR = {
