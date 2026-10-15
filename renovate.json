@@ -8,15 +8,21 @@
     ":semanticCommitScope(deps)",
     "helpers:pinGitHubActionDigests"
   ],
-  "labels": ["dependencies"],
-  "schedule": ["before 6am on monday"],
+  "labels": [
+    "dependencies"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
   "timezone": "UTC",
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "rebaseWhen": "behind-base-branch",
   "pip-compile": {
-    "managerFilePatterns": ["/(^|/)requirements-test\\.txt$/"]
+    "managerFilePatterns": [
+      "/(^|/)requirements-test\\.txt$/"
+    ]
   },
   "pip_requirements": {
     "enabled": false
@@ -29,35 +35,83 @@
   },
   "packageRules": [
     {
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-actions",
       "groupSlug": "github-actions",
       "pinDigests": true
     },
     {
-      "matchManagers": ["pip-compile", "setup-cfg", "pep621"],
+      "matchManagers": [
+        "pip-compile",
+        "setup-cfg",
+        "pep621"
+      ],
       "groupName": "python-tooling",
       "groupSlug": "python-tooling"
     },
     {
-      "matchDatasources": ["docker"],
+      "matchDatasources": [
+        "docker"
+      ],
       "groupName": "container-images",
       "groupSlug": "container-images"
     },
     {
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "matchCurrentVersion": "!/^0/",
       "automerge": true
     },
     {
-      "matchFileNames": ["versions.json"],
+      "matchFileNames": [
+        "versions.json"
+      ],
       "semanticCommitScope": "versions"
+    },
+    {
+      "description": "praetor-managed files: praetorctl adopt ships their updates and praetorctl audit locks them byte for byte",
+      "matchFileNames": [
+        ".github/workflows/praetor-docs.yml",
+        "tools/markdownlint/package.json",
+        "tools/markdownlint/package-lock.json",
+        "tools/markdownlint/markdownlint-cli2.yaml",
+        "tools/markdownlint/verify.mjs",
+        "tools/markdownlint/no-private-scratch-links.mjs",
+        "tools/figures/core.mjs",
+        "tools/figures/checks.mjs",
+        "tools/figures/build.mjs",
+        "tools/figures/types.ts",
+        "tools/figures/third_party/interfig/vendor.json",
+        "tools/figures/third_party/interfig/VENDOR.md",
+        "tools/figures/third_party/interfig/upstream/LICENSE",
+        "tools/figures/third_party/interfig/upstream/src/svg.ts",
+        "tools/figures/third_party/interfig/upstream/src/geometry.ts",
+        "tools/figures/third_party/interfig/upstream/src/model.ts",
+        "tools/figures/dist/loader.js",
+        "tools/figures/dist/player.js",
+        "tools/figures/dist/THIRD-PARTY-LICENSES.txt",
+        "tools/figures/figures.css",
+        "tools/figures/mkdocs_hook.py",
+        "tools/figures/astro.mjs",
+        "tools/figures/serve.mjs",
+        "tools/figures/README.md",
+        ".devcontainer/devcontainer.json",
+        ".devcontainer/Dockerfile.praetor"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^versions\\.json$/", "/^\\.github\\/workflows\\/.*\\.ya?ml$/"],
+      "managerFilePatterns": [
+        "/^versions\\.json$/",
+        "/^\\.github\\/workflows\\/.*\\.ya?ml$/"
+      ],
       "matchStrings": [
         "\"(?<depName>(?:registry\\.k8s\\.io|docker\\.io|quay\\.io|ghcr\\.io)[^:\"]+):(?<currentValue>[^\"]+)\""
       ],

@@ -18,7 +18,7 @@ env:
   # .config/archetypes/ must match this commit's copies and .standards.lock must pin
   # them. Bump it as described in docs/repository-governance.md; versions.json pins
   # kernel streams, not tools.
-  PRAETOR_COMMIT: "8d0344e917f16a2b7e23b1ec5258133ddba783f2"
+  PRAETOR_COMMIT: "82cd4ed60de9e1a6e9136f4b595bdfd7a3850634"
 
 jobs:
   lint-and-test:
@@ -178,6 +178,7 @@ jobs:
           test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_COMMIT}"
           mkdir -p "${RUNNER_TEMP}/bin"
           (cd praetor-src && go mod download && go mod verify \
+            && go vet ./cmd/standardsctl \
             && go build -trimpath -buildvcs=false -o "${RUNNER_TEMP}/bin/praetorctl" ./cmd/standardsctl)
           echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
 

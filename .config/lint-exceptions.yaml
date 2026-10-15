@@ -1,0 +1,43 @@
+---
+# Declared exceptions to this repository's own lint and adoption rules. Each entry names one
+# file and one rule, a reason and an expiry. The category fixes the interval from the entry
+# date: B = 3 days, C = 10 days, D = 120 days. tests/test_lint_exceptions.py fails on an expired
+# entry, on an expiry that does not match its category, and on any ruff exclusion in
+# pyproject.toml or adoption decline in .standards.yaml that no entry names.
+exceptions:
+  - path: .config/lefthook/scripts/checkpoint.py
+    tool: ruff-lint
+    rule: C420
+    category: C
+    entered: "2026-10-14"
+    expires: "2026-10-24"
+    reason: >-
+      Engine-owned checkpoint evaluator from praetor's verified bundle; a local fix fails the
+      evaluator check. The engine fix is cordanaLLM/praetor#1250.
+  - path: .config/lefthook/scripts/checkpoint.py
+    tool: ruff-format
+    rule: format
+    category: C
+    entered: "2026-10-14"
+    expires: "2026-10-24"
+    reason: >-
+      Engine-owned checkpoint evaluator, formatted at a shorter line length than this
+      repository's 100; cordanaLLM/praetor#1250.
+  - path: .config/lefthook/scripts/common.py
+    tool: ruff-format
+    rule: format
+    category: C
+    entered: "2026-10-14"
+    expires: "2026-10-24"
+    reason: >-
+      Engine-owned checkpoint helper, formatted at a shorter line length than this
+      repository's 100; cordanaLLM/praetor#1250.
+  - path: .config/agent/hooks/block_evasion.py
+    tool: ruff-format
+    rule: format
+    category: C
+    entered: "2026-10-14"
+    expires: "2026-10-24"
+    reason: >-
+      Engine-owned PreToolUse interceptor, formatted at a shorter line length than this
+      repository's 100; cordanaLLM/praetor#1250.
