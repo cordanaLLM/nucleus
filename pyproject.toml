@@ -57,6 +57,19 @@ ignore = [
     "E501",
 ]
 
+# Engine-owned files that adoption installs from praetor's verified bundle; editing them breaks
+# the checkpoint evaluator check. One entry per file and rule in .config/lint-exceptions.yaml,
+# which tests/test_lint_exceptions.py holds this table and the format exclude below to.
+[tool.ruff.lint.per-file-ignores]
+".config/lefthook/scripts/checkpoint.py" = ["C420"]
+
+[tool.ruff.format]
+exclude = [
+    ".config/agent/hooks/block_evasion.py",
+    ".config/lefthook/scripts/checkpoint.py",
+    ".config/lefthook/scripts/common.py",
+]
+
 [tool.codespell]
 skip = ".git,output,*.deb,*.xz,.pytest_cache,*.zst,*.iso,*.patch"
 ignore-words-list = "bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight"

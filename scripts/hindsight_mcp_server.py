@@ -239,70 +239,82 @@ def tool_hindsight_list_banks() -> str:
     return f"Unable to list banks (upstream unreachable at {HINDSIGHT_URL}). Default bank: '{DEFAULT_BANK}'."
 
 
+def _tool_def_recall() -> dict[str, Any]:
+    return {
+        "name": "hindsight_recall",
+        "description": "Recall relevant persistent memories, past engineering decisions, and lessons learned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Semantic search query or topic to recall.",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Maximum number of memories to return (1-20).",
+                    "default": 5,
+                },
+                "bank_id": {
+                    "type": "string",
+                    "description": "Target memory bank identifier.",
+                    "default": DEFAULT_BANK,
+                },
+            },
+            "required": ["query"],
+        },
+    }
+
+
+def _tool_def_retain() -> dict[str, Any]:
+    return {
+        "name": "hindsight_retain",
+        "description": "Retain a durable fact, architecture decision, bug root cause, or constraint into persistent memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Fact or knowledge statement to retain.",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Optional background rationale, file path, or issue reference.",
+                },
+                "bank_id": {
+                    "type": "string",
+                    "description": "Target memory bank identifier.",
+                    "default": DEFAULT_BANK,
+                },
+            },
+            "required": ["content"],
+        },
+    }
+
+
+def _tool_def_reflect() -> dict[str, Any]:
+    return {
+        "name": "hindsight_reflect",
+        "description": "Trigger observation reflection and mental model distillation for a memory bank.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bank_id": {
+                    "type": "string",
+                    "description": "Target memory bank identifier.",
+                    "default": DEFAULT_BANK,
+                },
+            },
+        },
+    }
+
+
 def get_tool_definitions() -> list[dict[str, Any]]:
     """Return JSON-RPC tool definitions for MCP protocol."""
     return [
-        {
-            "name": "hindsight_recall",
-            "description": "Recall relevant persistent memories, past engineering decisions, and lessons learned.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Semantic search query or topic to recall.",
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "Maximum number of memories to return (1-20).",
-                        "default": 5,
-                    },
-                    "bank_id": {
-                        "type": "string",
-                        "description": "Target memory bank identifier.",
-                        "default": DEFAULT_BANK,
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-        {
-            "name": "hindsight_retain",
-            "description": "Retain a durable fact, architecture decision, bug root cause, or constraint into persistent memory.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Fact or knowledge statement to retain.",
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": "Optional background rationale, file path, or issue reference.",
-                    },
-                    "bank_id": {
-                        "type": "string",
-                        "description": "Target memory bank identifier.",
-                        "default": DEFAULT_BANK,
-                    },
-                },
-                "required": ["content"],
-            },
-        },
-        {
-            "name": "hindsight_reflect",
-            "description": "Trigger observation reflection and mental model distillation for a memory bank.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "bank_id": {
-                        "type": "string",
-                        "description": "Target memory bank identifier.",
-                        "default": DEFAULT_BANK,
-                    },
-                },
-            },
-        },
+        _tool_def_recall(),
+        _tool_def_retain(),
+        _tool_def_reflect(),
         {
             "name": "hindsight_status",
             "description": "Check the connection status of the Hindsight memory backend and local cache.",
