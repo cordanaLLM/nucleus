@@ -87,7 +87,8 @@ CONFIG_AMD_IOMMU_V2=y
 
 Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT` and `CONFIG_AMD_IOMMU` today. No fragment requests the other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
 
-### Key Technical Rationale:
+### Key Technical Rationale
+
 - **`CONFIG_HSA_AMD_SVM=y`**: Enables Shared Virtual Memory between host CPU and GPU compute queues. Pointers allocated with `malloc()` or `mmap()` can be accessed directly by GPU kernels without explicit host-to-device memory copies.
 - **`CONFIG_DEVICE_PRIVATE=y` & `CONFIG_HMM_MIRROR=y`**: Allows the Linux virtual memory manager to page fault directly to device HBM3/GDDR6 memory, enabling zero-copy unified memory spaces required for training and multi-gigabyte KV caches.
 - **`CONFIG_DRM_AMDGPU_SI=n` & `CIK=n`**: Eliminates legacy pre-GCN/Sea Islands code paths, shrinking driver image footprint and eliminating dead code attack surface.
@@ -115,6 +116,7 @@ amdgpu.ppfeaturemask=0xffffffff amdgpu.gpu_recovery=1 amdgpu.vm_fragment_size=9 
 ## 4. Multi-GPU Interconnect & PCIe P2PDMA
 
 For dense GPU nodes (e.g. $8\times \text{MI300X}$ or $4\times \text{RX 7900 XTX}$):
+
 1. **PCIe Peer-to-Peer DMA (`CONFIG_PCI_P2PDMA=y`)**: Enables direct memory writes between GPUs over PCIe Gen 5 switches (Broadcom / Astera Labs) bypassing host CPU RAM and root complexes.
 2. **Infinity Fabric / xGMI Links**: For CDNA 3 nodes, the kernel config enables full coherent cross-socket memory fabric routing, delivering up to 896 GB/s bidirectional interconnect bandwidth per GPU.
 
@@ -123,6 +125,7 @@ For dense GPU nodes (e.g. $8\times \text{MI300X}$ or $4\times \text{RX 7900 XTX}
 ## 5. Verification & Diagnostics
 
 Deployments can verify proper initialization of the ROCm 10 kernel subsystem using:
+
 ```bash
 # Inspect KFD topology nodes
 ls -l /sys/class/kfd/kfd/topology/nodes/
@@ -133,4 +136,5 @@ cat /sys/class/kfd/kfd/topology/nodes/0/properties | grep -E "name|wavefront_siz
 # Check GPU recovery status
 dmesg | grep -E "amdgpu|kfd|HMM"
 ```
+
 Under healthy configuration, `dmesg` reports `amdgpu: Virtual RAM size ...`, `kfd: added device ...`, and `amdgpu: SVM initialized`.

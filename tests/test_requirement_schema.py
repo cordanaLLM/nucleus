@@ -96,13 +96,23 @@ def test_the_vendored_schema_is_a_valid_2020_12_schema():
     jsonschema.Draft202012Validator.check_schema(SCHEMA)
 
 
+MAX_WALK_ITERATIONS = 10_000
+
+
 def _walk(node: object):
     """Every mapping and list nested in the schema."""
-    yield node
-    for child in (
-        node.values() if isinstance(node, dict) else node if isinstance(node, list) else ()
-    ):
-        yield from _walk(child)
+    stack = [node]
+    iterations = 0
+    while stack:
+        iterations += 1
+        if iterations > MAX_WALK_ITERATIONS:
+            raise RuntimeError(f"Exceeded maximum walk iterations ({MAX_WALK_ITERATIONS})")
+        curr = stack.pop()
+        yield curr
+        if isinstance(curr, dict):
+            stack.extend(reversed(list(curr.values())))
+        elif isinstance(curr, list):
+            stack.extend(reversed(curr))
 
 
 def test_every_pattern_is_anchored_and_uses_no_escape():
@@ -421,7 +431,7 @@ def _field_cases() -> list[tuple[str, bytes]]:
     return cases
 
 
-def _shape_cases() -> list[tuple[str, bytes]]:
+def _shape_cases_structural() -> list[tuple[str, bytes]]:
     cases: list[tuple[str, bytes]] = []
     for name in FIXTURE_NAMES:
         cases.append((f"fixture {name}", (FIXTURES / name).read_bytes()))
@@ -450,6 +460,11 @@ def _shape_cases() -> list[tuple[str, bytes]]:
         name = f"unknown field at /{'/'.join(map(str, path))}"
         cases.append((name, _raw(_put(FULL, (*path, "extra"), 1))))
     cases.append(("json-schema keyword as field", _raw(_put(FULL, ("$schema",), "x"))))
+    return cases
+
+
+def _shape_cases_values() -> list[tuple[str, bytes]]:
+    cases: list[tuple[str, bytes]] = []
     for label, value in [
         ("another version", "aegis.p01-nucleus.kernel-requirement.v2"),
         ("cased version", vkr.SCHEMA.upper()),
@@ -494,6 +509,10 @@ def _shape_cases() -> list[tuple[str, bytes]]:
     ]
     cases.append(("document as an array of its fields", _raw(array_form)))
     return cases
+
+
+def _shape_cases() -> list[tuple[str, bytes]]:
+    return _shape_cases_structural() + _shape_cases_values()
 
 
 def _rule_cases() -> list[tuple[str, bytes]]:

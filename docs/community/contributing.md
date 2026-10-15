@@ -42,46 +42,59 @@ sequenceDiagram
     Main->>Main: Squash and merge to main
 ```
 
-### Step-by-Step Instructions:
+### Step-by-Step Instructions
 
 1. **Create a topic branch**:
+
    ```bash
    git checkout -b feat/add-bbr3-fragment
    ```
+
 2. **Implement changes**:
    - Keep changes minimal, coherent, and isolated.
    - Do not reformat nearby files for aesthetic reasons alone.
 3. **Run local verification gates**:
    Install the test and documentation dependencies from the lock file, as CI does (Python 3.12):
+
    ```bash
    pip install --require-hashes -r requirements-test.txt
    ```
+
    `requirements-test.in` names the direct dependencies; `requirements-test.txt` is compiled
    from it and pins every package by version and hash. Renovate keeps the lock current by
    rerunning the command in its header, so change a dependency in the `.in` file and compile
    with exactly this command (`tests/test_workflows.py` refuses a header Renovate cannot parse):
+
    ```bash
    uv pip compile --generate-hashes --universal --python-version=3.12 --output-file=requirements-test.txt requirements-test.in
    ```
+
    Then run the gates:
+
    ```bash
    make lint
    make audit
    make test
+   make docs-build
    ```
+
    `make lint` includes `make fmt-check`: `shfmt` and `ruff format` must report no change and
    `ruff check` no finding (`make fmt` applies the formatting). Both tools come from the lock
    file. `make audit` runs `scripts/audit-repository-health.sh`. Each of them fails, naming the
-   tool, when a tool it needs is missing, and `ci.yml` runs all three on every pull request.
+   tool, when a tool it needs is missing. `make docs-build` runs `mkdocs build --strict`, which
+   fails on a broken link or any other warning. `ci.yml` runs all four on every pull request.
    When you add or bump an action pin under `.github/workflows/`, also run `make lint-pins`.
    It asks GitHub whether each `# <tag>` comment points to the pinned commit, so it needs
    network access and an authenticated `gh`; `ci.yml` runs it on every pull request.
 4. **Commit with Conventional Commits**:
+
    ```bash
    git commit -m "feat(kconfig): enable BBRv3 congestion control on mainstream"
    ```
+
    Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`.
 5. **Push and open a Pull Request**:
+
    ```bash
    git push -u origin feat/add-bbr3-fragment
    gh pr create --fill

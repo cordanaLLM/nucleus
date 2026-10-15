@@ -75,6 +75,11 @@ def test_newc_padding_holds_for_every_length():
         (BANNER, ["init never printed"]),
         (BANNER.replace(KR, "7.2.80-lusoris1-mainstream") + MARKER, ["no 'Linux version"]),
         (BANNER + MARKER.replace(KR, "7.2.8-lusoris1-realtime"), ["init never printed"]),
+        # The kernel printed onto the init's line (build-matrix run 38525968854, lts x86_64).
+        (BANNER + MARKER.rstrip("\n") + "[    2.866941] input: ImExPS/2 Mouse\n", []),
+        (BANNER + MARKER.rstrip("\n") + "2\n", ["init never printed"]),
+        (BANNER + MARKER.rstrip("\n") + " trailing text\n", ["init never printed"]),
+        (BANNER + "noise " + MARKER, ["init never printed"]),
     ],
 )
 def test_verdict_needs_the_banner_and_the_init_line_for_this_release(console, missing):
@@ -170,3 +175,79 @@ def test_the_smoke_test_refuses_an_empty_kernel_image(tmp_path):
     )
     assert result.returncode == 2
     assert "is not a kernel image" in result.stderr
+
+
+@pytest.mark.parametrize(("extra", "accel"), [((), "tcg"), (("--accel=kvm",), "kvm")])
+def test_the_accelerator_reaches_qemu(tmp_path, extra, accel):
+    """`--accel` picks QEMU's accelerator; TCG unless KVM is asked for. No /dev/kvm is used."""
+    stub = _stub(tmp_path, f"echo \"argv: $*\"; printf '%s' '{BANNER}{MARKER}'")
+    result = _cli(tmp_path, stub, *extra)
+    assert result.returncode == 0, result.stderr
+    console = (tmp_path / "console.log").read_text(encoding="utf-8")
+    assert f" -accel {accel} " in console
+
+
+def test_an_unknown_accelerator_is_refused(tmp_path):
+    result = _cli(tmp_path, _stub(tmp_path, "exit 0"), "--accel=hvf")
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr and "hvf" in result.stderr
+
+
+def _cc_stub(tmp_path: Path, name: str, body: str) -> Path:
+    """A compiler stand-in; build_init calls it as `<cc> -static -Os -o <binary> <source>`."""
+    cc = tmp_path / name
+    cc.write_text(f'#!/bin/sh\nout="$4"\n{body}\n', encoding="utf-8")
+    cc.chmod(0o755)
+    return cc
+
+
+def _cli_compiling(tmp_path: Path, *extra: str, env: dict[str, str] | None = None):
+    """The CLI without --init-binary, so it compiles the init with the chosen compiler."""
+    kernel = tmp_path / "vmlinuz"
+    kernel.write_bytes(b"MZ-kernel")
+    # The QEMU stub boots only an initramfs that holds the compiled init's bytes.
+    qemu = _stub(
+        tmp_path,
+        'while [ "$1" != -initrd ]; do shift; done\n'
+        f"grep -q INIT-FROM-CC \"$2\" && printf '%s' '{BANNER}{MARKER}'",
+    )
+    return subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--kernel={kernel}",
+            f"--kernelrelease={KR}",
+            f"--qemu={qemu}",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin", **(env or {})},
+    )
+
+
+def test_the_init_is_built_with_the_compiler_cc_names(tmp_path):
+    cc = _cc_stub(tmp_path, "planted-cc", 'printf INIT-FROM-CC > "$out"')
+    result = _cli_compiling(tmp_path, f"--cc={cc}")
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_cc_environment_variable_chooses_the_compiler(tmp_path):
+    cc = _cc_stub(tmp_path, "env-cc", 'printf INIT-FROM-CC > "$out"')
+    result = _cli_compiling(tmp_path, env={"CC": str(cc)})
+    assert result.returncode == 0, result.stderr
+
+
+def test_a_missing_compiler_is_refused_by_name(tmp_path):
+    result = _cli_compiling(tmp_path, "--cc=/nonexistent/planted-cc")
+    assert result.returncode == 2
+    assert "/nonexistent/planted-cc is required to build the smoke test's init" in result.stderr
+
+
+def test_a_compiler_that_fails_is_refused_with_its_message(tmp_path):
+    cc = _cc_stub(tmp_path, "broken-cc", "echo 'planted: cannot find -lc' >&2; exit 1")
+    result = _cli_compiling(tmp_path, f"--cc={cc}")
+    assert result.returncode == 2
+    assert "could not build a static init" in result.stderr
+    assert "planted: cannot find -lc" in result.stderr
