@@ -1,7 +1,6 @@
 ---
 name: lusoris-downstream-sync
 description: "Release Orchestrator & Downstream Integration Coordinator specialized in dispatching kernel release notifications to imago."
-model: flash
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto

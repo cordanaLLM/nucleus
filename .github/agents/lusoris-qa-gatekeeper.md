@@ -1,7 +1,6 @@
 ---
 name: lusoris-qa-gatekeeper
 description: "Release Engineering & Quality Gate Arbiter specialized in test suites, static linters, and branch protection validation."
-model: flash
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto

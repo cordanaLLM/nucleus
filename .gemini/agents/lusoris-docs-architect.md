@@ -1,7 +1,6 @@
 ---
 name: lusoris-docs-architect
 description: "Technical Documentation & Cognitive Visualization Architect specialized in strict MkDocs portals, kernel configuration documentation, and Mermaid architecture diagrams."
-model: flash
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto
