@@ -64,9 +64,19 @@ def test_every_leg_declares_what_is_claimed_for_it(tmp_path, stream, arch):
 def test_the_list_covers_every_line_of_the_k8s_node_fragment():
     claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
     fragment = vkr.read_config(KCONFIG / "k8s-node.config")
+    legacy = claims["k8s-node-iptables-legacy"]
     assert set(fragment) == set(claims["k8s-node"].symbols)
+    assert not (set(claims["k8s-node"].symbols) & set(legacy.symbols))
     assert claims["k8s-node"].streams == tuple(VERSIONS["streams"])
     assert claims["k8s-node"].architectures == tuple(VERSIONS["architectures"])
+    assert legacy.streams == ("bleeding", "mainstream", "lts")
+    assert legacy.architectures == tuple(VERSIONS["architectures"])
+    for stream in ("bleeding", "mainstream", "lts"):
+        stream_cfg = vkr.read_config(KCONFIG / "streams" / f"{stream}.config")
+        assert set(stream_cfg) == set(legacy.symbols)
+    realtime = vkr.read_config(KCONFIG / "streams" / "realtime.config")
+    for symbol in legacy.symbols:
+        assert symbol not in realtime
 
 
 def test_the_mainstream_gpu_claim_names_xe_and_amdgpu():
@@ -82,6 +92,7 @@ def test_the_mainstream_gpu_claim_names_xe_and_amdgpu():
     ("stream", "arch", "drop"),
     [
         ("mainstream", "x86_64", "CONFIG_DRM_XE"),
+        ("mainstream", "x86_64", "CONFIG_NETFILTER_XTABLES_LEGACY"),
         ("lts", "arm64", "CONFIG_OVERLAY_FS"),
         ("bleeding", "riscv64", "CONFIG_NF_TABLES"),
         ("realtime", "x86_64", "CONFIG_PREEMPT_RT"),
@@ -91,6 +102,19 @@ def test_a_claimed_option_that_is_off_is_refused(tmp_path, stream, arch, drop):
     result = _run(_declared(tmp_path, stream, arch, drop=drop), stream, arch)
     assert result.returncode == 1
     assert f"{drop} unrecorded" in result.stderr
+
+
+def test_realtime_refuses_legacy_iptables_claim_if_planted(tmp_path):
+    def plant_realtime(doc):
+        for claim in doc["claims"]:
+            if claim["id"] == "k8s-node-iptables-legacy":
+                claim["streams"] = ["bleeding", "mainstream", "lts", "realtime"]
+                break
+
+    config = _declared(tmp_path, "realtime", "x86_64")
+    result = _run(config, "realtime", "x86_64", required=_edit_list(tmp_path, plant_realtime))
+    assert result.returncode == 1
+    assert "CONFIG_NETFILTER_XTABLES_LEGACY unrecorded" in result.stderr
 
 
 def test_a_module_where_built_in_is_claimed_is_refused(tmp_path):
