@@ -117,6 +117,7 @@ download() {
   fi
   echo "==> Downloading ${url}"
   if ! curl --fail --silent --show-error --location --retry 3 \
+    --connect-timeout 30 --max-time 600 \
     --proto '=https,file' --proto-redir '=https' --output "${target}.part" "${url}"; then
     rm -f "${target}.part"
     refuse "could not download ${url}"
@@ -137,9 +138,11 @@ listed_signer() {
 # and every VALIDSIG must name, as its primary-key fingerprint, a signer the stream lists.
 check_signature_status() {
   local status="$1" what="$2"
-  local problems
-  problems="$(grep -Eo '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|NO_PUBKEY)' "${status}" \
-    | cut -d' ' -f2 | sort -u | tr '\n' ' ' || true)"
+  local problems=""
+  if grep -Eq '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|NO_PUBKEY)' "${status}"; then
+    problems="$(grep -Eo '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG|NO_PUBKEY)' "${status}" \
+      | cut -d' ' -f2 | sort -u | tr '\n' ' ')"
+  fi
   [[ -z "${problems}" ]] || refuse "${what}: the signature does not verify (${problems% })"
   grep -q '^\[GNUPG:\] GOODSIG ' "${status}" || refuse "${what}: no good signature"
   local -a signed_by=()
@@ -261,8 +264,10 @@ main() {
     git-tag) fetch_git_tag ;;
     *) refuse "unknown source kind ${SRC[kind]}" ;;
   esac
-  local found
-  found="$(tree_kernelversion 2>/dev/null || true)"
+  local found=""
+  if [[ -f "${DEST}/Makefile" ]]; then
+    found="$(tree_kernelversion)"
+  fi
   if [[ "${found}" != "${SRC[kernelversion]}" ]]; then
     refuse "the tree is kernel '${found}', versions.json names ${SRC[version]} (${SRC[kernelversion]}) for ${STREAM}"
   fi

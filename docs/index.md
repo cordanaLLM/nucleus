@@ -41,10 +41,10 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 | Stream | Linux Version | Status | Primary Target Workloads | Hardware Acceleration | Key Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`bleeding`** | `7.3-rc5` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090, CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
-| **`mainstream`** | `7.2.8` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610 | BBR congestion control, `mq-deadline`, Level Zero |
-| **`lts`** | `6.18.54` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | NVIDIA LTS drivers, Intel Arc Alchemist | Rock-solid stability, OpenZFS 2.3+ kmod stability, strict overcommit |
-| **`realtime`** | `7.2.8` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |
+| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090, CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
+| **`mainstream`** | `7.2.10` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610 | BBR congestion control, `mq-deadline`, Level Zero |
+| **`lts`** | `6.18.56` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | NVIDIA LTS drivers, Intel Arc Alchemist | Rock-solid stability, OpenZFS 2.3+ kmod stability, strict overcommit |
+| **`realtime`** | `7.2.10` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |
 
 ---
 
@@ -63,32 +63,44 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 To verify and install a published kernel release, see [Verify and Install a Release](install.md).
 
 ### Inspecting Configured Streams
+
 Validate the declarative manifest and list available build channels:
+
 ```bash
 make lint
 python3 -c "import json; data=json.load(open('versions.json')); print(json.dumps(data['streams'], indent=2))"
 ```
 
 ### Dry-Run Kernel Build Pipeline
+
 State the fetch, the configuration resolution, the make command and the expected kernel release; nothing is written. `DRY_RUN` defaults to `true` in the `Makefile`:
+
 ```bash
 make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=true
 ```
+
 Or directly via the build script:
+
 ```bash
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run
 ```
 
 ### Building Full Debian Kernel Packages
+
 Compile with GCC on all available host cores (`--jobs` defaults to `nproc`):
+
 ```bash
 make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=false
 ```
+
 Or directly via the build script:
+
 ```bash
 ./scripts/build_kernel.sh --stream=mainstream --arch=x86_64
 ```
+
 Compiled Debian packages will be placed into `output/<stream>-<arch>/`:
+
 - `linux-image-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
 - `linux-headers-<kernelrelease>_<debian_version>-lusoris<N>_<debian_arch>.deb`
 - `linux-libc-dev_<debian_version>-lusoris<N>_<debian_arch>.deb`
@@ -113,7 +125,9 @@ of [Packaging](packaging.md). `--dry-run` writes a marked text file under
 `output/<stream>-<arch>-dry-run/`, never a `.efi` and never a checksum.
 
 ### Running Test Gates
+
 Ensure all kconfig fragments, shell scripts, and privacy invariants pass validation:
+
 ```bash
 make test
 ```

@@ -94,21 +94,26 @@ reason and the bounds.
 ## 3. Deep Dive into Defensive Controls
 
 ### 3.1 Strict W^X (Write XOR Execute)
+
 - **`CONFIG_STRICT_KERNEL_RWX=y`**: Enforces strict separation in kernel page tables. No page can be simultaneously writable and executable. Kernel text is mapped strictly read-only (`r-x`), while data structures and stacks are mapped strictly non-executable (`rw-`).
 - **`CONFIG_STRICT_MODULE_RWX=y`**: Extends the same guarantee to dynamically loaded kernel modules (e.g. `nvidia.ko`, `zfs.ko`). This neutralizes classic shellcode injection exploits.
 
 ### 3.2 Address Space Layout Randomization (KASLR)
+
 - **`CONFIG_RANDOMIZE_BASE=y`**: Randomizes the base physical and virtual addresses of the kernel image on every cold boot, introducing up to 9 bits of entropy on x86_64.
 - **`CONFIG_RANDOMIZE_MEMORY=y`**: Randomizes the base addresses of the direct mapping of all physical memory, vmalloc area, and vmemmap area, preventing attackers from calculating fixed offsets.
 
 ### 3.3 Stack Protector Strong
+
 - **`CONFIG_STACKPROTECTOR_STRONG=y`**: GCC/Clang instruments functions containing arrays, local variable address references, or alloca calls with a random stack canary value. Upon function return, the canary is verified; any mismatch triggers an immediate kernel panic, preventing stack return pointer overwrites.
 
 ### 3.4 Slab Freelist Hardening & Initialization
+
 - **`CONFIG_SLAB_FREELIST_HARDENED=y`**: Encrypts freelist pointers inside SLUB caches using an XOR cipher with a per-cache random key and the address of the freelist entry, preventing metadata corruption and arbitrary write primitives.
 - **`CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y` & `INIT_ON_FREE_DEFAULT_ON=y`**: Zeroes memory pages upon allocation and free operations, completely eliminating uninitialized data disclosure and stale pointer re-use.
 
 ### 3.5 Usercopy Bounds Hardening
+
 - **`CONFIG_HARDENED_USERCOPY=y`**: Validates the size of memory regions passed to `copy_to_user()` and `copy_from_user()`. If a kernel driver attempts to read past the boundary of a declared slab object, the transfer is aborted immediately.
 
 ---
