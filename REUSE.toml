@@ -30,15 +30,15 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The Lusoris Authors"
 SPDX-License-Identifier = "CC-BY-SA-4.0"
 
-# Adapted from the Contributor Covenant (https://www.contributor-covenant.org).
+# Adapted from the Contributor Covenant 2.1 (https://www.contributor-covenant.org), whose text is CC-BY-4.0.
 [[annotations]]
 path = ["CODE_OF_CONDUCT.md", "docs/community/code-of-conduct.md"]
-precedence = "aggregate"
+precedence = "override"
 SPDX-FileCopyrightText = [
     "2026 The Lusoris Authors",
-    "Contributor Covenant contributors",
+    "Contributor Covenant contributors <https://www.contributor-covenant.org>",
 ]
-SPDX-License-Identifier = "CC-BY-SA-4.0"
+SPDX-License-Identifier = "CC-BY-4.0"
 
 # Changes to Linux kernel sources carry the kernel's licence. "override"
 # because a patch quotes the licence lines of the files it changes.
