@@ -1,5 +1,33 @@
 # Lusoris Kernel Forge
 
+<!-- praetor:readme-governance:start -->
+[![HISS Adopted][praetor-hiss-badge]][praetor-hiss-agents]
+[![Documentation Governance][praetor-docs-badge]][praetor-docs-runs]
+
+Praetor manages this repository's declared governance policy. This managed
+block records adoption state; it is not a verification certificate.
+
+**Verification**: `make verify-all` runs the repository's configured
+verification cascade.
+
+**HISS Audit**: `praetorctl audit` enforces policy, generated-surface
+integrity, and the debt ratchet.
+
+**Context Sync**: `praetorctl compile-context --verify` verifies every
+generated agent context against `AGENTS.md`.
+
+**Documentation**: `make docs-lint` enforces locked Markdown style and the
+private scratch-link policy.
+
+**Debt Baseline**: `.standards-baseline.json` anchors the debt ratchet at
+0 recorded infractions; audit forbids growth.
+
+[praetor-hiss-badge]: https://img.shields.io/badge/Standards-HISS%20Adopted-blue
+[praetor-hiss-agents]: https://github.com/cordanaLLM/nucleus/blob/HEAD/AGENTS.md
+[praetor-docs-badge]: https://github.com/cordanaLLM/nucleus/actions/workflows/praetor-docs.yml/badge.svg
+[praetor-docs-runs]: https://github.com/cordanaLLM/nucleus/actions/workflows/praetor-docs.yml
+<!-- praetor:readme-governance:end -->
+
 [![License](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Automated%20Gates-emerald.svg)](.github/workflows/ci.yml)
 [![Downstream](https://img.shields.io/badge/downstream-imago-purple.svg)](https://github.com/cordanaLLM/imago)
@@ -11,6 +39,7 @@
 ## 1. Mission & Architecture
 
 `cordanaLLM/nucleus` decouples low-level kernel compilation from cloud image creation:
+
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, and NVMe-oF TCP optimizations. Every release in OpenZFS's supported Linux range is checked by building the OpenZFS module against its published headers (section 5.6 of [`docs/packaging.md`](docs/packaging.md)).
@@ -101,18 +130,23 @@ sudo dpkg -i linux-image-*.deb linux-headers-*.deb
 For full artifact details, verification semantics, and current operational limits, see [Verify and Install a Release](docs/install.md).
 
 ### Prerequisites
+
 - An Ubuntu 26.04 host or container with the kernel build toolchain; the build workflows install
   it with the same script:
+
   ```bash
   sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
+
 - The Python test and documentation dependencies, from the hash-pinned lock file
   ([CONTRIBUTING.md](CONTRIBUTING.md) says how it is compiled):
+
   ```bash
   pip install --require-hashes -r requirements-test.txt
   ```
 
 ### Build & Packaging Recipes
+
 ```bash
 # Display all ergonomic developer targets
 make help
@@ -178,7 +212,7 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 
 ## 4. Repository Structure
 
-```
+```text
 .
 ├── .config/archetypes/         # praetor policy catalog, pinned by .standards.lock
 ├── .github/rulesets/main.json  # Branch ruleset rendered by `make ruleset`

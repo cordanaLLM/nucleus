@@ -28,7 +28,8 @@ We treat all security vulnerability disclosures with utmost urgency and confiden
    - Provide a clear vulnerability description, affected kernel streams, proof-of-concept if available, and any relevant kconfig flags.
 2. **Never File Public Issues**: Do not submit vulnerability reports, zero-day disclosures, or exploit PoCs to public GitHub Issues or PRs.
 
-### Response SLA:
+### Response SLA
+
 - **Initial Acknowledgement**: Within 24 hours.
 - **Triage & Reproduction**: Within 72 hours.
 - **Remediation & Coordinated Disclosure**: Private fix developed, tested against QEMU boot test suites, and published with a CVE and GitHub Security Advisory (GHSA).
@@ -44,11 +45,12 @@ A published release carries a keyless Cosign signature over its checksum file. T
    - The workflow signs `SHA256SUMS` using keyless Cosign (`cosign sign-blob`) and publishes the signature as `SHA256SUMS.bundle`.
    - The signed `SHA256SUMS` file covers the Debian packages (`*.deb`), the extracted kernel image (`vmlinuz-<kernelrelease>`), the resolved kernel configuration (`kernel-<stream>-x86_64.config`), and the Syft SBOM files (`kernel-<stream>.cdx.json` and `kernel-<stream>.spdx.json`).
    - The signature does not cover `kernel-<stream>.manifest.json`, which the workflow writes after `SHA256SUMS` is signed. The manifest is unsigned; a consumer checks the digests it carries against the signed `SHA256SUMS`.
-   - `.github/workflows/supply-chain.yml` builds no package. It attests only packages placed in `output/` before it runs, writes `SHA256SUMS` through the same `scripts/publish_release.sh`, and fails when `output/` holds no package or an empty one, or when `sha256sum` or `cosign` fails (`tests/test_supply_chain_workflow.py`).
+   - `.github/workflows/supply-chain.yml` builds and signs nothing. After every successful `publish-release` run, and on dispatch for a kernel release tag, it downloads the release and runs `scripts/verify-release.sh` over it, the checks of the next section (`tests/test_supply_chain_workflow.py`). It does not run on the release event: the release workflow creates the release with `GITHUB_TOKEN`, and GitHub starts no workflow on an event that token raised.
    - Unified Kernel Images (`.efi`) are not signed yet. `sbsign` Secure Boot signing is not wired into `scripts/package-uki.sh`, and no release workflow publishes a UKI, so the release **Cosign** signature over `SHA256SUMS` covers no UKI. Both are planned.
 
 2. **Verifying a Release**:
    - Download the release assets into one directory, verify the Cosign signature over `SHA256SUMS` against the identity of the release workflow at that tag, then check the files against it:
+
      ```bash
      cosign verify-blob \
        --bundle SHA256SUMS.bundle \
@@ -57,7 +59,9 @@ A published release carries a keyless Cosign signature over its checksum file. T
        SHA256SUMS
      sha256sum -c SHA256SUMS
      ```
+
    - `cosign verify-blob` refuses a `SHA256SUMS` with one changed byte and a certificate from any other workflow.
+   - `scripts/verify-release.sh <asset-dir> <release-tag> cordanaLLM/nucleus` runs both commands, and also refuses an asset that `SHA256SUMS` does not list and a manifest whose tag, signer identity or `SHA256SUMS` digest is not the verified one. It needs `cosign`, `sha256sum` and `jq`.
    - `cordanaLLM/imago` consumes `kernel-<stream>.manifest.json` (`imago.nucleus.kernel-artifact.v1`) and verifies `SHA256SUMS.bundle`, the `SHA256SUMS` digest, and every artifact digest before an image build uses a kernel.
 
 3. **Checks Before Signing**:

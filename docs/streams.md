@@ -6,7 +6,7 @@
 
 ## 1. Stream Architecture
 
-```
+```text
                                 upstream: kernel.org
                                          │
         ┌───────────────────┬────────────┴───────┬───────────────────┐
@@ -28,24 +28,28 @@ authority, and section 3 says how each source is proven.
 ## 2. Stream Specifications
 
 ### 2.1 Bleeding Stream (`bleeding`)
+
 - **Upstream Release**: Linux 7.3-rc7 (Mainline release candidate, from the signed tag)
 - **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, PCIe 6.0 / CXL 3.0 interconnects.
 - **Key Features**: sched-ext user-space eBPF scheduler support, cutting-edge DRMs, prototype memory tiering.
 - **Flavors**: `ai-infer-nvidia-bleeding`, `k8s-node-nvidia-bleeding`, `docker-nvidia-bleeding`.
 
 ### 2.2 Mainstream Stream (`mainstream`)
+
 - **Upstream Release**: Linux 7.2.10 (Stable)
 - **Target Hardware**: Intel Arc Battlemage Xe2, AMD Radeon RX 7000/8000 (ROCm 10), NVIDIA Ada/Ampere (565/610).
 - **Key Features**: BBR congestion control, `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
 ### 2.3 Long-Term Support Stream (`lts`)
+
 - **Upstream Release**: Linux 6.18.56 (Longterm)
 - **Target Workloads**: Enterprise Kubernetes nodes, OpenZFS 2.3.x root filesystems, PostgreSQL / CNPG databases.
 - **Key Features**: Rock-solid stability, proven OpenZFS kernel module API stability, strict memory overcommit controls.
 - **Flavors**: `k8s-node-*`, `cloudnative-storage`, `cloudnative-pg`.
 
 ### 2.4 Realtime Stream (`realtime`)
+
 - **Upstream Release**: Linux 7.2.10 (Stable), built with the in-tree `PREEMPT_RT` option; no out-of-tree rt patch is applied
 - **Target Workloads**: Low-jitter gaming servers (Counter-Strike 2, dedicated game hosts), software-defined radio, audio processing.
 - **Key Features**: Deterministic interrupt handling, high-resolution timers, threaded IRQs.

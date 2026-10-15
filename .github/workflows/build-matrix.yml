@@ -1,6 +1,29 @@
 ---
 name: build-matrix
 on:
+  # A pull request that touches what a build reads compiles all twelve legs; required-checks
+  # waits for them (docs/repository-governance.md). The list is every file the build path runs
+  # or reads: the scripts this workflow calls and the ones they call, the fragments, the
+  # manifest, the signing keys, the builder image and this workflow.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "scripts/build_kernel.sh"
+      - "scripts/merge-config.sh"
+      - "scripts/fetch-kernel-source.sh"
+      - "scripts/kconfig_survival.py"
+      - "scripts/verify_kernel_requirement.py"
+      - "scripts/versions_query.py"
+      - "scripts/install-build-toolchain.sh"
+      - "scripts/probe-build-space.sh"
+      - "scripts/check_kernel_artifacts.py"
+      - "scripts/boot_smoke.py"
+      - "scripts/publish_release.sh"
+      - "docker/Dockerfile.builder"
+      - "kconfig/**"
+      - "keys/**"
+      - "versions.json"
+      - ".github/workflows/build-matrix.yml"
   schedule:
     - cron: "0 2 * * 0"
   workflow_dispatch:
@@ -16,7 +39,9 @@ permissions:
 
 concurrency:
   group: build-matrix-${{ github.ref }}
-  cancel-in-progress: false
+  # A new push to a pull request supersedes its running build; a scheduled or dispatched run
+  # is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -78,6 +103,19 @@ jobs:
         shell: bash
 
     steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -196,6 +234,19 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false

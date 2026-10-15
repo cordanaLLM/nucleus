@@ -118,7 +118,7 @@ request edit. A skipped check passes only when its name is listed with `--allow-
 list holds just `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
 Gate judges, and `tests/test_gates_refuse_skipped.py` fails when that list differs from the
 detector-gated jobs in `security-scans.yml`. The gate also fails when it finds no other check
-run, or when the others are still running after 25 minutes. Before this, the aggregator
+run, or when the others are still running after 100 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
 Two forge behaviours shape the wait. A job that `needs` another one registers its check run
@@ -134,8 +134,14 @@ its status says, and its conclusion is judged like any other. Both are tested in
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
 Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Against the
 Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
-for them and requires their success like any other check run. `build-matrix.yml` does not
-run on pull requests at all.
+for them and requires their success like any other check run. `build-matrix.yml` works the
+same way: a pull request that touches a file the build runs or reads (the paths its
+`pull_request` trigger lists: the build scripts, `kconfig/`, `keys/`, `versions.json`, the
+builder image and the workflow itself) compiles, gates and boots all twelve legs, and
+`required-checks` waits for them. That is why the gate waits 100 minutes: the arm64 leg may run
+for 90, and the longest measured leg took 40 (run 36507112520). A new push to the pull request
+cancels the build still running for the previous one; a scheduled or dispatched run is never
+cancelled. `tests/test_workflows.py` fails when the trigger, its paths or the wait change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:
@@ -171,7 +177,9 @@ only `required-checks`, was removed on 2026-09-29. Under the ruleset:
 
 - Every commit of a pull request must carry a verified signature, not only the merge result.
 - Review threads must be resolved before a merge.
-- No role bypasses the ruleset; the ruleset declares no bypass actors.
+- The repository admin role (`RepositoryRole` 5) may bypass the ruleset, and only through a pull
+  request (`bypass_mode: pull_request`); nobody pushes to `main` outside a pull request.
+  The bypass was applied to ruleset 24167009 on 2026-10-15 with the agent kit (#129).
 
 The signature rule has one trap. The ruleset also requires an up-to-date branch, and GitHub's
 **Update branch** button in rebase mode (`gh pr update-branch --rebase`) rewrites the pull
@@ -188,6 +196,16 @@ git push --force-with-lease=<branch>:$(git rev-parse origin/<branch>) origin HEA
 A release pull request that is only behind can also wait: release-please rebuilds it on the next
 push to `main`. To re-sign a single rewritten release commit, `git commit --amend --no-edit -S`
 keeps `github-actions[bot]` as its author.
+
+A draft pull request runs no gate. Every job a pull request starts begins with the step
+**Stop on a draft pull request**, which fails on a draft, so each required check reports failure
+until the pull request is marked ready for review. The `ready_for_review` event then starts the
+gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
+`test_every_pull_request_job_stops_on_a_draft` in `tests/test_workflows.py` refuses a workflow
+without that step or without the event. Two workflows are declared as HISS-18 exceptions in
+`.standards.yaml`: `security-scans.yml` and `verify-requirements.yml`. Their jobs that need
+another job are skipped on a draft, and the audit reports them although nothing can merge
+through them. The exceptions expire on 2027-01-13 and close with cordanaLLM/praetor#1368.
 
 ## 5. The praetor pin
 

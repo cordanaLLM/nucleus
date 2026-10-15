@@ -184,7 +184,9 @@ and up to 40 minutes on arm64. With the cache the x86_64 and riscv64 compiles to
 
 Measured sizes of the local builds (2026-09-29, `docker` `ubuntu:26.04` on an x86_64 host, 32
 threads, so arm64 and riscv64 were cross-compiled there and have no headers package; riscv64
-carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact:
+carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact,
+and `scripts/check_kernel_artifacts.py` refuses a larger artifact before checksumming
+(`test_an_artifact_above_the_imago_bound_is_refused`):
 
 | Leg | image package | headers | libc-dev | `vmlinuz` | object tree | compile |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -201,7 +203,7 @@ Nothing is checksummed before `scripts/check_kernel_artifacts.py` has opened it.
 of every build and again in `publish-release.yml` before the SBOMs, `SHA256SUMS` and the
 signature, and refuses the directory unless:
 
-- it holds only non-empty regular files: packages, `vmlinuz-<kernelrelease>` and
+- it holds only non-empty regular files of at most 512 MiB: packages, `vmlinuz-<kernelrelease>` and
   `kernel-<stream>-<arch>.config`;
 - `dpkg-deb -f` reads every package as `linux-image-<kernelrelease>`,
   `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<debian_version>-lusoris<N>` and the
@@ -419,7 +421,9 @@ The repository does not orchestrate initramfs creation or provide dracut configu
 Not implemented: no APT archive is published; packages are GitHub Release assets.
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
+
 Planned: UKI binaries (`.efi`) are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. The image is unsigned today (section 3.1), and no workflow publishes or pushes one: CI builds one only to test it, and `publish-release.yml` publishes GitHub Release assets, none of them a UKI (section 5.3).
+
 ```bash
 # Packaging UKI as an OCI artifact using oras:
 oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
@@ -427,9 +431,11 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
 ```
+
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) are meant to pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
+
 `publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4). It builds
 the tagged stream for x86_64 with `scripts/build_kernel.sh`, in an `ubuntu:26.04` container pinned
 to the digest `build-matrix.yml` uses, that is given neither the job's token nor its OIDC
@@ -451,6 +457,16 @@ written to `records/boot-<stream>-x86_64.log`; `records/` is uploaded as the run
 - `kernel-<stream>.cdx.json` and `kernel-<stream>.spdx.json`;
 - `SHA256SUMS`, over exactly the files above, and `SHA256SUMS.bundle`;
 - `kernel-<stream>.manifest.json`.
+
+After every successful run, `supply-chain.yml` downloads the release and verifies it with
+`scripts/verify-release.sh`: the cosign bundle against the release workflow's identity at the tag,
+every asset against `SHA256SUMS`, no asset outside it, and the manifest's tag, signer identity and
+`SHA256SUMS` digest. The same script verifies a release by hand:
+
+```bash
+gh release download <release-tag> --repo cordanaLLM/nucleus --dir release
+./scripts/verify-release.sh release <release-tag> cordanaLLM/nucleus
+```
 
 A release is x86_64 only: `imago.nucleus.kernel-artifact.v1` has no architecture field. No UKI
 (`.efi`) is built or uploaded: `publish-release.yml` does not call `scripts/package-uki.sh`.
