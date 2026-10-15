@@ -52,24 +52,12 @@ SITE_URL = "https://cordanallm.github.io/nucleus/"
 REPOSITORY_URL = "https://github.com/cordanaLLM/nucleus"
 
 
-def _shell_assignment(name: str) -> str:
-    """Return a pattern capturing every value a shell script assigns to name."""
-    keyword = r"(?:(?:export|readonly|local|declare(?:\s+-\w+)*)\s+)?"
-    return rf"^\s*{keyword}{name}=[\"']?([^\"'\s]*)"
-
-
-SETUP_SCRIPT = "scripts/setup-remote-repository.sh"
-
 # Each identity-bearing setting: its file, a label, a pattern capturing every
 # value the file gives it, and the one value allowed. All captured values are
-# compared, not only the presence of the canonical one: a second REPO_OWNER
-# assignment below the canonical line would pass a presence check and still
-# make the setup script create the repository under another owner.
+# compared, not only the presence of the canonical one: a second site_url
+# below the canonical line would pass a presence check and still publish the
+# site under another address.
 CANONICAL_VALUES = (
-    (SETUP_SCRIPT, "REPO_OWNER", _shell_assignment("REPO_OWNER"), "cordanaLLM"),
-    (SETUP_SCRIPT, "REPO_NAME", _shell_assignment("REPO_NAME"), "nucleus"),
-    (SETUP_SCRIPT, "FULL_REPO", _shell_assignment("FULL_REPO"), "${REPO_OWNER}/${REPO_NAME}"),
-    (SETUP_SCRIPT, "--homepage", r"--homepage[=\s]+[\"']?([^\"'\s]+)", SITE_URL),
     ("mkdocs.yml", "site_url", r"^site_url:\s*[\"']?([^\"'\s]+)", SITE_URL),
     ("mkdocs.yml", "repo_url", r"^repo_url:\s*[\"']?([^\"'\s]+)", REPOSITORY_URL),
     ("mkdocs.yml", "repo_name", r"^repo_name:\s*[\"']?([^\"'\s]+)", "cordanaLLM/nucleus"),

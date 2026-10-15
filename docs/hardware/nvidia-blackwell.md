@@ -87,7 +87,8 @@ CONFIG_AMD_IOMMU=y
 
 Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT`, `CONFIG_INTEL_IOMMU`, `CONFIG_AMD_IOMMU`, `CONFIG_VFIO` and `CONFIG_VFIO_PCI` today. No fragment requests the other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
 
-### Critical Rationale:
+### Critical Rationale
+
 1. **`CONFIG_HMM_MIRROR=y` & `CONFIG_DEVICE_PRIVATE=y`**: Enables the CUDA Unified Virtual Memory (UVM) driver to transparently migrate memory pages between physical system DDR5/LPDDR5 memory and GPU HBM3e/GDDR7 memory upon hardware page fault.
 2. **`CONFIG_PCI_P2PDMA=y` & `CONFIG_INFINIBAND_USER_MEM=y`**: Prerequisite for `nvidia-peermem`, allowing high-speed NICs (Mellanox ConnectX-6/7/8) to directly read and write GPU memory over PCIe/NVLink without copying buffers through system RAM.
 
@@ -98,15 +99,19 @@ Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT`, `CONFIG_INTE
 The Blackwell architecture introduces major hardware breakthroughs enabled by the `bleeding` kernel stream:
 
 ### 3.1 Second-Generation Transformer Engine (FP4 & Microscaling)
+
 Blackwell integrates native 4-bit floating point (NVFP4) and microscaling formats with hardware decompression, doubling token generation throughput over Hopper. The kernel UVM driver allocates contiguous 2 MB physical pages to maximize TLB coverage for high-dimensional tensor weights.
 
 ### 3.2 NVLink 5.0 Fabric & Multi-Node Scaling
+
 - Delivers up to 1.8 TB/s bidirectional bandwidth per GPU.
 - Supports 576 GPUs interconnected in a single NVLink cluster domain (GB200 NVL72).
 - The kernel exposes the NVLink management interface via `/dev/nvidia-caps/nvidia-cap*` device nodes with fine-grained POSIX access control.
 
 ### 3.3 Enhanced Multi-Instance GPU (MIG)
+
 Blackwell allows hardware partitioning of a single physical B200 GPU into up to 7 isolated GPU instances, each with dedicated high-bandwidth memory controllers, cache slices, and compute engines:
+
 ```bash
 # Example: Configuring 7x 1g.24gb MIG instances on B200
 nvidia-smi -i 0 -mig 1
@@ -158,4 +163,5 @@ ls -l /dev/nvidia* /dev/nvidia-uvm*
 # Run hardware device query
 nvidia-smi -q -d MEMORY,UTILIZATION,ECC
 ```
+
 A correctly configured system indicates `License: Dual MIT/GPL` in `modinfo nvidia` and displays zero ECC double-bit errors.

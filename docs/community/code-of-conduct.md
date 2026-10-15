@@ -15,6 +15,7 @@ We pledge to act and interact in ways that contribute to an open, welcoming, div
 ## 2. Our Standards
 
 Examples of behavior that contributes to a positive environment for our community include:
+
 - Demonstrating empathy and kindness toward other people.
 - Being respectful of differing opinions, viewpoints, and experiences.
 - Giving and gracefully accepting constructive feedback.
@@ -22,6 +23,7 @@ Examples of behavior that contributes to a positive environment for our communit
 - Focusing on what is best not just for us as individuals, but for the overall community.
 
 Examples of unacceptable behavior include:
+
 - The use of sexualized language or imagery, and sexual attention or advances of any kind.
 - Trolling, insulting or derogatory comments, and personal or political attacks.
 - Public or private harassment.
@@ -47,6 +49,7 @@ This Code of Conduct applies within all community spaces (repositories, issue tr
 ## 5. Reporting & Contact
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be reported confidentially to the project maintainers:
+
 - **Private Security Advisory**: Submit a confidential advisory via [GitHub Security Advisories](https://github.com/cordanaLLM/nucleus/security/advisories/new).
 - **Direct Maintainer Contact**: Reach out privately to project maintainers via GitHub.
 

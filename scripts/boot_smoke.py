@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -138,8 +139,11 @@ def verdict(console: str, kernelrelease: str) -> list[str]:
     missing = []
     if f"Linux version {kernelrelease} " not in console:
         missing.append(f"no 'Linux version {kernelrelease} ' banner on the console")
-    lines = {line.strip() for line in console.splitlines()}
-    if f"{MARKER}{kernelrelease}" not in lines:
+    # The kernel may print onto the init's line before its newline reaches the console
+    # ("...release=<r>[    2.866941] input: ..."), so a printk timestamp may follow the
+    # release; any other text after it is a different release and is refused.
+    init_line = re.compile(rf"{re.escape(MARKER + kernelrelease)}(\[\s*\d+\.\d+\].*)?")
+    if not any(init_line.fullmatch(line.strip()) for line in console.splitlines()):
         missing.append(f"init never printed '{MARKER}{kernelrelease}'")
     return missing
 

@@ -34,35 +34,26 @@ class TestAgentsFleetIntegrity:
 
     def test_expected_agents_present(self) -> None:
         assert AGENTS_DIR.is_dir(), f"Missing {AGENTS_DIR}"
-        discovered = set()
-        for d in AGENTS_DIR.iterdir():
-            if d.is_dir() and not d.name.startswith("."):
-                agent_json = d / "agent.json"
-                agents_md = d / "AGENTS.md"
-                assert agent_json.is_file(), f"Missing agent.json in {d}"
-                assert agents_md.is_file(), f"Missing AGENTS.md in {d}"
-
-                with open(agent_json, encoding="utf-8") as f:
-                    data = json.load(f)
-                discovered.add(data.get("id"))
-
+        legacy = [d.name for d in AGENTS_DIR.iterdir() if d.is_dir()]
+        assert not legacy, f"Persona directories praetor does not project: {legacy}"
+        discovered = {p.stem for p in AGENTS_DIR.glob("lusoris-*.md")}
         assert discovered == EXPECTED_AGENTS, (
             f"Expected agents {EXPECTED_AGENTS}, found {discovered}"
         )
 
-    def test_agent_json_schemas(self) -> None:
-        for d in AGENTS_DIR.iterdir():
-            if d.is_dir() and not d.name.startswith("."):
-                with open(d / "agent.json", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                assert "id" in data
-                assert "base_agent" in data
-                assert "description" in data
-                assert "agent_config" in data
-                assert "tools" in data
-                assert isinstance(data["tools"], list)
-                assert len(data["tools"]) > 0
+    def test_persona_front_matter(self) -> None:
+        for name in EXPECTED_AGENTS:
+            content = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            assert content.startswith("---") and len(parts) == 3, f"{name}: no front matter"
+            fields = dict(
+                line.split(":", 1) for line in parts[1].strip().splitlines() if ":" in line
+            )
+            fields = {k.strip(): v.strip() for k, v in fields.items()}
+            assert fields.get("name") == name
+            assert fields.get("description", "").strip('"')
+            assert fields.get("model") in {"flash", "pro"}, f"{name}: model tier"
+            assert parts[2].strip(), f"{name}: empty persona body"
 
     def test_hooks_configuration_validity(self) -> None:
         assert HOOKS_JSON.is_file(), f"Missing {HOOKS_JSON}"
