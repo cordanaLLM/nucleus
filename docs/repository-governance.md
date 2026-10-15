@@ -195,6 +195,16 @@ A release pull request that is only behind can also wait: release-please rebuild
 push to `main`. To re-sign a single rewritten release commit, `git commit --amend --no-edit -S`
 keeps `github-actions[bot]` as its author.
 
+A draft pull request runs no gate. Every job a pull request starts begins with the step
+**Stop on a draft pull request**, which fails on a draft, so each required check reports failure
+until the pull request is marked ready for review. The `ready_for_review` event then starts the
+gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
+`test_every_pull_request_job_stops_on_a_draft` in `tests/test_workflows.py` refuses a workflow
+without that step or without the event. Two workflows are declared as HISS-18 exceptions in
+`.standards.yaml`: `security-scans.yml` and `verify-requirements.yml`. Their jobs that need
+another job are skipped on a draft, and the audit reports them although nothing can merge
+through them. The exceptions expire on 2027-01-13 and close with cordanaLLM/praetor#1368.
+
 ## 5. The praetor pin
 
 `PRAETOR_COMMIT` in `.github/workflows/ci.yml` is the one place the pin lives: a full commit

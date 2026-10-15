@@ -29,9 +29,15 @@ def _workflow(name: str) -> dict:
 # Security Scan Gate ------------------------------------------------------------------------
 
 
+def _security_gate_step() -> dict:
+    """The gate's own step, the first after the draft step."""
+    steps = _workflow("security-scans.yml")["jobs"]["security-gate"]["steps"]
+    assert steps[0]["name"] == "Stop on a draft pull request"
+    return steps[1]
+
+
 def _security_gate(event: str, code: str, **results: str) -> subprocess.CompletedProcess:
-    job = _workflow("security-scans.yml")["jobs"]["security-gate"]
-    step = job["steps"][0]
+    step = _security_gate_step()
     env = {"PATH": os.environ["PATH"], "EVENT_NAME": event, "CODE_CHANGED": code}
     for need in ("changes", "semgrep", "trivy", "gitleaks"):
         env[f"{need.upper()}_RESULT"] = results.get(need, "success")
@@ -45,7 +51,7 @@ def _security_gate(event: str, code: str, **results: str) -> subprocess.Complete
 
 
 def test_the_security_gate_reads_the_detector_decision():
-    step = _workflow("security-scans.yml")["jobs"]["security-gate"]["steps"][0]
+    step = _security_gate_step()
     assert step["env"]["EVENT_NAME"] == "${{ github.event_name }}"
     assert step["env"]["CODE_CHANGED"] == "${{ needs.changes.outputs.code }}"
 

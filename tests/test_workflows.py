@@ -12,6 +12,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+# The first step of every job a pull request starts (HISS-18); it runs only on a draft.
+DRAFT_STEP = "Stop on a draft pull request"
 BUILD_IMAGE = re.compile(r"ubuntu:26\.04(@sha256:[0-9a-f]{64})?")
 RULESET = REPO_ROOT / ".github" / "rulesets" / "main.json"
 
@@ -858,7 +860,9 @@ def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
     )
     assert checkout["with"]["ref"] == "${{ env.PRAETOR_COMMIT }}"
 
-    commands = [step["run"].strip() for step in steps if "run" in step]
+    commands = [
+        step["run"].strip() for step in steps if "run" in step and step.get("name") != DRAFT_STEP
+    ]
     assert not [command for command in commands if "--remote" in command], (
         "governance job must stay local"
     )
@@ -957,3 +961,21 @@ def test_release_waiver_does_not_exempt_a_skip_marker():
     )
     assert result.returncode == 1
     assert "skip marker" in result.stdout + result.stderr
+
+
+def test_every_pull_request_job_stops_on_a_draft():
+    """A draft runs no gate (HISS-18): each job a pull request starts begins with the draft step,
+    and the trigger listens for ready_for_review so the gate runs once the draft is marked ready."""
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        # PyYAML reads an unquoted key "on" as a boolean.
+        triggers = parsed.get(True, parsed.get("on"))
+        if not isinstance(triggers, dict) or "pull_request" not in triggers:
+            continue
+        types = (triggers["pull_request"] or {}).get("types", [])
+        assert {"opened", "synchronize", "reopened", "ready_for_review"} <= set(types), path.name
+        for name, job in parsed["jobs"].items():
+            first = job["steps"][0]
+            assert first["name"] == DRAFT_STEP, f"{path.name}: {name}"
+            assert first["if"] == "github.event.pull_request.draft == true", f"{path.name}: {name}"
+            assert first["run"].rstrip().endswith("exit 1"), f"{path.name}: {name}"
