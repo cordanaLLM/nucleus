@@ -158,19 +158,28 @@ produce that:
 
 ### Applying the ruleset
 
-The ruleset is applied after the pull request that commits it has merged, from a checkout of
-`main` whose `origin` is `github.com/cordanaLLM/nucleus`:
+The ruleset is applied after the pull request that commits `.github/rulesets/main.json` has
+merged, from an up-to-date checkout of `main` whose `origin` is `github.com/cordanaLLM/nucleus`:
 
 ```bash
-GITHUB_TOKEN=<token with administration rights> praetorctl sync --remote
-gh api repos/cordanaLLM/nucleus/rulesets
+gh api --method PUT repos/cordanaLLM/nucleus/rulesets/24167009 --input .github/rulesets/main.json
 ```
 
-`praetorctl sync --remote` creates or updates the ruleset through the rulesets API and reads it
-back. It also reconciles labels and repository metadata. `.config/labels.yaml` does not exist
-in this repository, so the sync writes praetor's default taxonomy of 14 labels there and
-creates the missing ones on GitHub; it deletes no label. The description, homepage and
-topics are left alone, because `.standards.yaml` leaves them empty.
+Then read the live ruleset back and check that every field the file sets has the same value
+there. GitHub adds defaults the file does not set, such as `allowed_merge_methods`, so a plain
+`diff` of the two documents always differs; the check below compares only what the file sets,
+prints `true` and exits 0 on a match, and prints `false` and exits 1 on any difference:
+
+```bash
+gh api repos/cordanaLLM/nucleus/rulesets/24167009 | jq -e --slurpfile want .github/rulesets/main.json '
+  def sub($a; $b):
+    if ($a|type) == "object" then ($b|type) == "object" and all($a|keys[]; . as $k | ($b|has($k)) and sub($a[$k]; $b[$k]))
+    elif ($a|type) == "array" then ($b|type) == "array" and ($a|length) == ($b|length) and all(range($a|length); . as $i | sub($a[$i]; $b[$i]))
+    else $a == $b end;
+  sub($want[0]; .)'
+```
+
+Labels and repository metadata are not part of this step.
 
 The ruleset is the only protection of `main`: the classic branch protection, which required
 only `required-checks`, was removed on 2026-09-29. Under the ruleset:
