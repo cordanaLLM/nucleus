@@ -108,6 +108,24 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert checkout["with"]["persist-credentials"] is False
 
 
+def test_publish_release_refuses_existing_release():
+    """publish-release.yml refuses to run for a tag whose release already exists (gap row C14-2)."""
+    steps, names = _publish_release_steps()
+    step_name = "Refuse Existing Release"
+    assert step_name in names, f"'{step_name}' step missing from publish-release.yml"
+    refuse_idx = names.index(step_name)
+    meta_idx = names.index("Resolve Stream and Version")
+    build_idx = names.index("Build and Boot the Tagged Stream")
+    assert meta_idx < refuse_idx < build_idx, (
+        f"'{step_name}' must run after 'Resolve Stream and Version' and before 'Build and Boot the Tagged Stream'"
+    )
+    step = steps[refuse_idx]
+    assert "./scripts/refuse_existing_release.sh" in step["run"]
+    assert step["env"]["RELEASE_TAG"] == "${{ steps.meta.outputs.release_tag }}"
+    assert step["env"]["REPO"] == "${{ github.repository }}"
+    assert step["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+
 def _build_matrix():
     return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"][
         "build"
