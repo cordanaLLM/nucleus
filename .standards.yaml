@@ -1,21 +1,22 @@
+---
 version: 1
 repository:
-    owner: cordanaLLM
-    name: nucleus
-    visibility: public
-    description: ""
-    homepage: ""
-    topics: []
-    # Declared so every checkout renders .github/rulesets/main.json for main, including
-    # a clone whose origin HEAD names another branch.
-    default_branch: main
+  owner: cordanaLLM
+  name: nucleus
+  visibility: public
+  description: ""
+  homepage: ""
+  topics: []
+  # Declared so every checkout renders .github/rulesets/main.json for main, including
+  # a clone whose origin HEAD names another branch.
+  default_branch: main
 profiles:
-    - os-image
+  - os-image
 facets:
-    - security:high
-    - api:public-contract
-    - docs:seo-portal
-    - agent:sandboxed
+  - security:high
+  - api:public-contract
+  - docs:seo-portal
+  - agent:sandboxed
 # Overrides only increase strictness, except review_mode: single_maintainer, which lets the
 # only maintainer merge while no second reviewer or review bot exists: the rendered ruleset
 # then requires no approving review and no code-owner review. The facets keep their
@@ -23,5 +24,52 @@ facets:
 # Restore independent review when a second maintainer or a review bot exists (nucleus#26).
 # Owner-approved 2026-09-28.
 overrides:
-    branch_protection:
-        review_mode: single_maintainer
+  branch_protection:
+    review_mode: single_maintainer
+# licence.yml already runs the REUSE lint job the ruleset requires; the hosted reuse.yml
+# would add a second job of that name, which the ruleset refuses as a duplicate context.
+adoption:
+  decline:
+    - reuse-gate
+register:
+  sources:
+    expected: 13
+    sha256:
+      sha256:25f491d6da25827a2808a10129bb738cf2bea1890a316051a1be30d6919c9dd7
+    inputs:
+      - path: .paperclip/harness.json
+        surface: prompts
+        kind: message
+        format: json
+        selector: operating_contract.*
+      - path: .paperclip/harness.json
+        surface: prompts
+        kind: message
+        format: json
+        selector: invariants.*
+exceptions:
+  - rule: declared-linters
+    tool: codespell
+    reason: adoption scaffolds no CI job for codespell declared by profile "os-image"; run it in a workflow, or remove this entry
+    expires: "2027-01-12"
+  - rule: HISS-11
+    path: .github/workflows/publish-release.yml
+    reason: >-
+      Category A, 90 days from 2026-10-14. SLSA Build L3 is declared but the release workflow
+      reaches L0: no isolated reusable build and no attest-build-provenance step. Closed by
+      cordanaLLM/nucleus#128, which reuses the Pelorus release-build workflow.
+    expires: "2027-01-12"
+  - rule: HISS-18
+    path: .github/workflows/security-scans.yml
+    reason: >-
+      Category A, 90 days from 2026-10-15. Every job a pull request starts begins with the draft
+      step; semgrep, trivy and security-gate need changes, which the check reports because it reads no always() and no
+      required context. Closed by cordanaLLM/praetor#1368.
+    expires: "2027-01-13"
+  - rule: HISS-18
+    path: .github/workflows/verify-requirements.yml
+    reason: >-
+      Category A, 90 days from 2026-10-15. Every job a pull request starts begins with the draft
+      step; resolve and verify-resolved need verify, which the check reports because it reads no always() and no
+      required context. Closed by cordanaLLM/praetor#1368.
+    expires: "2027-01-13"

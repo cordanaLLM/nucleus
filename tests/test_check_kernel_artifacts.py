@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import check_kernel_artifacts as gate  # noqa: E402
 
-STREAM, ARCH, VERSION, KV = "mainstream", "x86_64", "7.2.8", "7.2.8"
+STREAM, ARCH, VERSION, KV = "mainstream", "x86_64", "7.2.10", "7.2.10"
 KR = f"{KV}-lusoris1-{STREAM}"
 PKGVER = f"{VERSION}-lusoris1"
 CONFIG = b"CONFIG_X86_64=y\nCONFIG_DEBUG_INFO_BTF=y\n"
@@ -143,11 +143,11 @@ def test_expectation_comes_from_versions_json():
 
 
 def test_a_release_candidate_package_sorts_before_its_release_and_names_no_tilde():
-    """dpkg orders 7.3~rc5 before 7.3 and 7.3-rc5 after it; GitHub and imago refuse a tilde."""
-    exp = _exp("7.3.0-rc5-lusoris1-bleeding", stream="bleeding")
-    assert exp.package_version == "7.3~rc5-lusoris1"
+    """dpkg orders 7.3~rc7 before 7.3 and 7.3-rc7 after it; GitHub and imago refuse a tilde."""
+    exp = _exp("7.3.0-rc7-lusoris1-bleeding", stream="bleeding")
+    assert exp.package_version == "7.3~rc7-lusoris1"
     name = gate.package_file_name("linux-libc-dev", exp.package_version, exp.debian_arch)
-    assert name == "linux-libc-dev_7.3.rc5-lusoris1_amd64.deb"
+    assert name == "linux-libc-dev_7.3.rc7-lusoris1_amd64.deb"
     assert (
         gate.package_file_name("linux-libc-dev", PKGVER, "amd64")
         == f"linux-libc-dev_{PKGVER}_amd64.deb"
@@ -228,10 +228,10 @@ def test_an_architecture_without_a_known_image_check_is_refused():
     ("kernelrelease", "finding"),
     [
         (KR, None),
-        ("7.2.80-lusoris1-mainstream", "does not start with the mainstream kernel version 7.2.8"),
-        ("6.18.54-lusoris1-mainstream", "does not start with"),
-        ("7.2.8-lusoris1-realtime", "does not end with the build's -lusoris1-mainstream"),
-        ("7.2.8", "does not end with"),
+        ("7.2.100-lusoris1-mainstream", "does not start with the mainstream kernel version 7.2.10"),
+        ("6.18.56-lusoris1-mainstream", "does not start with"),
+        ("7.2.10-lusoris1-realtime", "does not end with the build's -lusoris1-mainstream"),
+        ("7.2.10", "does not end with"),
         ("not a release", "is not a kernel release string"),
     ],
 )
@@ -256,6 +256,37 @@ def test_listing_refuses_zero_bytes_strangers_and_missing_files(tmp_path):
     assert "sub: not a regular file" in text
     assert f"vmlinuz-{KR}: missing" in text and f"kernel-{STREAM}-{ARCH}.config: missing" in text
     assert "no Debian package" in text and debs == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [f"linux-image-{KR}_{PKGVER}_amd64.deb", f"vmlinuz-{KR}"],
+)
+def test_an_artifact_above_the_imago_bound_is_refused(tmp_path, name):
+    exp = _exp()
+    # imago pkg/kernel/artifact.go@557319a: MaxArtifactBytes int64 = 512 << 20.
+    bound = 512 << 20
+    assert gate.MAX_ARTIFACT_BYTES == bound
+
+    # One byte over the bound is refused.
+    out_over = tmp_path / "over"
+    out_over.mkdir()
+    target_over = out_over / name
+    with target_over.open("wb") as f:
+        f.truncate(bound + 1)
+    problems_over, debs_over = gate.check_listing(out_over, exp)
+    expected_msg = f"{name}: {bound + 1} bytes, above imago's per-artifact bound of {bound} bytes"
+    assert expected_msg in problems_over
+    assert target_over not in debs_over
+
+    # Exactly at the bound the size passes; the sparse file may fail other checks.
+    out_bound = tmp_path / "bound"
+    out_bound.mkdir()
+    target_bound = out_bound / name
+    with target_bound.open("wb") as f:
+        f.truncate(bound)
+    problems_bound, _ = gate.check_listing(out_bound, exp)
+    assert not any("above imago's per-artifact bound" in p for p in problems_bound)
 
 
 def test_an_unknown_stream_cannot_be_evaluated(tmp_path):
@@ -336,33 +367,33 @@ def test_a_dpkg_deb_that_fails_after_streaming_the_archive_is_refused(tmp_path):
 
 @needs_dpkg
 def test_a_release_candidate_named_with_a_tilde_is_refused(tmp_path):
-    kr = "7.3.0-rc5-lusoris1-bleeding"
+    kr = "7.3.0-rc7-lusoris1-bleeding"
     out = tmp_path / "out"
     out.mkdir()
     image = {f"boot/vmlinuz-{kr}": bzimage(kr), f"boot/config-{kr}": CONFIG}
     _deb(
         out,
         f"linux-image-{kr}",
-        version="7.3~rc5-lusoris1",
+        version="7.3~rc7-lusoris1",
         files=image,
-        name=f"linux-image-{kr}_7.3.rc5-lusoris1_amd64.deb",
+        name=f"linux-image-{kr}_7.3.rc7-lusoris1_amd64.deb",
     )
     _deb(
         out,
         f"linux-headers-{kr}",
-        version="7.3~rc5-lusoris1",
-        name=f"linux-headers-{kr}_7.3.rc5-lusoris1_amd64.deb",
+        version="7.3~rc7-lusoris1",
+        name=f"linux-headers-{kr}_7.3.rc7-lusoris1_amd64.deb",
     )
-    _deb(out, "linux-libc-dev", version="7.3~rc5-lusoris1")
+    _deb(out, "linux-libc-dev", version="7.3~rc7-lusoris1")
     (out / f"vmlinuz-{kr}").write_bytes(bzimage(kr))
     (out / f"kernel-bleeding-{ARCH}.config").write_bytes(CONFIG)
     result = _cli(out, kr, "bleeding")
     assert result.returncode == 1
     assert (
-        "linux-libc-dev_7.3~rc5-lusoris1_amd64.deb: file name does not match linux-libc-dev_7.3.rc5-lusoris1_amd64.deb"
+        "linux-libc-dev_7.3~rc7-lusoris1_amd64.deb: file name does not match linux-libc-dev_7.3.rc7-lusoris1_amd64.deb"
         in result.stderr
     )
-    next(out.glob("linux-libc-dev_*.deb")).rename(out / "linux-libc-dev_7.3.rc5-lusoris1_amd64.deb")
+    next(out.glob("linux-libc-dev_*.deb")).rename(out / "linux-libc-dev_7.3.rc7-lusoris1_amd64.deb")
     result = _cli(out, kr, "bleeding")
     assert result.returncode == 0, result.stderr
 

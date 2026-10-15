@@ -28,13 +28,17 @@ Modern Linux kernel scheduling faces two divergent, high-performance demands acr
 We establish an architectural contract governing `sched-ext` deployment, security containment, and coexistence with `PREEMPT_RT`:
 
 ### 1. Watchdog-Backed Failsafe Containment
+
 For all kernels enabling `CONFIG_SCHED_CLASS_EXT=y` (`bleeding`, `mainstream`):
+
 - **Kernel Watchdog Timer**: The kernel activates `scx_watchdog` with a maximum stall timeout of 30 seconds.
 - **Graceful Auto-Fallback**: If a user-space scheduler misses its heartbeat, deadlocks, or starves any runnable process, the kernel automatically detaches the active `scx_ops` and immediately restores the native CFS/EEVDF scheduler. The node remains online without dropping processes or rebooting.
 - **Privilege Separation**: Loading and attaching an SCX scheduler strictly requires `CAP_BPF` and `CAP_SYS_ADMIN`.
 
 ### 2. Realtime Preemption Dominance
+
 In the `realtime` (7.2-rt) stream:
+
 - Tasks assigned to real-time scheduling policies (`SCHED_FIFO`, `SCHED_RR`, `SCHED_DEADLINE`) strictly bypass `sched-ext` hooks.
 - Real-time tasks preempt any running task on the CPU, guaranteeing absolute determinism.
 - `sched-ext` is restricted exclusively to standard time-sharing tasks (`SCHED_NORMAL`, `SCHED_BATCH`, `SCHED_IDLE`).
@@ -61,11 +65,13 @@ flowchart TD
 ## Consequences
 
 ### Positive
+
 - **Fault-Tolerant Agility**: Developers and cluster operators can experiment with bleeding-edge BPF schedulers without fear of bricking bare-metal or cloud instances.
 - **Preserved Realtime Guarantees**: Deterministic workloads maintain sub-25 microsecond interrupt response times even on systems with experimental user-space schedulers active.
 - **Zero Kernel Panics**: Scheduling stalls degrade gracefully to standard Linux behavior rather than triggering kernel panics.
 
 ### Negative
+
 - **Context Switch Overhead**: Checking watchdog timers and delegating scheduling decisions to BPF introduces a minor overhead (~1.2% in microbenchmarks) compared to pure static schedulers.
 
 ---
@@ -73,5 +79,6 @@ flowchart TD
 ## Compliance
 
 Enforced through automated quality gates:
+
 1. **Compile-Time KConfig Validation (`tests/test_kconfig.py`)**: Asserts `CONFIG_SCHED_CLASS_EXT=y` and `CONFIG_BPF_SYSCALL=y` in mainstream and bleeding streams.
 2. **QEMU MicroVM Runtime Verification**: Automated test boots a QEMU VM, registers a dummy SCX scheduler, simulates an artificial stall, and asserts that the kernel successfully logs `[sched_ext] unregistering ... falling back to EEVDF` and keeps the test runner responsive.

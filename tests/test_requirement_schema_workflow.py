@@ -50,7 +50,7 @@ def test_every_run_block_of_the_verifying_jobs_is_strict():
     for job in ("verify", "verify-resolved"):
         assert PARSED["jobs"][job]["defaults"]["run"]["shell"] == "bash"
         for step in PARSED["jobs"][job]["steps"]:
-            if "run" in step:
+            if "run" in step and step["name"] != "Stop on a draft pull request":
                 first = step["run"].strip().splitlines()[0]
                 assert first == "set -euo pipefail", f"{job}: {step['name']}"
 

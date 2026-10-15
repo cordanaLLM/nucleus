@@ -89,7 +89,7 @@ The compile is this, with the values `versions.json` gives for the stream and ar
 DEB_BUILD_PROFILES="pkg.linux-upstream.nokerneldbg" \
 make -C build/linux-mainstream O=build/mainstream-x86_64/kbuild \
   ARCH=x86_64 CROSS_COMPILE=x86_64-linux-gnu- \
-  LOCALVERSION=-lusoris1-mainstream KDEB_PKGVERSION=7.2.8-lusoris1 \
+  LOCALVERSION=-lusoris1-mainstream KDEB_PKGVERSION=7.2.10-lusoris1 \
   -j"$(nproc)" bindeb-pkg
 ```
 
@@ -133,36 +133,36 @@ directories with `scripts/verify-reproducibility.sh` (section 3).
 | | Form | `mainstream` |
 | :--- | :--- | :--- |
 | `LOCALVERSION` | `-lusoris<N>-<stream>` | `-lusoris1-mainstream` |
-| kernelrelease (`uname -r`) | `<kernelversion>-lusoris<N>-<stream>` | `7.2.8-lusoris1-mainstream` |
-| package version (`KDEB_PKGVERSION`) | `<debian_version>-lusoris<N>` | `7.2.8-lusoris1` |
-| image package file | `linux-image-<kernelrelease>_<package version>_<debian arch>.deb`, `~` spelled `.` | `linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb` |
+| kernelrelease (`uname -r`) | `<kernelversion>-lusoris<N>-<stream>` | `7.2.10-lusoris1-mainstream` |
+| package version (`KDEB_PKGVERSION`) | `<debian_version>-lusoris<N>` | `7.2.10-lusoris1` |
+| image package file | `linux-image-<kernelrelease>_<package version>_<debian arch>.deb`, `~` spelled `.` | `linux-image-7.2.10-lusoris1-mainstream_7.2.10-lusoris1_amd64.deb` |
 
 `<debian_version>` is the stream's version with a release candidate's `-rc<N>` spelled `~rc<N>`
 (`scripts/versions_query.py source <stream>`, field `debian_version`), the spelling the kernel's
-own `mkdebian` uses. dpkg sorts `~` before anything, so `7.3~rc5-lusoris1` is older than the final
-`7.3-lusoris1`, while `7.3-rc5-lusoris1` would be newer and would never be upgraded; that matters
+own `mkdebian` uses. dpkg sorts `~` before anything, so `7.3~rc7-lusoris1` is older than the final
+`7.3-lusoris1`, while `7.3-rc7-lusoris1` would be newer and would never be upgraded; that matters
 most for `linux-libc-dev`, which has one package name for every release:
 
 ```bash
-dpkg --compare-versions 7.3~rc5-lusoris1 lt 7.3-lusoris1 && echo older   # older
-dpkg --compare-versions 7.3-rc5-lusoris1 lt 7.3-lusoris1 || echo newer   # newer
+dpkg --compare-versions 7.3~rc7-lusoris1 lt 7.3-lusoris1 && echo older   # older
+dpkg --compare-versions 7.3-rc7-lusoris1 lt 7.3-lusoris1 || echo newer   # newer
 ```
 
 The file names spell that `~` as `.`: GitHub renames `~` in a release asset to `.`, and imago's
 artifact name pattern refuses `~`, so `SHA256SUMS` and the manifest name the files as they are
-served. The `bleeding` packages are therefore `linux-libc-dev_7.3.rc5-lusoris1_amd64.deb` and so on,
-with `Version: 7.3~rc5-lusoris1` inside. The release tag (`v7.3-rc5-bleeding-lusoris1`), the
-manifest's `version` (`7.3-rc5-lusoris1`) and the kernelrelease (`7.3.0-rc5-lusoris1-bleeding`)
-keep `-rc5`.
+served. The `bleeding` packages are therefore `linux-libc-dev_7.3.rc7-lusoris1_amd64.deb` and so on,
+with `Version: 7.3~rc7-lusoris1` inside. The release tag (`v7.3-rc7-bleeding-lusoris1`), the
+manifest's `version` (`7.3-rc7-lusoris1`) and the kernelrelease (`7.3.0-rc7-lusoris1-bleeding`)
+keep `-rc7`.
 
-The other streams are `7.3.0-rc5-lusoris1-bleeding` (package version `7.3~rc5-lusoris1`),
-`6.18.54-lusoris1-lts` and `7.2.8-lusoris1-realtime`. The Debian architecture comes from
+The other streams are `7.3.0-rc7-lusoris1-bleeding` (package version `7.3~rc7-lusoris1`),
+`6.18.56-lusoris1-lts` and `7.2.10-lusoris1-realtime`. The Debian architecture comes from
 `architectures.<arch>.debian_arch` in `versions.json` (`amd64`, `arm64`, `riscv64`). `<N>` is the
 forge revision, `--revision`; the release workflow passes the one its tag names (section 5.4).
 
 The localversion keeps these packages from colliding with distribution kernels
 (`linux-image-generic`, `linux-image-amd64`), and it is what tells `mainstream` and `realtime`
-apart: both are built from the same 7.2.8 tree, whose `make kernelrelease` is `7.2.8` for either
+apart: both are built from the same 7.2.10 tree, whose `make kernelrelease` is `7.2.10` for either
 without one.
 
 ### 2.3 Debug Symbols, Headers and Cross Builds
@@ -184,7 +184,9 @@ and up to 40 minutes on arm64. With the cache the x86_64 and riscv64 compiles to
 
 Measured sizes of the local builds (2026-09-29, `docker` `ubuntu:26.04` on an x86_64 host, 32
 threads, so arm64 and riscv64 were cross-compiled there and have no headers package; riscv64
-carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact:
+carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact,
+and `scripts/check_kernel_artifacts.py` refuses a larger artifact before checksumming
+(`test_an_artifact_above_the_imago_bound_is_refused`):
 
 | Leg | image package | headers | libc-dev | `vmlinuz` | object tree | compile |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -201,7 +203,7 @@ Nothing is checksummed before `scripts/check_kernel_artifacts.py` has opened it.
 of every build and again in `publish-release.yml` before the SBOMs, `SHA256SUMS` and the
 signature, and refuses the directory unless:
 
-- it holds only non-empty regular files: packages, `vmlinuz-<kernelrelease>` and
+- it holds only non-empty regular files of at most 512 MiB: packages, `vmlinuz-<kernelrelease>` and
   `kernel-<stream>-<arch>.config`;
 - `dpkg-deb -f` reads every package as `linux-image-<kernelrelease>`,
   `linux-headers-<kernelrelease>` or `linux-libc-dev`, at `<debian_version>-lusoris<N>` and the
@@ -228,10 +230,10 @@ signature, and refuses the directory unless:
 
 ```bash
 python3 scripts/check_kernel_artifacts.py --dir=output/mainstream-x86_64 --stream=mainstream \
-  --arch=x86_64 --kernelrelease=7.2.8-lusoris1-mainstream
+  --arch=x86_64 --kernelrelease=7.2.10-lusoris1-mainstream
 # A cross build (arm64 or riscv64 compiled on x86_64) makes no headers package:
 python3 scripts/check_kernel_artifacts.py --dir=output/mainstream-riscv64 --stream=mainstream \
-  --arch=riscv64 --kernelrelease=7.2.8-lusoris1-mainstream --cross
+  --arch=riscv64 --kernelrelease=7.2.10-lusoris1-mainstream --cross
 ```
 
 Exit status 0 passes, 1 refuses and lists every finding, 2 means the request cannot be evaluated
@@ -256,8 +258,8 @@ QEMU at once (`panic=-1` with `-no-reboot`); a hang is killed at the timeout. Lo
 x86_64 kernels booted under TCG in 4 to 21 s.
 
 ```bash
-python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstream \
-  --kernelrelease=7.2.8-lusoris1-mainstream --log=boot.log
+python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
+  --kernelrelease=7.2.10-lusoris1-mainstream --log=boot.log
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```
 
@@ -419,7 +421,9 @@ The repository does not orchestrate initramfs creation or provide dracut configu
 Not implemented: no APT archive is published; packages are GitHub Release assets.
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
+
 Planned: UKI binaries (`.efi`) are pushed as OCI artifacts conforming to the OCI Artifact Specification, one OCI repository per stream and architecture under `ghcr.io/cordanallm/nucleus/kernels` ([ADR-0006](adr/0006-oci-registry-namespace.md)). OCI repository names are lowercase, so the `cordanaLLM` organization appears as `cordanallm`. The image is unsigned today (section 3.1), and no workflow publishes or pushes one: CI builds one only to test it, and `publish-release.yml` publishes GitHub Release assets, none of them a UKI (section 5.3).
+
 ```bash
 # Packaging UKI as an OCI artifact using oras:
 oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
@@ -427,9 +431,11 @@ oras push ghcr.io/cordanallm/nucleus/kernels/mainstream-x86_64:7.2.4-lusoris1 \
   BOOTX64.EFI:application/octet-stream \
   SHA256SUMS:text/plain
 ```
+
 Downstream bare-metal provisioning systems (`cordanaLLM/imago` iPXE streaming server or `systemd-sysupdate`) are meant to pull the OCI artifact and deploy it directly into the EFI System Partition (`/efi/EFI/Linux/`).
 
 ### 5.3 GitHub Release Assets & Downstream Artifact Manifest
+
 `publish-release.yml` publishes one GitHub Release per kernel release tag (section 5.4). It builds
 the tagged stream for x86_64 with `scripts/build_kernel.sh`, in an `ubuntu:26.04` container pinned
 to the digest `build-matrix.yml` uses, that is given neither the job's token nor its OIDC
@@ -452,6 +458,16 @@ written to `records/boot-<stream>-x86_64.log`; `records/` is uploaded as the run
 - `SHA256SUMS`, over exactly the files above, and `SHA256SUMS.bundle`;
 - `kernel-<stream>.manifest.json`.
 
+After every successful run, `supply-chain.yml` downloads the release and verifies it with
+`scripts/verify-release.sh`: the cosign bundle against the release workflow's identity at the tag,
+every asset against `SHA256SUMS`, no asset outside it, and the manifest's tag, signer identity and
+`SHA256SUMS` digest. The same script verifies a release by hand:
+
+```bash
+gh release download <release-tag> --repo cordanaLLM/nucleus --dir release
+./scripts/verify-release.sh release <release-tag> cordanaLLM/nucleus
+```
+
 A release is x86_64 only: `imago.nucleus.kernel-artifact.v1` has no architecture field. No UKI
 (`.efi`) is built or uploaded: `publish-release.yml` does not call `scripts/package-uki.sh`.
 
@@ -462,16 +478,16 @@ The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the
   "schema": "imago.nucleus.kernel-artifact.v1",
   "provider": "cordanaLLM/nucleus",
   "stream": "mainstream",
-  "version": "7.2.8-lusoris1",
-  "kernel": {"release": "7.2.8-lusoris1-mainstream", "config_digest": "sha256:<digest of kernel-mainstream-x86_64.config>"},
-  "artifacts": [{"name": "linux-image-7.2.8-lusoris1-mainstream_7.2.8-lusoris1_amd64.deb", "sha256": "<64 hex>", "size": 20882306}],
+  "version": "7.2.10-lusoris1",
+  "kernel": {"release": "7.2.10-lusoris1-mainstream", "config_digest": "sha256:<digest of kernel-mainstream-x86_64.config>"},
+  "artifacts": [{"name": "linux-image-7.2.10-lusoris1-mainstream_7.2.10-lusoris1_amd64.deb", "sha256": "<64 hex>", "size": 20882306}],
   "checksums": {"file": "SHA256SUMS", "sha256": "<64 hex>"},
   "provenance": {
     "repository": "cordanaLLM/nucleus",
-    "tag": "v7.2.8-mainstream-lusoris1",
+    "tag": "v7.2.10-mainstream-lusoris1",
     "revision": "<40 hex: the commit the tag points at>",
     "bundle": "SHA256SUMS.bundle",
-    "signer_identity": "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/v7.2.8-mainstream-lusoris1"
+    "signer_identity": "https://github.com/cordanaLLM/nucleus/.github/workflows/publish-release.yml@refs/tags/v7.2.10-mainstream-lusoris1"
   }
 }
 ```
@@ -501,7 +517,7 @@ To release a kernel, push a tag in the first form. `scripts/resolve_release_tag.
 - `<version>` equals that stream's `version` exactly. `v7.2.40-mainstream-lusoris1` does not match a stream at `7.2.4`.
 - `<N>` is the forge revision, an integer from 1 to 9999 without leading zeros: the range `scripts/build_kernel.sh --revision` accepts, so the resolver never passes a revision the build refuses. The workflow passes it to `scripts/build_kernel.sh --revision`, which writes it into `LOCALVERSION` (`-lusoris<N>-<stream>`) and `KDEB_PKGVERSION` (`<version>-lusoris<N>`), and to the artifact gate, so the kernel release, the package versions, the manifest's `version` and `kernel.release`, and the downstream payload all carry the revision the tag names. `v7.2.8-realtime-lusoris0` and `v7.2.8-realtime-lusoris02` are refused.
 
-A revision above 1 releases the same upstream version again, after a change to the configuration or the build: `v7.2.8-realtime-lusoris2` builds `7.2.8-lusoris2-realtime` at package version `7.2.8-lusoris2`, with manifest `version` `7.2.8-lusoris2`. Because the kernel release changes, `linux-image-<kernelrelease>` and `linux-headers-<kernelrelease>` are new package names that install next to the earlier revision, as any new kernel does; `linux-libc-dev` keeps its name and upgrades, since dpkg orders `7.2.8-lusoris2` after `7.2.8-lusoris1`. The revision counts per upstream version: the first release of a new version is revision 1 again. The revision 2 releases of the four streams carry the BPF trampoline chain ([ADR-0011](adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
+A revision above 1 releases the same upstream version again, after a change to the configuration or the build: `v7.2.8-realtime-lusoris2` builds `7.2.8-lusoris2-realtime` at package version `7.2.8-lusoris2`, with manifest `version` `7.2.8-lusoris2`. Because the kernel release changes, `linux-image-<kernelrelease>` and `linux-headers-<kernelrelease>` are new package names that install next to the earlier revision, as any new kernel does; `linux-libc-dev` keeps its name and upgrades, since dpkg orders `7.2.8-lusoris2` after `7.2.8-lusoris1`. The revision counts per upstream version: the first release of a new version is revision 1 again. The revision 2 releases of the four streams carry the BPF trampoline chain ([ADR-0011](adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)). The next upstream versions, 7.3-rc7, 7.2.10 and 6.18.56, start again at revision 1 and also carry zlib deflate, which OpenZFS needs ([streams section 3](streams.md)).
 
 Any other tag is refused with an error naming the mismatch, and nothing is built, signed, published or dispatched; there is no default stream. The run must also have started from that tag: the workflow passes `GITHUB_REF` to the resolver, which refuses unless it is `refs/tags/<tag>`. Checkout, the signer identity in the manifest and the GitHub Release all follow the ref, so re-running a release by hand means `gh workflow run publish-release.yml --ref <tag> -f tag=<tag>`; starting it from a branch, or from another tag, is refused before anything is built. The resolver prints what a tag resolves to, so a tag can be checked before it is pushed:
 
