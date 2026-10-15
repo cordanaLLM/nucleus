@@ -198,51 +198,10 @@ jobs:
           SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish-release.yml@${{ github.ref }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          out = Path("output")
-          stream = os.environ["STREAM"]
-          version = os.environ["VERSION"]
-          repository = os.environ["GITHUB_REPOSITORY"]
-
-          def digest(path: Path) -> str:
-              return hashlib.sha256(path.read_bytes()).hexdigest()
-
-          artifacts = []
-          for line in (out / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
-              if not line.strip():
-                  continue
-              hexdigest, name = line.split(maxsplit=1)
-              name = name.lstrip("*")
-              artifacts.append({"name": name, "sha256": hexdigest, "size": (out / name).stat().st_size})
-
-          manifest = {
-              "schema": "imago.nucleus.kernel-artifact.v1",
-              "provider": repository,
-              "stream": stream,
-              "version": version,
-              "kernel": {
-                  "release": os.environ["KERNELRELEASE"],
-                  "config_digest": "sha256:" + digest(out / f"kernel-{stream}-x86_64.config"),
-              },
-              "artifacts": artifacts,
-              "checksums": {"file": "SHA256SUMS", "sha256": digest(out / "SHA256SUMS")},
-              "provenance": {
-                  "repository": repository,
-                  "tag": os.environ["RELEASE_TAG"],
-                  "revision": os.environ["REVISION"],
-                  "bundle": "SHA256SUMS.bundle",
-                  "signer_identity": os.environ["SIGNER_IDENTITY"],
-              },
-          }
-          target = out / f"kernel-{stream}.manifest.json"
-          target.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-          print(target.read_text(encoding="utf-8"))
-          PY
+          python3 scripts/kernel_artifact_manifest.py --dir=output --stream="${STREAM}" \
+            --version="${VERSION}" --kernelrelease="${KERNELRELEASE}" --tag="${RELEASE_TAG}" \
+            --revision="${REVISION}" --repository="${GITHUB_REPOSITORY}" \
+            --signer-identity="${SIGNER_IDENTITY}"
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
