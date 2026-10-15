@@ -71,6 +71,20 @@ jobs:
           set -euo pipefail
           python3 scripts/resolve_release_tag.py --tag "${TAG_INPUT}" --ref "${GITHUB_REF}" --github-output "${GITHUB_OUTPUT}"
 
+      # Refuse execution if a GitHub release already exists for this tag. Kernel packages
+      # are not reproducible (module signatures and debian/changelog date differ per build),
+      # so a re-run would upload different digests under the same tag via action-gh-release,
+      # breaking downstream consumers pinned to the first digests. To release again after a
+      # fix, cut revision lusoris<N+1>; deleting an existing release is the operator's act.
+      - name: Refuse Existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          ./scripts/refuse_existing_release.sh --repo "${REPO}" --tag "${RELEASE_TAG}"
+
       # provenance.revision is the commit the release was built from: the tag's commit, which
       # the resolver above has made the run's ref.
       - name: Record the Tagged Revision

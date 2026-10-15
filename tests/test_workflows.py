@@ -119,6 +119,24 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert checkout["with"]["persist-credentials"] is False
 
 
+def test_publish_release_refuses_existing_release():
+    """publish-release.yml refuses to run for a tag whose release already exists (gap row C14-2)."""
+    steps, names = _publish_release_steps()
+    step_name = "Refuse Existing Release"
+    assert step_name in names, f"'{step_name}' step missing from publish-release.yml"
+    refuse_idx = names.index(step_name)
+    meta_idx = names.index("Resolve Stream and Version")
+    build_idx = names.index("Build and Boot the Tagged Stream")
+    assert meta_idx < refuse_idx < build_idx, (
+        f"'{step_name}' must run after 'Resolve Stream and Version' and before 'Build and Boot the Tagged Stream'"
+    )
+    step = steps[refuse_idx]
+    assert "./scripts/refuse_existing_release.sh" in step["run"]
+    assert step["env"]["RELEASE_TAG"] == "${{ steps.meta.outputs.release_tag }}"
+    assert step["env"]["REPO"] == "${{ github.repository }}"
+    assert step["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+
 def _build_matrix():
     return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"][
         "build"
@@ -910,8 +928,14 @@ def test_actionlint_passes():
     assert res.returncode == 0, f"actionlint failed on workflows:\n{res.stdout}\n{res.stderr}"
 
 
-def _run_metadata_gate(**overrides: str) -> subprocess.CompletedProcess:
-    """Run the metadata gate's script as the runner does, with a complete, valid pull request."""
+def _run_metadata_gate(
+    tmp_path: Path | None = None, **overrides: str
+) -> subprocess.CompletedProcess:
+    """Run the metadata gate's script as the runner does, with a complete, valid pull request.
+
+    With `tmp_path`, `gh` on PATH is a stub that fails, so the gate's live milestone and label
+    queries cannot reach the forge and the test judges the payload alone.
+    """
     parsed = yaml.safe_load((WORKFLOWS_DIR / "pr-project-gate.yml").read_text(encoding="utf-8"))
     step = next(
         s
@@ -929,6 +953,13 @@ def _run_metadata_gate(**overrides: str) -> subprocess.CompletedProcess:
         "PR_HEAD_REF": "fix/example",
     }
     env.update(overrides)
+    if tmp_path is not None:
+        stub = tmp_path / "gh"
+        stub.write_text(
+            "#!/bin/sh\necho 'gh: no forge in this test' >&2\nexit 1\n", encoding="utf-8"
+        )
+        stub.chmod(0o755)
+        env["PATH"] = f"{tmp_path}{os.pathsep}{env['PATH']}"
     return subprocess.run(
         ["bash", "--noprofile", "--norc", "-e", "-c", step["run"]],
         capture_output=True,
@@ -972,6 +1003,49 @@ def test_release_waiver_does_not_exempt_a_skip_marker():
     )
     assert result.returncode == 1
     assert "skip marker" in result.stdout + result.stderr
+
+
+RELEASE_PR = {
+    "PR_AUTHOR": "github-actions[bot]",
+    "PR_HEAD_REF": "release-please--branches--main--components--nucleus",
+    "PR_TITLE": "chore(main): release nucleus 0.3.1",
+    "PR_BODY": "Generated changelog without an issue reference.",
+    "PR_MILESTONE": "",
+    "PR_LABELS": '["autorelease: pending"]',
+}
+
+
+def test_release_waiver_passes_the_release_please_pull_request(tmp_path):
+    """Issue #24, positive: release-please's own pull request merges, and the log says why."""
+    result = _run_metadata_gate(tmp_path, **RELEASE_PR)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Metadata gates waived" in result.stdout
+    assert "github-actions[bot] on release-please--branches--main" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param({"PR_AUTHOR": "lusoris"}, id="human-on-release-branch-with-label"),
+        pytest.param({"PR_HEAD_REF": "fix/example"}, id="bot-off-release-branch"),
+        pytest.param(
+            {"PR_HEAD_REF": "x-release-please--branches--main"}, id="bot-prefix-not-anchored"
+        ),
+        pytest.param({"PR_AUTHOR": "github-actions"}, id="not-the-bot-account"),
+    ],
+)
+def test_release_waiver_needs_the_bot_and_its_branch(tmp_path, override):
+    """Issue #24, boundary: the label alone, or the bot off its branch, is not waived."""
+    # The forge answers that the pull request has no milestone, so the gate reaches its own
+    # milestone check instead of stopping on a failed query.
+    stub = tmp_path / "gh"
+    stub.write_text("#!/bin/sh\necho null\n", encoding="utf-8")
+    stub.chmod(0o755)
+    path = f"{tmp_path}{os.pathsep}{os.environ['PATH']}"
+    result = _run_metadata_gate(None, **{**RELEASE_PR, **override, "PATH": path})
+    assert result.returncode == 1, result.stdout
+    assert "waived" not in result.stdout
+    assert "missing an assigned milestone" in result.stdout + result.stderr
 
 
 def test_every_pull_request_job_stops_on_a_draft():

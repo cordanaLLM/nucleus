@@ -87,7 +87,11 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
     """Dispatch HTTP request to Hindsight API endpoint using http.client."""
     url = f"{HINDSIGHT_URL}{path}"
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme == "https":
+        # Only plain HTTP to a local port-forward is spoken. An https URL is refused rather than
+        # sent in clear, as it once was.
+        raise ValueError(f"https is not supported for the Hindsight API: {url}")
+    if parsed.scheme != "http":
         raise ValueError(f"Prohibited URL scheme for Hindsight API: {url}")
 
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -99,8 +103,7 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
     conn: http.client.HTTPConnection | None = None
     try:
         host = parsed.hostname or "127.0.0.1"
-        port = parsed.port or 8888
-        conn = http.client.HTTPConnection(host, port, timeout=REQUEST_TIMEOUT)
+        conn = http.client.HTTPConnection(host, parsed.port or 8888, timeout=REQUEST_TIMEOUT)
         conn.request(method, full_path, body=data, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
@@ -117,14 +120,15 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
 
 
 def flush_local_pending(bank_id: str) -> int:
-    """Sync locally buffered facts to upstream Hindsight if reachable."""
+    """Sync this bank's locally buffered facts to upstream Hindsight if reachable."""
     entries = read_local_buffer()
+    quoted_bank = urllib.parse.quote(bank_id, safe="")
     synced = 0
     for item in entries:
-        if not item.get("pending_sync"):
+        if not item.get("pending_sync") or item.get("bank_id") != bank_id:
             continue
         payload = {"content": item["content"], "context": item.get("context", "")}
-        st, _ = http_api("POST", f"/v1/{HINDSIGHT_TENANT}/banks/{bank_id}/retain", payload)
+        st, _ = http_api("POST", f"/v1/{HINDSIGHT_TENANT}/banks/{quoted_bank}/retain", payload)
         if 200 <= st < 300:
             item["pending_sync"] = False
             synced += 1
@@ -145,7 +149,7 @@ def tool_hindsight_retain(content: str, context: str = "", bank_id: str = DEFAUL
     st, data = http_api("POST", f"/v1/{HINDSIGHT_TENANT}/banks/{quoted_bank}/retain", payload)
 
     if 200 <= st < 300:
-        flush_local_pending(quoted_bank)
+        flush_local_pending(bank_id)
         doc_id = data.get("document_id") or data.get("id") or "stored"
         return f"[Hindsight Upstream] Retained fact in bank '{bank_id}' (document_id: {doc_id})."
 
