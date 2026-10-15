@@ -120,5 +120,21 @@
       "sha256": "99ece6bacbb1bbd2534bbe9cf073027b2e364e8eb3d329ea68b675e2eca87019",
       "vendored": "tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json"
     }
+  },
+  "modules": {
+    "openzfs": {
+      "version": "2.4.4",
+      "source": {
+        "kind": "tarball",
+        "url": "https://github.com/openzfs/zfs/releases/download/zfs-2.4.4/zfs-2.4.4.tar.gz",
+        "signature_url": "https://github.com/openzfs/zfs/releases/download/zfs-2.4.4/zfs-2.4.4.tar.gz.asc",
+        "sha256": "2a3c70d55a37cc71618a95a60e81ad66530201eb118d37741dc92efcf848c8b1",
+        "signers": [
+          "4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027"
+        ]
+      },
+      "linux_minimum": "4.18",
+      "linux_maximum": "7.2"
+    }
   }
 }

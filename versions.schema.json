@@ -152,6 +152,67 @@
           }
         }
       }
+    },
+    "modules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "openzfs": {
+          "type": "object",
+          "required": [
+            "version",
+            "source",
+            "linux_minimum",
+            "linux_maximum"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+[.][0-9]+([.][0-9]+)?$"
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "kind",
+                "url",
+                "signature_url",
+                "sha256",
+                "signers"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "tarball"
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://[^\\s]+/zfs-[0-9][0-9A-Za-z.-]*[.]tar[.]gz$"
+                },
+                "signature_url": {
+                  "type": "string",
+                  "pattern": "^https://[^\\s]+/zfs-[0-9][0-9A-Za-z.-]*[.]tar[.]gz[.]asc$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "signers": {
+                  "$ref": "#/$defs/signers"
+                }
+              }
+            },
+            "linux_minimum": {
+              "type": "string",
+              "pattern": "^[0-9]+[.][0-9]+$"
+            },
+            "linux_maximum": {
+              "type": "string",
+              "pattern": "^[0-9]+[.][0-9]+$"
+            }
+          }
+        }
+      }
     }
   }
 }

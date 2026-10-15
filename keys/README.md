@@ -1,8 +1,9 @@
-# kernel.org signing keys
+# Upstream signing keys
 
-The public keys `scripts/fetch-kernel-source.sh` verifies kernel sources with. Each file is
-the armored, minimal export of one key, named by its primary-key fingerprint, and a stream
-accepts only the keys its `versions.json` `source.signers` lists. The policy is
+The public keys `scripts/fetch-kernel-source.sh` and `scripts/check-openzfs-module.sh` verify
+kernel and module sources with. Each file is the armored, minimal export of one key, named by its
+primary-key fingerprint, and a stream or module source accepts only the keys its `versions.json`
+lists in `signers`. The policy is
 [ADR-0008](../docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md).
 
 | File | Key | Signs | Used by |
@@ -10,8 +11,11 @@ accepts only the keys its `versions.json` `source.signers` lists. The policy is
 | `ABAF11C65A2970B130ABE3C479BE3E4300411886.asc` | Linus Torvalds `<torvalds@kernel.org>`, RSA 2048 | mainline tags and `x.y` release tarballs | `bleeding` (`git verify-tag`) |
 | `647F28654894E3BD457199BE38DBBDC86092693E.asc` | Greg Kroah-Hartman `<gregkh@kernel.org>`, RSA 4096 | stable and longterm release tarballs (`.tar.sign`) | `mainstream`, `lts`, `realtime` (`gpgv`) |
 | `B8868C80BA62A1FFFAF5FDA9632D3A06589DA6B1.asc` | Kernel.org checksum autosigner `<autosigner@kernel.org>`, RSA 4096 | `sha256sums.asc` in each release directory | no stream; checks the `sha256` of a tarball when a stream is bumped |
+| `4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc` | Tony Hutter `<hutter2@llnl.gov>`, RSA 4096 | OpenZFS release tarballs (`zfs-*.tar.gz.asc`) | `modules.openzfs` (`gpgv`) |
 
 ## Provenance
+
+### kernel.org developer keys
 
 <https://www.kernel.org/signature.html> names the developer keys and says to fetch them from
 the kernel.org Web Key Directory rather than a keyserver. The three files were fetched on
@@ -29,6 +33,13 @@ section "Kernel.org checksum autosigner and sha256sums.asc" describes, and the o
 `sha256sums.asc` (checked with `gpgv` against `v7.x/sha256sums.asc` and `v6.x/sha256sums.asc`).
 The autosigner signature is a mirror check that signature.html says does not replace a
 developer signature, which is why no stream lists it as a signer.
+
+### OpenZFS release key
+
+The OpenZFS release key (`4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc`, Tony Hutter) was
+fetched 2026-10-13 from keyserver.ubuntu.com, fingerprint cross-checked against Debian
+`zfs-linux` 2.4.4-1 `debian/upstream/signing-key.asc`, and `gpgv` verified
+`zfs-2.3.9.tar.gz.asc` and, on 2026-10-14, `zfs-2.4.4.tar.gz.asc`.
 
 ## Refreshing a key
 
