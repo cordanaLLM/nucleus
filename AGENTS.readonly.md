@@ -1,0 +1,267 @@
+<!-- markdownlint-disable MD013 -->
+# cordanaLLM/nucleus Agent Operating Harness
+
+Run read-only: file edits, state mutations, commits prohibited. Mutating steps dropped; prohibitions kept.
+
+<!-- praetor:head -->
+
+## Core Directives & Invariants
+
+Adopted check = check adoption generated here (generated verification gate + praetor `lefthook.yml`), as written at adoption; later edits to those files not reflected. `not enforced` = rule binds, no generated check decides it for repository languages.
+
+| Invariant | Rule | Adopted check | On fail |
+| :--- | :--- | :--- | :--- |
+| **HISS-01** control flow | recursion prohibited; call graph = DAG | `praetorctl audit` HISS scan in verify-all + lefthook pre-commit/pre-push: Go `goto`, recursion + plain-function call cycles; Rust, Python direct recursion; C `goto` | new finding fails verify-all, blocks commit, blocks push |
+| **HISS-02** loops, I/O | scalar upper bound on every loop; explicit deadline on every I/O call | `praetorctl audit` HISS scan in verify-all + lefthook pre-commit/pre-push: unbounded loop shapes in Go, C, Rust, Python; I/O deadlines unchecked | new finding fails verify-all, blocks commit, blocks push |
+| **HISS-03** memory | n/a: no such construct in repository languages; advisory | not enforced | advisory |
+| **HISS-04** complexity | McCabe cyclomatic <= 10, cognitive <= 12, statements <= 40; func LOC <= 60 (audit ceiling) | `praetorctl audit` HISS scan in verify-all + lefthook pre-commit/pre-push: function length only; other caps need repository linter | new finding fails verify-all, blocks commit, blocks push |
+| **HISS-05** scoping | declare every identifier in smallest lexical scope serving it | not enforced | advisory |
+| **HISS-06** concurrency | explicit scalar upper bound on every worker pool + concurrent fan-out | not enforced | advisory |
+| **HISS-07** errors | every error handled or wrapped with context | `praetorctl audit` HISS scan in verify-all + lefthook pre-commit/pre-push: partial in Go, Rust, Python | new finding fails verify-all, blocks commit, blocks push |
+| **HISS-08** determinism | zero dynamic code execution (`eval` / `exec`) | `praetorctl audit` HISS scan in verify-all + lefthook pre-commit/pre-push: C banned calls, Python `eval` / `exec`; Go unchecked | new finding fails verify-all, blocks commit, blocks push |
+| **HISS-09** reference safety | n/a: no such construct in repository languages; advisory | not enforced | advisory |
+| **HISS-10** warnings | zero warnings: compiler, linter, format sweeps | not enforced | advisory |
+| **HISS-11** supply chain | pinned lockfiles; zero floating tags; signed provenance | not enforced | advisory |
+| **HISS-12** secrets | zero credentials in Git history | not enforced | advisory |
+| **HISS-13** debt ratchet | recorded infractions never grow vs committed baseline | `praetorctl audit` ratchet vs `.standards-baseline.json` in verify-all + lefthook pre-commit/pre-push | growth fails verify-all, blocks commit, blocks push |
+| **HISS-14** append-only ABI | public API append-only; breaking change = `!` subject + `Migration:` footer | not enforced | advisory |
+| **HISS-15** 3D testing | positive + negative + boundary tests, every public interface | not enforced | advisory |
+| **HISS-16** context integrity | single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context` | `praetorctl compile-context --verify` in verify-all + lefthook pre-commit | drift fails verify-all, blocks commit |
+| **HISS-17** state ledger | turn start `praetorctl state status` | read-only run: step dropped | none; records only |
+| **HISS-18** CI efficiency | diff-aware gating via `praetorctl ci filter` | not enforced | advisory |
+| **HISS-19** reuse before writing | one behavior = one implementation; extend or call existing code | not enforced | advisory |
+| **HISS-20** replayable evidence | every enforcement claim backed by fixtures replayed both directions | not enforced | advisory |
+| **HISS-21** platform neutrality | gates, hooks, emitted templates run on Linux, macOS, Windows, or skip with stated reason | not enforced | advisory |
+
+## Operational Rules
+
+1. **Act on verified state.** Read source files, run real commands before hypothesis or edit. Never guess flag names, library signatures, repo configuration from memory.
+
+2. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no "Based on", no restatement, no chatter.
+
+3. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/hiss-invariants.mdc`, `.github/copilot-instructions.md`, `.windsurfrules`, `.gemini/GEMINI.md`, `.codex/rules.md` manually. All agent instruction updates -> `AGENTS.md`, then:
+
+   ```bash
+   praetorctl compile-context
+   ```
+
+   - `AGENTS.md` = agent-only text -> caveman (internal register). `praetorctl compile-context --verify` + `praetorctl audit` run caveman lint; findings fail gate; no opt-out. Check first: `praetorctl caveman check --kind=context AGENTS.md`.
+
+4. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line pointers; full SARIF logs -> ephemeral storage.
+
+5. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. Hooks = local gate adoption installs. Adoption adds no server-side `praetorctl` gate run. Scaffolded CI: `.github/workflows/praetor-docs.yml` runs step `Stop on a draft pull request`, `node tools/markdownlint/verify.mjs`, step `Verify figures`.
+
+6. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$ times -> halt immediately. Re-evaluate design; no micro-textual retries.
+
+<!-- praetor:config -->
+
+## Text Register
+
+<!-- praetor:register:start -->
+Register follows the audience, then the task label of your brief (`register:` in `.standards.yaml`; labels are the router's `target_tasks`).
+
+| Register | Where | Form |
+| :--- | :--- | :--- |
+| social | forge: issues, PR bodies, review comments, commit bodies | `social-text` skill: BLUF, full sentences, scannable, enough and no more; conventional commit subject unchanged |
+| docs | docs/, README, ADR bodies | complete without bloat: newcomer path first, expert reference after; every claim points at a file, command or test; no restated code |
+| internal | briefs, agent-to-agent traffic, research fan-outs, workflow returns | `caveman` skill: fragments, no filler, verbatim code/paths/errors; facts, paths, commands, verdict |
+
+- Task rows: social = commit_message_synthesis, waiver_signoff; docs = architecture_synthesis, function_docstrings; every other label and any unlabeled text = internal. Subagent launch brief: `caveman` brief shape with `task:` = routing label.
+- Evidence above 58 lines or 1500 tokens leaves the message as a file under `.workingdir/evidence/`; return `evidence: <path> sha256:<12 hex> lines:<n>` and fetch it only when a decision needs it.
+- An internal return carries verdict, changed paths, commands run, evidence pointers and open questions, nothing else.
+<!-- praetor:register:end -->
+
+<!-- praetor:tail -->
+
+## Primary Verification Commands
+
+```bash
+# Fast local test suite
+make lint
+make test
+
+# Recompile and verify cross-agent context outputs
+praetorctl compile-context --verify
+
+# Audit repository against declared HISS standards
+praetorctl audit
+```
+
+<!-- markdownlint-enable MD013 -->
+<!-- markdownlint-disable MD025 -->
+<!-- praetor:harness:end -->
+
+---
+
+# AGENTS.md — Agent & Contributor Directives
+
+<!-- caveman:off -->
+<!--
+  The sections up to the caveman:on marker are written for human contributors as well as
+  agents, in full English sentences (rule 7), so the caveman lint that
+  `praetorctl compile-context --verify` runs skips them. The Text Register block at the end
+  is rendered from .standards.yaml by `make context` and is linted.
+-->
+
+> Authoritative operating guide for all autonomous engineering agents and human contributors in `cordanaLLM/nucleus`.
+>
+> **Read [`docs/principles.md`](docs/principles.md) before changing this repository.** It defines the authority classes, Holzmann Power of 10 adaptations, and architectural contracts for kernel compilation and packaging.
+
+---
+
+## 🌟 TOP-PRIORITY GLOBAL RULES
+
+These rules apply to ALL agents, ALL tools, and ALL commits — without exception:
+
+1. **Read `docs/principles.md` First**: Defines authority classes, Holzmann Power of 10 adaptations, and kernel packaging contracts.
+2. **Single Source of Truth (`versions.json`)**: Never hardcode kernel tarball URLs, release tags, or architecture targets in shell build scripts or CI workflows. All versions must originate exclusively from [`versions.json`](versions.json).
+3. **Trunk-Based PR Merge Flow**: Direct commits to `main` are strictly prohibited. Always create a short-lived branch (`feat/*`, `fix/*`, `chore/*`), run all local quality gates (`make lint`, `make test`), push, and open a PR with `gh pr create`.
+4. **Docs & Code Synchrony**: Every user-discoverable change (new stream, configuration variable, or build script modification) must be reflected in documentation ([README.md](README.md) and [`docs/`](docs/)) in the **exact same commit/PR**.
+5. **NASA/JPL Power of 10 Compliance**: All shell build and automation functions must be $\le$ 60 lines, enforce `set -euo pipefail`, check return codes, and pass ShellCheck with zero warnings.
+6. **Privacy & Zero-Leak Invariant**: Never commit private RFC 1918 IP addresses (`10.x`, `192.168.x`, `172.16-31.x`) or local workstation home paths. Use standard documentation placeholders (`192.0.2.x`, `kernel.example.com`).
+7. **All Documentation in English**: All commit messages, code comments, documentation, and agent reports must be written in a neutral, professional English register.
+
+---
+
+## 1. State of the forge — read this before planning anything
+
+This repository compiles kernels: four streams for three architectures, each build opened by an
+artifact gate before anything is checksummed, and every x86_64 kernel booted under QEMU before it
+is kept ([ADR-0009](docs/adr/0009-kernel-compilation-and-artifact-gate.md)). What it does not do
+yet is said in the table as plainly as what it does.
+
+| Stage | State |
+| :--- | :--- |
+| `versions.json` stream and architecture manifest | real: each stream names a signed `source` (a tarball with its `sha256` and signers, or a git tag with its commit and signers); each architecture its `ARCH`, base defconfig and toolchain prefix |
+| `scripts/fetch-kernel-source.sh` | real: fetches a stream's source and proves it (pinned `sha256` and `gpgv` over the uncompressed tar, or `git verify-tag` and the pinned commit) against `keys/`, then checks the tree's release; refuses otherwise and leaves no tree behind |
+| `kconfig/` fragments and `scripts/merge-config.sh` | real: merges `security-hardened.config`, the architecture fragment, then `kconfig/streams/<stream>.config` when `--stream` names one; keeps `# CONFIG_X is not set`, refuses non-kconfig lines, writes no timestamp. With `--source-tree` it resolves them against a verified tree (defconfig, the kernel's `merge_config.sh -m`, `olddefconfig`) and refuses when a requested value did not survive (`scripts/kconfig_survival.py`); all twelve legs survive |
+| `verify-requirements.yml` | real: reads imago's and Aegis-OS's requirement documents at pinned commits and checks each against the declared fragments of the streams it is bound to (first green run 36493866531), then resolves all twelve stream and architecture legs from their verified sources with the survival check, and checks each document against the resolved `.config` of each bound stream on each listed architecture |
+| `scripts/build_kernel.sh` production path | real: fetch and verify, resolve, `make bindeb-pkg` with `LOCALVERSION=-lusoris<N>-<stream>` and `KDEB_PKGVERSION=<debian_version>-lusoris<N>` in a fixed environment (`SOURCE_DATE_EPOCH` from the release commit; the packages are still not reproducible, since module signatures and the `debian/changelog` date differ per build), record `make -s kernelrelease`, extract `vmlinuz-<kernelrelease>`, run the gate. A release candidate's package version is `7.3~rc7-lusoris1` (dpkg orders it before `7.3`), and its file names spell `~` as `.`, which GitHub and imago require. Built locally for all four streams on x86_64 and for `mainstream` on arm64 and riscv64 (cross); a cross build ships no headers package. Refuses a non-empty output directory, a tree that is not a kernel and a missing tool before writing anything |
+| `scripts/build_kernel.sh --dry-run` | real: states the fetch, the resolution, the make command and the expected kernel release; writes nothing |
+| `scripts/check_kernel_artifacts.py` | real: the artifact gate. Opens every package with `dpkg-deb`; refuses empty files, strangers, a wrong package name, version or Debian architecture, a missing image or `linux-libc-dev` package, a missing headers package on a native build, a kernel release that is not the stream's, a `vmlinuz` or `/boot/config` that differs from the files beside it, a `dpkg-deb` that fails, and a `vmlinuz` that is not a kernel of that release for that architecture (x86_64: the bzImage setup header's version string; arm64 and riscv64: the decompressed `Image` header and its `Linux version` banner) |
+| `scripts/boot_smoke.py` | real: boots an x86_64 kernel with a static-init initramfs under QEMU (TCG) and requires `Linux version <kernelrelease>` and the init's line; all four x86_64 kernels boot locally |
+| `scripts/package-deb.sh` | real: a wrapper over `build_kernel.sh`; **refuses** a production run without `--source-tree` (issue #31) |
+| `patches/` | **not applied** by the build. The one patch there, `common/0001-sched-ext-tuning.patch`, changes a license identifier and does not apply to 7.2.8 (`patch -p1 --dry-run`) |
+| `scripts/package-uki.sh` | real, unsigned: `ukify` build, then `package-uki.sh` deletes any output that `scripts/check_uki.py` refuses (not a PE with the UKI sections it wires) before it is checksummed; CI builds one from Ubuntu's kernel, never yet from a nucleus kernel; no release workflow publishes a UKI; **refuses** without a kernel or `ukify` (issue #21) |
+| `scripts/publish_release.sh` | real: `SHA256SUMS` over exactly the files in `OUTPUT_DIR`; **refuses** an empty directory, a zero-byte file, a file that is not a publishable artifact, a directory without a package, and a `sha256sum` failure, writing nothing (issue #31) |
+| `publish-release.yml` | real, has released all four streams (tags `v7.2.8-realtime-lusoris1`, `v7.2.8-mainstream-lusoris1`, `v6.18.54-lts-lusoris1`, `v7.3-rc5-bleeding-lusoris1`; each verified with `sha256sum -c`, cosign and `imago kernel artifact verify`): builds the tagged stream for x86_64 in the pinned `ubuntu:26.04` image with the checkout mounted read-only, gates, boots it under QEMU, gates again on the host, SBOM, checksums, keyless cosign signature; publishes the packages, `vmlinuz-<kernelrelease>` and `kernel-<stream>-x86_64.config`. The manifest's `kernel.release` is the recorded kernel release, `config_digest` the resolved configuration's digest, `revision` the tag's commit; imago's verifier (16f964b) accepts a release assembled this way locally and refuses one flipped bit |
+| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures in `ubuntu:26.04` (pinned by digest, the one every workflow uses), arm64 natively on `ubuntu-24.04-arm`, riscv64 cross-compiled; disk probe, compiler cache, gate, x86_64 boot, checksums; job permissions `contents: read`. Run 36507112520 compiled and gated all twelve legs, booted the four x86_64 kernels, and built the arm64 headers packages natively. An earlier run lost a riscv64 leg to a race in the uutils `install -D` that Ubuntu 26.04 ships; the build now uses GNU `install` (`gnuinstall`) |
+| downstream dispatch to `cordanaLLM/imago` | real on this side: every release sent `kernel_release_published` (stream, version, tag) with the `KERNEL_FORGE_TOKEN` secret, a fine-grained token limited to `cordanaLLM/imago` that expires after 366 days. imago's receiving `sync-kernel-manifest` fails at job setup on a dead action pin (cordanaLLM/imago#47), so no release has been pinned there yet |
+
+The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
+reported success on all twelve legs in under three minutes, and `publish-release` would
+have packaged those empty files with sixteen megabytes of `/dev/urandom` named as a UKI,
+generated an SBOM for them, and signed the result with cosign. It refused from #19 until the
+real build replaced it (issue #18), and the packaging scripts that still fabricated, text files
+named `.deb` and an empty `SHA256SUMS`, now refuse too (issue #31): **a forge that cannot
+compile must not report that it did.** Do not restore a placeholder to make a build green; the
+artifact gate exists so that one cannot pass.
+
+What is not done: no UKI is built from a nucleus kernel yet (`package-uki.sh` needs an initramfs
+and per-architecture stubs); arm64 and riscv64 kernels are compiled and gated but not booted;
+riscv64 kernels carry no debug information and therefore no BTF, because
+`kconfig/riscv64.config` does not request it; a release is x86_64 only, because
+`imago.nucleus.kernel-artifact.v1` has no architecture field; and `verify_kernel_requirement.py`
+still reports the module ABI as unverifiable, since it reads configurations, not build records.
+
+`scripts/package-uki.sh` had two placeholders of the same class, both removed under
+issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
+through to its simulation branch whenever `--vmlinuz` was missing, even without
+`--dry-run`, writing an `MZ`-prefixed text file named `BOOTX64.EFI` plus a PCR 11
+measurement of it. Both now refuse. Simulation happens only on an explicit `--dry-run`,
+which writes `<stream>-<arch>-dry-run/<efi name>.simulated.txt`, never a `.efi` or a
+checksum, and its `pcr11-measurements.json` carries `"simulated": true`. A production run
+removes any image, checksum and measurement an earlier run left at its path. Its `ukify` call was also
+wrong: it embedded the cmdline file's path as the kernel command line, and passed an
+empty `--initrd=`, on which `ukify` crashes. Whatever `ukify` writes now goes through
+`scripts/check_uki.py` (PE headers, machine type, UKI sections, no section the script does
+not wire, the command line text) and is deleted by `package-uki.sh`, not checksummed, if
+refused. `ukify` runs with `--config=/dev/null`, so a host `ukify.conf` cannot change the
+image. The `UKI Real ukify Build` job in `ci.yml` builds a real UKI from Ubuntu's kernel
+image on every pull request.
+
+### The contract with imago
+
+`cordanaLLM/imago` consumes what this forge publishes, and verifies it:
+
+- **Inbound**: requirement documents of shape `aegis.p01-nucleus.kernel-requirement.v1`, declared in
+  `versions.json` under `downstream.requirements`, each bound to the streams its consumer uses:
+  imago's `kernel/requirement.json` to all four, Aegis-OS's `build/kernel-requirement.json` to
+  `realtime`. The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md).
+  - `scripts/fetch-kernel-requirements.sh` reads each document at one commit. A
+    `kernel_requirements_updated` dispatch pins its own row to the dispatched commit, and the
+    verifier proves the dispatched SHA-256 before parsing and the correlation id before the
+    document is used; the other rows are read at the commit their default branch resolves to.
+    imago's dispatch workflow has not completed a run yet (its only run, 35072144482, failed at
+    job setup), so the weekly schedule and the pull request and push triggers are what exercise
+    this gate today.
+  - `scripts/verify_kernel_requirement.py` decodes a document the way its owner does (the Rust crate
+    `crates/aegis-fabrica-defs` in Aegis-OS), and its owner's published JSON Schema
+    (`downstream.requirement_schema` in `versions.json`, ADR-0010); the two divergences ADR-0007
+    named closed when Aegis-OS widened `required-by` and refused the array form (Aegis-OS#167).
+    Every bound stream must meet `abi.minimum-release` and every
+    feature's exact state on every listed architecture; a failure names the correlation id,
+    stream, architecture, symbol, `required-by`, required state and observed value. Unbound
+    streams are reported, never gating.
+  - It checks at two evidence levels. `declared`: the fragments name the symbol. `resolved`: the
+    symbol is in the `.config` that `make olddefconfig` produced from the stream's verified source,
+    which catches a symbol whose Kconfig dependencies are unmet. The fragments declare the chains
+    the requirement symbols need, such as `EXPERT` for `PREEMPT_RT` and `DEBUG_KERNEL` with
+    `DEBUG_INFO_DWARF5` for `DEBUG_INFO_BTF`, and say why.
+- **Outbound**: `kernel-<stream>.manifest.json`, shape `imago.nucleus.kernel-artifact.v1`, carrying the stream, version, kernel release, config digest, per-artifact digests and sizes, the checksum file, and provenance (tag, revision, cosign bundle, signer identity).
+- Imago verifies the cosign bundle over `SHA256SUMS`, then the checksum file digest, then every per-artifact digest, before an image build consumes anything.
+
+That verification passes on whatever is published. It would have passed on empty files,
+which is the second reason the production path refuses rather than fabricates.
+
+---
+
+## 2. Mission & Purpose
+
+`cordanaLLM/nucleus` compiles, patches, hardens, and packages high-performance Linux kernels for virtualization, container orchestration, and hardware acceleration in `imago`.
+
+Key capabilities:
+
+- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc7), `mainstream` (7.2.10), `lts` (6.18.56), and `realtime` (7.2.10 with in-tree `PREEMPT_RT`).
+- **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
+- **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
+- **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `imago`.
+
+---
+
+## 3. Working Sequence
+
+1. **Inspect Authority**: Read `docs/principles.md` and `versions.json` before touching build scripts or kconfigs.
+2. **Smallest Coherent Patch**: Make the minimal changes necessary. Do not rewrite nearby build scripts or kconfigs for style alone.
+3. **Run Local Checks**: Execute `make lint` and `make test` before pushing or creating a pull request.
+   `make build-kernel STREAM=<stream> ARCH=<arch> DRY_RUN=true` states the plan without
+   producing an artifact; `DRY_RUN=false` compiles, in `ubuntu:26.04` with
+   `scripts/install-build-toolchain.sh` (3 to 9 minutes and 8 to 16 GiB per leg at 32 threads).
+4. **Prove it in CI, not only locally**: `gh workflow run build-matrix.yml -R cordanaLLM/nucleus --ref <branch> -f dry_run=false`
+   compiles all twelve legs; `-f dry_run=true` only states each leg's plan. A change to the build
+   path that has not been compiled there has not been tested.
+
+### Working on Windows
+
+The build container runs `sh`, not `bash`: a step using arrays or `[[` needs an explicit
+`shell: bash`, and the workflow installs `bash` for that reason. Two test failures,
+`test_scripts_executable` and `test_audit_repository_health_script_executable`, are exec-bit
+checks that fail on a Windows checkout and pass in CI; the index modes are already `100755`.
+4. **Conventional Commits**: Draft clear, descriptive commit messages adhering strictly to Conventional Commits (`type(scope): subject`).
+
+---
+
+## 4. Hard Rules
+
+1. **Single Source of Truth**: All kernel streams, tags, URLs, and architectures originate exclusively from [`versions.json`](versions.json).
+2. **Never `git push --force` to `main`**.
+3. **Never commit directly to `main`**.
+4. **Never merge without `make lint` + `make test` green**.
+5. **Every commit message follows Conventional Commits** (`type(scope): subject`).
+6. **Every new script starts with license header** (`Copyright 2026 The Lusoris Authors`).
+7. **Every user-discoverable surface ships human-readable documentation** under `docs/` in the same PR.
+8. **Power of 10 compliance**: Shell functions $\le$ 60 lines, `set -euo pipefail`, bounded loops, zero linter warnings.
+9. **Privacy & Zero-Leak invariant**: Zero private RFC 1918 IPs, zero `/home/*` workstation paths.
+10. **AGENTS.md is the only hand-edited agent context**: `CLAUDE.md`, `.codex/rules.md`, `.cursor/rules/hiss-invariants.mdc`, `.gemini/GEMINI.md`, `.github/copilot-instructions.md` and `.windsurfrules` are compiled from it. After every change to AGENTS.md, run `make context` and commit the regenerated files with it; the `praetorctl compile-context --verify` step in CI fails otherwise. Never edit the Text Register block by hand: it is rendered from `.standards.yaml`. The praetor pin, profile, review mode and branch ruleset are described in [`docs/repository-governance.md`](docs/repository-governance.md).
+
+<!-- caveman:on -->
