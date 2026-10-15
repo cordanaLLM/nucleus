@@ -500,7 +500,18 @@ compared with `/boot/config-<kernelrelease>`, and `provenance.revision` the comm
 at, checked against the run's ref before anything is built. `tests/test_workflows.py` holds the
 workflow to these sources.
 
+`scripts/kernel_artifact_manifest.py` writes the manifest. It takes nothing on trust from
+`SHA256SUMS`: it recomputes every listed digest, and refuses, writing nothing, when
+`SHA256SUMS.bundle` is missing, when `SHA256SUMS` is empty or holds a line that is not
+`<64 hex> <file name>` (a path, a hidden name and a duplicate are refused too), when a listed file
+is missing or no longer has its digest, when a file in the release directory is not listed, and
+when `kernel-<stream>-x86_64.config` is not listed. In that last case there is no configuration to
+digest, and a stand-in digest would describe a build that did not happen.
+`tests/test_kernel_artifact_manifest.py` plants each of these.
+
 The downstream `repository_dispatch` payload (`kernel_release_published`) carries `stream`, `version` (`<version>-lusoris<N>`, the same string as the manifest's `version`), and `tag`; it is sent with the `KERNEL_FORGE_TOKEN` secret (section 5.5). Imago downloads the release named by `tag`, verifies the cosign bundle over `SHA256SUMS`, recomputes the `SHA256SUMS` digest and every artifact digest and size against the manifest, and only then pins `kernel.streams.<stream>` (version, `artifact_digest`, provenance) in its `versions.json`.
+
+Because kernel packages are not byte-for-byte reproducible (module signatures and the `debian/changelog` date differ across builds), re-running `publish-release.yml` (via `workflow_dispatch` or a job re-run) for an existing tag would upload differing digests under the same tag, breaking downstream consumers pinned to the initial digests. `publish-release.yml` checks for an existing release before building (`scripts/refuse_existing_release.sh`) and refuses execution if one exists. To release again after a fix or build configuration change, cut a new revision (`lusoris<N+1>`, e.g. `v7.2.8-mainstream-lusoris2`); deleting an existing release is an operator act.
 
 ### 5.4 Release Tags
 

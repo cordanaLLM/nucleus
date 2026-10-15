@@ -249,13 +249,15 @@ Key capabilities:
    compiles all twelve legs; `-f dry_run=true` only states each leg's plan. A change to the build
    path that has not been compiled there has not been tested.
 
-### Working on Windows
+5. **Conventional Commits**: Draft clear, descriptive commit messages adhering strictly to Conventional Commits (`type(scope): subject`).
 
-The build container runs `sh`, not `bash`: a step using arrays or `[[` needs an explicit
-`shell: bash`, and the workflow installs `bash` for that reason. Two test failures,
-`test_scripts_executable` and `test_audit_repository_health_script_executable`, are exec-bit
-checks that fail on a Windows checkout and pass in CI; the index modes are already `100755`.
-4. **Conventional Commits**: Draft clear, descriptive commit messages adhering strictly to Conventional Commits (`type(scope): subject`).
+### Platforms
+
+Builds, tests and every gate run on Linux, locally and in CI; no job runs on Windows or macOS,
+and neither is supported for running them. A checkout there is for editing only, with the
+gates run on Linux or in CI before review. The build container runs `sh`, not `bash`: a step
+using arrays or `[[` needs an explicit `shell: bash`, and the workflow installs `bash` for that
+reason.
 
 ---
 

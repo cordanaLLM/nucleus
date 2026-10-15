@@ -54,7 +54,7 @@ When an autonomous agent is initialized in or migrated to this repository, it mu
 
 ### Order 1: Verify Environment & Tools
 
-Verify that the host environment has GNU Make, Python 3.12+, ShellCheck, Yamllint, and kernel build utilities:
+Verify that the host environment has GNU Make, Python 3.12 or later (`requires-python` in `pyproject.toml`; CI also runs the suite on 3.14, the `python3` of the `ubuntu:26.04` build container), ShellCheck, Yamllint, and kernel build utilities:
 
 ```bash
 make --version
