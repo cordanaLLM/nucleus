@@ -13,6 +13,7 @@ time so this file itself stays free of them.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -132,12 +133,33 @@ def test_guard_refuses_payload_nested_beyond_the_depth_bound() -> None:
 
 @pytest.mark.parametrize("leaf", [IP_192, "ok"], ids=["private address", "clean value"])
 def test_guard_refuses_payload_too_deep_for_the_json_decoder(leaf: str) -> None:
-    """json.loads raises RecursionError at this depth; the payload must not pass unscanned."""
+    """A payload this deep never passes unscanned, whichever bound refuses it.
+
+    Where json.loads gives up (RecursionError) depends on the interpreter: since Python 3.14
+    the bound is the C stack, so one 3.14 build decodes this depth and another does not. The
+    scan's depth bound refuses what the decoder accepts.
+    """
     depth = 100_000
     payload = '{"arguments": ' + "[" * depth + json.dumps(leaf) + "]" * depth + "}"
     result = _run(payload)
     assert result.returncode == 1
-    assert "nests too deeply to decode" in result.stderr
+    assert (
+        "nests too deeply to decode" in result.stderr
+        or "nests deeper than 64 levels" in result.stderr
+    )
+
+
+def test_guard_refuses_a_payload_the_decoder_gives_up_on(monkeypatch, capsys) -> None:
+    """The RecursionError branch refuses on every interpreter, not only where the decoder fails."""
+    guard = _load_guard()
+
+    def give_up(_raw: str) -> object:
+        raise RecursionError
+
+    monkeypatch.setattr(guard.json, "loads", give_up)
+    monkeypatch.setattr(guard.sys, "stdin", io.StringIO('{"arguments": []}'))
+    assert guard.main() == 1
+    assert "nests too deeply to decode" in capsys.readouterr().err
 
 
 def test_scanner_returns_the_violation_instead_of_exiting() -> None:
