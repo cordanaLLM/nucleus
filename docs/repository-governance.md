@@ -118,7 +118,7 @@ request edit. A skipped check passes only when its name is listed with `--allow-
 list holds just `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
 Gate judges, and `tests/test_gates_refuse_skipped.py` fails when that list differs from the
 detector-gated jobs in `security-scans.yml`. The gate also fails when it finds no other check
-run, or when the others are still running after 25 minutes. Before this, the aggregator
+run, or when the others are still running after 100 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
 Two forge behaviours shape the wait. A job that `needs` another one registers its check run
@@ -134,8 +134,14 @@ its status says, and its conclusion is judged like any other. Both are tested in
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
 Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Against the
 Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
-for them and requires their success like any other check run. `build-matrix.yml` does not
-run on pull requests at all.
+for them and requires their success like any other check run. `build-matrix.yml` works the
+same way: a pull request that touches a file the build runs or reads (the paths its
+`pull_request` trigger lists: the build scripts, `kconfig/`, `keys/`, `versions.json`, the
+builder image and the workflow itself) compiles, gates and boots all twelve legs, and
+`required-checks` waits for them. That is why the gate waits 100 minutes: the arm64 leg may run
+for 90, and the longest measured leg took 40 (run 36507112520). A new push to the pull request
+cancels the build still running for the previous one; a scheduled or dispatched run is never
+cancelled. `tests/test_workflows.py` fails when the trigger, its paths or the wait change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:

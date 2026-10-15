@@ -10,10 +10,10 @@
 
 | Stream Channel | Tracked Upstream Version | Security Maintenance Status | Update Frequency |
 | :--- | :--- | :--- | :--- |
-| **`bleeding`** | Linux `7.3-rc5` / Mainline | Active (Day-0 fixes for next-gen silicon) | Weekly / On-demand |
-| **`mainstream`** | Linux `7.2.8` / Stable | Active (Full production support) | Weekly point releases |
-| **`lts`** | Linux `6.18.54` / Longterm | Active (Enterprise extended security) | Bi-weekly / Immediate on CVE |
-| **`realtime`** | Linux `7.2.8` / in-tree PREEMPT_RT | Active (Deterministic low-latency) | With the `mainstream` stable release |
+| **`bleeding`** | Linux `7.3-rc7` / Mainline | Active (Day-0 fixes for next-gen silicon) | Weekly / On-demand |
+| **`mainstream`** | Linux `7.2.10` / Stable | Active (Full production support) | Weekly point releases |
+| **`lts`** | Linux `6.18.56` / Longterm | Active (Enterprise extended security) | Bi-weekly / Immediate on CVE |
+| **`realtime`** | Linux `7.2.10` / in-tree PREEMPT_RT | Active (Deterministic low-latency) | With the `mainstream` stable release |
 
 Older point releases are deprecated as soon as superseded by the next version declared in [`versions.json`](versions.json).
 
@@ -28,7 +28,8 @@ We treat all security vulnerability disclosures with utmost urgency and confiden
    - Provide a clear vulnerability description, affected kernel streams, proof-of-concept if available, and any relevant kconfig flags.
 2. **Never File Public Issues**: Do not submit vulnerability reports, zero-day disclosures, or exploit PoCs to public GitHub Issues or PRs.
 
-### Response SLA:
+### Response SLA
+
 - **Initial Acknowledgement**: Within 24 hours.
 - **Triage & Reproduction**: Within 72 hours.
 - **Remediation & Coordinated Disclosure**: Private fix developed, tested against QEMU boot test suites, and published with a CVE and GitHub Security Advisory (GHSA).
@@ -49,6 +50,7 @@ A published release carries a keyless Cosign signature over its checksum file. T
 
 2. **Verifying a Release**:
    - Download the release assets into one directory, verify the Cosign signature over `SHA256SUMS` against the identity of the release workflow at that tag, then check the files against it:
+
      ```bash
      cosign verify-blob \
        --bundle SHA256SUMS.bundle \
@@ -57,6 +59,7 @@ A published release carries a keyless Cosign signature over its checksum file. T
        SHA256SUMS
      sha256sum -c SHA256SUMS
      ```
+
    - `cosign verify-blob` refuses a `SHA256SUMS` with one changed byte and a certificate from any other workflow.
    - `cordanaLLM/imago` consumes `kernel-<stream>.manifest.json` (`imago.nucleus.kernel-artifact.v1`) and verifies `SHA256SUMS.bundle`, the `SHA256SUMS` digest, and every artifact digest before an image build uses a kernel.
 

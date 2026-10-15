@@ -45,6 +45,7 @@ The following table indexes all architectural decision records governing `cordan
 ## 3. ADR Authoring Standards
 
 All future ADRs must adhere to the standardized structure:
+
 1. **Title & Number**: Sequential identifier (`ADR-000X: Title`).
 2. **Date**: ISO 8601 creation date (`YYYY-MM-DD`).
 3. **Status**: `Proposed`, `Accepted`, `Rejected`, or `Superseded`.

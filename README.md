@@ -39,6 +39,7 @@ private scratch-link policy.
 ## 1. Mission & Architecture
 
 `cordanaLLM/nucleus` decouples low-level kernel compilation from cloud image creation:
+
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
 3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, OpenZFS 2.3 kmod compatibility, and NVMe-oF TCP optimizations.
@@ -57,10 +58,10 @@ flowchart TD
     Patches["Curated Patch Queue<br/><small>patches/*</small>"]:::engine
 
     subgraph Streams["Kernel Release Streams"]
-        Bleeding["bleeding (7.3-rc5)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
-        Mainstream["mainstream (7.2.8)<br/><small>Battlemage Xe2 / ROCm 10</small>"]:::stream
-        LTS["lts (6.18.54)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
-        RT["realtime (7.2.8 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
+        Bleeding["bleeding (7.3-rc7)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
+        Mainstream["mainstream (7.2.10)<br/><small>Battlemage Xe2 / ROCm 10</small>"]:::stream
+        LTS["lts (6.18.56)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
+        RT["realtime (7.2.10 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
     end
 
     Downstream["Downstream Image Forge<br/><small>cordanaLLM/imago</small>"]:::dest
@@ -80,10 +81,10 @@ flowchart TD
 
 | Stream | Upstream Base | Target Workloads & Hardware Stack | Default In Flavors |
 | :--- | :--- | :--- | :--- |
-| **`bleeding`** | **Linux 7.3-rc5** | NVIDIA Blackwell RTX 5090 / B200, CXL 3.0, sched-ext, experimental BBRv3 | `*-nvidia-bleeding` |
-| **`mainstream`** | **Linux 7.2.8** | Intel Arc Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610, Podman 5.x | `base-*`, `docker-*`, `ai-infer-*` |
-| **`lts`** | **Linux 6.18.54** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
-| **`realtime`** | **Linux 7.2.8**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
+| **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200, CXL 3.0, sched-ext, experimental BBRv3 | `*-nvidia-bleeding` |
+| **`mainstream`** | **Linux 7.2.10** | Intel Arc Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610, Podman 5.x | `base-*`, `docker-*`, `ai-infer-*` |
+| **`lts`** | **Linux 6.18.56** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
+| **`realtime`** | **Linux 7.2.10**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
 
 ### Downstream Kernel Requirements
 
@@ -129,18 +130,23 @@ sudo dpkg -i linux-image-*.deb linux-headers-*.deb
 For full artifact details, verification semantics, and current operational limits, see [Verify and Install a Release](docs/install.md).
 
 ### Prerequisites
+
 - An Ubuntu 26.04 host or container with the kernel build toolchain; the build workflows install
   it with the same script:
+
   ```bash
   sudo ./scripts/install-build-toolchain.sh             # add --with-qemu for the boot smoke test
   ```
+
 - The Python test and documentation dependencies, from the hash-pinned lock file
   ([CONTRIBUTING.md](CONTRIBUTING.md) says how it is compiled):
+
   ```bash
   pip install --require-hashes -r requirements-test.txt
   ```
 
 ### Build & Packaging Recipes
+
 ```bash
 # Display all ergonomic developer targets
 make help
@@ -163,8 +169,8 @@ make build-kernel STREAM=mainstream ARCH=x86_64 DRY_RUN=false
 make package-deb STREAM=mainstream ARCH=x86_64 DRY_RUN=false SOURCE_TREE=build/linux-mainstream
 
 # Boot a built x86_64 kernel to userspace under QEMU
-make boot-smoke KERNEL=output/mainstream-x86_64/vmlinuz-7.2.8-lusoris1-mainstream \
-  KERNELRELEASE=7.2.8-lusoris1-mainstream
+make boot-smoke KERNEL=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
+  KERNELRELEASE=7.2.10-lusoris1-mainstream
 
 # Simulate Unified Kernel Image (UKI) synthesis: DRY_RUN=true is the Makefile default. It writes a
 # marked text file under output/<stream>-<arch>-dry-run/, never a .efi.
@@ -206,7 +212,7 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 
 ## 4. Repository Structure
 
-```
+```text
 .
 ├── .config/archetypes/         # praetor policy catalog, pinned by .standards.lock
 ├── .github/rulesets/main.json  # Branch ruleset rendered by `make ruleset`
