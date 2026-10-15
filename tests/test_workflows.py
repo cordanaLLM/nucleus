@@ -1007,7 +1007,13 @@ def test_release_waiver_passes_the_release_please_pull_request(tmp_path):
 )
 def test_release_waiver_needs_the_bot_and_its_branch(tmp_path, override):
     """Issue #24, boundary: the label alone, or the bot off its branch, is not waived."""
-    result = _run_metadata_gate(tmp_path, **{**RELEASE_PR, **override})
+    # The forge answers that the pull request has no milestone, so the gate reaches its own
+    # milestone check instead of stopping on a failed query.
+    stub = tmp_path / "gh"
+    stub.write_text("#!/bin/sh\necho null\n", encoding="utf-8")
+    stub.chmod(0o755)
+    path = f"{tmp_path}{os.pathsep}{os.environ['PATH']}"
+    result = _run_metadata_gate(None, **{**RELEASE_PR, **override, "PATH": path})
     assert result.returncode == 1, result.stdout
     assert "waived" not in result.stdout
     assert "missing an assigned milestone" in result.stdout + result.stderr
