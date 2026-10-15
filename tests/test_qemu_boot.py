@@ -41,9 +41,11 @@ def _read_newc(data: bytes) -> list[tuple[str, int, bytes, tuple[int, int]]]:
         offset = data_start + size + (-size % 4)
         if name == "TRAILER!!!":
             assert offset == len(data)
-            return entries
+            break
         entries.append((name, mode, body, rdev))
-    pytest.fail("the archive ends without a TRAILER!!! entry")
+    else:
+        pytest.fail("the archive ends without a TRAILER!!! entry")
+    return entries
 
 
 def test_initramfs_holds_the_init_and_a_console_node():

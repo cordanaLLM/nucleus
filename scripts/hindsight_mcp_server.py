@@ -16,6 +16,7 @@ validation, bounded loops, and zero-leak privacy sanitization.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -112,10 +113,9 @@ def http_api(method: str, path: str, body: dict[str, Any] | None = None) -> tupl
         return status, json.loads(raw) if raw.strip() else {}
     except Exception as exc:
         if conn:
-            try:
+            # A close that fails after a failed request changes nothing the caller reads.
+            with contextlib.suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
         return 0, {"error": str(exc)[:300]}
 
 
