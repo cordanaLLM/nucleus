@@ -536,7 +536,7 @@ Any other tag is refused with an error naming the mismatch, and nothing is built
 python3 scripts/resolve_release_tag.py --tag v7.2.4-mainstream-lusoris1
 ```
 
-It writes `stream`, `version`, `rev`, `release_tag` and `release_version` (`<version>-lusoris<N>`, the `version` the manifest and the downstream payload carry). `tests/test_resolve_release_tag.py` derives its cases from `versions.json`.
+It writes `stream`, `version`, `rev`, `release_tag`, `release_version` (`<version>-lusoris<N>`, the `version` the manifest and the downstream payload carry), `make_latest` and `prerelease`: on GitHub Releases, Latest marks the newest `mainstream` kernel release, while release candidates (`~rc` versions) are marked as prereleases and other streams and tooling releases are not-latest. `tests/test_resolve_release_tag.py` derives its cases from `versions.json`.
 
 Push at most three release tags in one `git push`. GitHub creates no `push` event for tags when more than three are pushed at once ([Events that trigger workflows, `push`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)), so no `publish-release.yml` run starts, and nothing reports that it did not. Both cases were measured here on 2026-09-29:
 

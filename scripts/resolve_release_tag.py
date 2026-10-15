@@ -25,9 +25,11 @@ form must be the ref the run started from, or the release would be attached to
 another tag than the manifest names.
 
 On success the resolver writes ``stream``, ``version``, ``rev``,
-``release_tag`` and ``release_version`` (``<version>-lusoris<N>``, the version
-string the artifact manifest and the downstream payload carry) as ``key=value``
-lines, appended to the file named by ``--github-output`` or printed to stdout.
+``release_tag``, ``release_version`` (``<version>-lusoris<N>``, the version
+string the artifact manifest and the downstream payload carry), ``make_latest``
+("true" only for ``mainstream``, "false" otherwise) and ``prerelease`` ("true"
+for release candidates, "false" otherwise) as ``key=value`` lines, appended to
+the file named by ``--github-output`` or printed to stdout.
 
 Complies with NASA/JPL Power of 10: short functions (<= 60 lines), no
 recursion, no unbounded loops, and every failure is reported, never guessed
@@ -72,6 +74,17 @@ class Resolution:
     def release_version(self) -> str:
         return f"{self.version}-lusoris{self.rev}"
 
+    @property
+    def make_latest(self) -> str:
+        return "true" if self.stream == "mainstream" else "false"
+
+    @property
+    def prerelease(self) -> str:
+        is_rc = bool(
+            re.search(r"[-~]rc[0-9]+", self.version) or re.search(r"[-~]rc[0-9]+", self.release_tag)
+        )
+        return "true" if is_rc else "false"
+
     def outputs(self) -> str:
         pairs = (
             ("stream", self.stream),
@@ -79,6 +92,8 @@ class Resolution:
             ("rev", str(self.rev)),
             ("release_tag", self.release_tag),
             ("release_version", self.release_version),
+            ("make_latest", self.make_latest),
+            ("prerelease", self.prerelease),
         )
         return "".join(f"{key}={value}\n" for key, value in pairs)
 

@@ -1161,3 +1161,44 @@ def test_every_pull_request_job_stops_on_a_draft():
             assert first["name"] == DRAFT_STEP, f"{path.name}: {name}"
             assert first["if"] == "github.event.pull_request.draft == true", f"{path.name}: {name}"
             assert first["run"].rstrip().endswith("exit 1"), f"{path.name}: {name}"
+
+
+def test_publish_release_wires_make_latest_and_prerelease_outputs():
+    """Issue #115: publish-release.yml configures make_latest and prerelease from build outputs."""
+    publish_parsed = yaml.safe_load(
+        (WORKFLOWS_DIR / "publish-release.yml").read_text(encoding="utf-8")
+    )
+    publish_steps = publish_parsed["jobs"]["publish"]["steps"]
+    publish_names = [step.get("name", "") for step in publish_steps]
+    release = publish_steps[publish_names.index("Publish to GitHub Release")]
+    assert release["with"]["make_latest"] == "${{ needs.build.outputs.make_latest }}"
+    assert release["with"]["prerelease"] == "${{ needs.build.outputs.prerelease == 'true' }}"
+
+
+def test_release_build_outputs_make_latest_and_prerelease():
+    """Issue #115: release-build.yml exposes make_latest and prerelease at workflow and job levels."""
+    build_parsed = yaml.safe_load((WORKFLOWS_DIR / "release-build.yml").read_text(encoding="utf-8"))
+    on_triggers = build_parsed.get("on", build_parsed.get(True, {}))
+    call_outputs = on_triggers["workflow_call"]["outputs"]
+    assert call_outputs["make_latest"]["value"] == "${{ jobs.build.outputs.make_latest }}"
+    assert call_outputs["prerelease"]["value"] == "${{ jobs.build.outputs.prerelease }}"
+
+    job_outputs = build_parsed["jobs"]["build"]["outputs"]
+    assert job_outputs["make_latest"] == "${{ steps.meta.outputs.make_latest }}"
+    assert job_outputs["prerelease"] == "${{ steps.meta.outputs.prerelease }}"
+
+
+def test_release_please_marks_tool_release_not_latest():
+    """Issue #115: release-please.yml unsets latest on created tool releases."""
+    rp_parsed = yaml.safe_load((WORKFLOWS_DIR / "release-please.yml").read_text(encoding="utf-8"))
+    steps = rp_parsed["jobs"]["release-please"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    rp_index = names.index("Run Release Please")
+    assert "Mark Tool Release as Not Latest" in names
+    edit_step = steps[names.index("Mark Tool Release as Not Latest")]
+    assert names.index("Mark Tool Release as Not Latest") > rp_index
+    assert edit_step["if"] == "${{ steps.release.outputs.release_created }}"
+    assert "gh release edit" in edit_step["run"]
+    assert "--latest=false" in edit_step["run"]
+    assert edit_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert edit_step["env"]["TAG_NAME"] == "${{ steps.release.outputs.tag_name }}"
