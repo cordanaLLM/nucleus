@@ -1,65 +1,46 @@
 ---
 name: supply-chain
+# Verifies a published kernel release the way a consumer does. publish-release.yml builds,
+# signs and publishes; this workflow only reads. It runs after every publish-release run that
+# succeeded, and on dispatch for any kernel release tag. It cannot run on the release event:
+# publish-release.yml creates the release with GITHUB_TOKEN, and GitHub starts no workflow on
+# an event GITHUB_TOKEN raised.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [publish-release]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Kernel release tag v<version>-<stream>-lusoris<N> to verify"
+        required: true
 
 permissions:
   contents: read
 
 jobs:
-  provenance:
-    name: SLSA Provenance & Cosign Attestation
+  verify:
+    name: Verify Published Release
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
 
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
-
-      - name: Generate SBOM and Sign Release Artifacts
+      # One step, so the tag is checked by the verifier's pattern before anything else reads it.
+      - name: Download and Verify the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          # This job builds nothing: it attests only packages placed in output/ before it
-          # runs, and fails when there are none. It never creates a package itself.
-          shopt -s nullglob
-          debs=(output/*.deb)
-          if [[ "${#debs[@]}" -eq 0 ]]; then
-            echo "::error title=Nothing to attest::no Debian package in output/; this job attests only packages it is given" >&2
-            exit 1
-          fi
-          for deb in "${debs[@]}"; do
-            if [[ ! -s "${deb}" ]]; then
-              echo "::error title=Empty package::${deb} is empty; a zero-byte package is never attested" >&2
-              exit 1
-            fi
-          done
-
-          echo "==> Generating Syft CycloneDX and SPDX SBOMs..."
-          syft dir:output/ -o cyclonedx-json=output/kernel-sbom.cdx.json
-          syft dir:output/ -o spdx-json=output/kernel-sbom.spdx.json
-
-          echo "==> Generating SHA256SUMS (refuses empty, unknown and missing files)..."
-          OUTPUT_DIR=output scripts/publish_release.sh "${GITHUB_REF_NAME}"
-
-          echo "==> Signing SHA256SUMS with keyless Cosign..."
-          cosign sign-blob --yes --bundle output/SHA256SUMS.bundle output/SHA256SUMS
-          echo "==> Supply chain attestation and SBOM generation complete."
-
-      - name: Upload Supply Chain Artifacts
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: supply-chain-attestations
-          path: |
-            output/*.cdx.json
-            output/*.spdx.json
-            output/SHA256SUMS*
+          [[ "${TAG}" =~ ^v[0-9][0-9A-Za-z.~-]*-[a-z]+-lusoris[1-9][0-9]{0,3}$ ]] \
+            || { echo "::error title=Not a kernel release tag::${TAG}" >&2; exit 1; }
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${RUNNER_TEMP}/release"
+          scripts/verify-release.sh "${RUNNER_TEMP}/release" "${TAG}" "${GITHUB_REPOSITORY}"
