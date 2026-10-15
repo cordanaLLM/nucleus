@@ -41,9 +41,9 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 | Stream | Linux Version | Status | Primary Target Workloads | Hardware Acceleration | Key Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090, CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
-| **`mainstream`** | `7.2.10` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2, AMD ROCm 10, NVIDIA 565/610 | BBR congestion control, `mq-deadline`, Level Zero |
-| **`lts`** | `6.18.56` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | NVIDIA LTS drivers, Intel Arc Alchemist | Rock-solid stability, OpenZFS module build checked against each release ([packaging 5.6](packaging.md)), strict overcommit |
+| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090 (out-of-tree driver, not built here), CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
+| **`mainstream`** | `7.2.10` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2 (`xe`), AMD Radeon for ROCm (`amdgpu` with KFD) | BBR congestion control, `mq-deadline`, Level Zero |
+| **`lts`** | `6.18.56` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | Intel Arc Alchemist (`i915`, not on `realtime`); NVIDIA's driver is out of tree | Rock-solid stability, OpenZFS module build checked against each release ([packaging 5.6](packaging.md)), strict overcommit |
 | **`realtime`** | `7.2.10` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |
 
 ---
@@ -52,7 +52,7 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 - **Single Source of Truth (SSOT)**: Kernel versions, upstream archives, patch queues, and architecture targets are strictly declared in [`versions.json`](https://github.com/cordanaLLM/nucleus/blob/main/versions.json) and validated by JSON Schema.
 - **NASA / JPL Power of 10 Compliance**: All automation and build scripts enforce `set -euo pipefail`, short functions ($\le 60$ lines), localized variables, bounded control loops, and zero ShellCheck warnings.
-- **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (the security baseline, one per architecture, and `kconfig/streams/<stream>.config`), merged deterministically by `scripts/merge-config.sh`.
+- **Modular KConfig Architecture**: Kernel configurations are partitioned into composable fragments (the security baseline, one per architecture, the Kubernetes node fragment `kconfig/k8s-node.config`, and `kconfig/streams/<stream>.config`), merged deterministically by `scripts/merge-config.sh`.
 - **Zero-Leak Invariant**: Codebase is protected against private network leaks (zero RFC 1918 addresses) and local workstation paths (zero `/home/...` or `/Users/...` references).
 - **Dual Packaging Engine**: Standard Debian packages (`.deb`) for apt-based distributions and systemd Unified Kernel Images (`.efi`, unsigned until Secure Boot signing is wired) for bare-metal streaming.
 

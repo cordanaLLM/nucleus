@@ -10,7 +10,7 @@
       "version": "7.3-rc7",
       "tag": "v7.3-rc7",
       "status": "mainline",
-      "description": "Bleeding edge mainline kernel for next-gen hardware (Blackwell RTX 5090/B200, CXL 3.0, sched-ext).",
+      "description": "Bleeding edge mainline kernel for next-gen hardware (CXL 3.0, sched-ext).",
       "source": {
         "kind": "git-tag",
         "repository": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git",
@@ -25,7 +25,7 @@
       "version": "7.2.10",
       "tag": "v7.2.10",
       "status": "stable",
-      "description": "Production stable stream for Intel Battlemage Xe2, AMD ROCm 10, and NVIDIA 565/610.",
+      "description": "Production stable stream for Intel Battlemage Xe2 (xe) and AMD Radeon for ROCm (amdgpu with KFD).",
       "source": {
         "kind": "tarball",
         "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.xz",
