@@ -73,7 +73,8 @@ CONFIG_KPROBES=y
 CONFIG_UPROBES=y
 ```
 
-### Critical Security Rationale:
+### Critical Security Rationale
+
 - **`CONFIG_BPF_JIT_ALWAYS_ON=y`**: Completely compiles out the eBPF bytecode interpreter from the kernel binary. By eliminating the interpreter, an attacker cannot stitch together interpreter opcodes into Return-Oriented Programming (ROP) gadgets.
 - **`CONFIG_BPF_UNPRIV_DEFAULT_OFF=y`**: Enforces by default that unprivileged local users cannot invoke `sys_bpf()`. Only processes with `CAP_BPF` or `CAP_SYS_ADMIN` can load programs or inspect maps.
 - **`CONFIG_DEBUG_INFO_BTF=y`**: Generates BPF Type Format (BTF) deduplicated debug metadata directly within the kernel image, enabling Compile Once – Run Everywhere (CO-RE) verification without requiring host compiler installations.
@@ -91,10 +92,12 @@ net.core.bpf_jit_kallsyms = 1
 kernel.unprivileged_bpf_disabled = 1
 ```
 
-### JIT Constant Blinding (`bpf_jit_harden = 2`):
+### JIT Constant Blinding (`bpf_jit_harden = 2`)
+
 When user-space programs load BPF instructions containing immediate scalar constants (e.g. `mov r1, 0xdeadbeef`), an attacker might attempt JIT spraying to inject executable shellcode fragments into JIT memory pages.
 
 Setting `bpf_jit_harden = 2` forces the JIT compiler to blind all user-supplied constants:
+
 1. The kernel generates a cryptographically secure random 32/64-bit mask $M$.
 2. The constant $C$ is transformed into $C \oplus M$.
 3. The JIT emits instructions that unmask the value at runtime (`val = (C ^ M) ^ M`).
@@ -107,9 +110,11 @@ Setting `bpf_jit_harden = 2` forces the JIT compiler to blind all user-supplied 
 `sched-ext` allows developers to replace the default Linux CPU scheduler (`EEVDF`) with dynamic, user-space-directed BPF schedulers:
 
 ### 4.1 Failsafe Watchdog & Automatic CFS/EEVDF Fallback
+
 The primary hazard of dynamic scheduling is starvation: an errant BPF scheduler could starve vital system tasks, deadlocking the machine.
 
 To prevent this, the kernel's `sched-ext` subsystem enforces strict safety invariants:
+
 1. **Heartbeat Timer**: The kernel runs an independent hardware watchdog timer (`scx_watchdog`).
 2. **Stall Detection**: If any runnable thread is not scheduled within `scx_watchdog_timeout` (default: 30 seconds), the watchdog triggers.
 3. **Graceful Eviction**: The kernel immediately detaches the active `sched-ext` scheduler (`scx_ops`), logs a descriptive trace to `dmesg`, and seamlessly falls back to standard CFS/EEVDF scheduling without dropping active processes or rebooting.
@@ -135,8 +140,9 @@ sequenceDiagram
 ```
 
 ### 4.2 `sched-ext` & Realtime (`PREEMPT_RT`) Coexistence Contract
+
 - In standard kernels (`bleeding`, `mainstream`), `sched-ext` operates freely.
-- In the `realtime` (7.2.8, in-tree `PREEMPT_RT`) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
+- In the `realtime` (7.2.10, in-tree `PREEMPT_RT`) stream, `CONFIG_PREEMPT_RT=y` requires deterministic microsecond bounded latency. Tasks marked `SCHED_FIFO` or `SCHED_RR` always bypass `sched-ext` and are serviced directly by the real-time scheduling class.
 
 ---
 
@@ -155,6 +161,7 @@ bpftool map show
 # Check active scheduler class
 cat /sys/kernel/sched_ext/state
 ```
+
 Under operational status, `sysctl` reports `bpf_jit_harden = 2` and `/sys/kernel/sched_ext/state` confirms whether an extensible scheduler is enabled or in fallback state.
 
 ---

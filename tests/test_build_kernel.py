@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -73,24 +74,32 @@ def test_dry_run_states_the_exact_build_and_writes_nothing(tmp_path, stream, arc
 
 
 def test_a_release_candidate_package_version_sorts_before_the_release(tmp_path):
-    """bleeding 7.3-rc5 packages as 7.3~rc5: dpkg orders it before 7.3, where 7.3-rc5 sorts after."""
+    """bleeding 7.3-rcN packages as 7.3~rcN: dpkg orders it before 7.3, where 7.3-rcN sorts after."""
+    version = VERSIONS["streams"]["bleeding"]["version"]
+    match = re.fullmatch(r"(\d+\.\d+)-rc(\d+)", version)
+    if match is None:
+        pytest.skip(f"bleeding pins {version}, not a release candidate")
+    base, rc = match.groups()
     result = _run(BUILD, "--stream=bleeding", "--arch=x86_64", "--dry-run", *_dirs(tmp_path))
     assert result.returncode == 0, result.stderr
-    assert VERSIONS["streams"]["bleeding"]["version"] == "7.3-rc5"
-    assert "LOCALVERSION=-lusoris1-bleeding KDEB_PKGVERSION=7.3~rc5-lusoris1" in result.stdout
-    assert "expected 7.3.0-rc5-lusoris1-bleeding" in result.stdout, "the kernelrelease keeps -rc5"
-    assert "<package>_7.3.rc5-lusoris1_amd64.deb" in result.stdout, "GitHub renames ~ in an asset"
+    assert (
+        f"LOCALVERSION=-lusoris1-bleeding KDEB_PKGVERSION={base}~rc{rc}-lusoris1" in result.stdout
+    )
+    assert f"expected {base}.0-rc{rc}-lusoris1-bleeding" in result.stdout, (
+        "the kernelrelease keeps -rc"
+    )
+    assert f"<package>_{base}.rc{rc}-lusoris1_amd64.deb" in result.stdout, "GitHub renames ~"
     if shutil.which("dpkg"):
         compare = ["dpkg", "--compare-versions"]
         assert (
             subprocess.run(
-                [*compare, "7.3~rc5-lusoris1", "lt", "7.3-lusoris1"], check=False
+                [*compare, f"{base}~rc{rc}-lusoris1", "lt", f"{base}-lusoris1"], check=False
             ).returncode
             == 0
         )
         assert (
             subprocess.run(
-                [*compare, "7.3-rc5-lusoris1", "lt", "7.3-lusoris1"], check=False
+                [*compare, f"{base}-rc{rc}-lusoris1", "lt", f"{base}-lusoris1"], check=False
             ).returncode
             != 0
         )

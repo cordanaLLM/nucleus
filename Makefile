@@ -1,3 +1,4 @@
+-include .config/praetor/engine.mk
 .DEFAULT_GOAL := help
 SHELL := /usr/bin/env bash
 
@@ -201,3 +202,27 @@ clean: ## Clean build artifacts, outputs, and temporary caches
 	@echo "==> Cleaning build artifacts and caches..."
 	@rm -rf output/ dist/ build/ *.deb *.efi *.ddeb *.changes *.buildinfo .pytest_cache/ site/
 	@echo "==> Clean complete."
+
+# Praetor declared verification; existing project recipes remain unchanged.
+# Praetor ships one binary under two names; resolve whichever is installed.
+PRAETORCTL ?= $(shell command -v praetorctl 2>/dev/null || command -v standardsctl 2>/dev/null || echo praetorctl)
+.PHONY: verify-all
+verify-all:
+	@$(PRAETORCTL) compile-context --verify
+	@$(PRAETORCTL) caveman check --configured-sources
+	@$(PRAETORCTL) audit
+	@$(MAKE) --no-print-directory lint
+	@$(MAKE) --no-print-directory test
+
+compile-context:
+	@$(PRAETORCTL) compile-context
+
+# BEGIN praetor documentation gate
+.PHONY: docs-lint docs-figures
+verify-all: docs-lint docs-figures
+docs-lint:
+	@node tools/markdownlint/verify.mjs
+docs-figures:
+	@node tools/figures/build.mjs check
+	@node tools/figures/build.mjs sources
+# END praetor documentation gate

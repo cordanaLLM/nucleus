@@ -1,6 +1,7 @@
 # Build outputs & packaging
 output/
 dist/
+!/tools/figures/dist/
 build/
 site/
 *.deb
@@ -52,7 +53,6 @@ venv/
 # AGENTS.md routes evidence above its inline bound to .workingdir/evidence/, and
 # praetorctl adopt writes its backups under .workingdir/adopt-backups/.
 /.workingdir/
-.workingdir2/
 .scratch/
 
 # Secrets & credentials
@@ -60,3 +60,11 @@ venv/
 *.key
 *.token
 .env
+
+# BEGIN praetor private artifacts (praetorctl adopt)
+.workingdir/
+.workingdir2/
+/.standards/worktrees/
+/.agents/mcp_config.json
+/.standards/cache/
+# END praetor private artifacts

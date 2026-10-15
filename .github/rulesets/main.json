@@ -1,4 +1,11 @@
 {
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
   "conditions": {
     "ref_name": {
       "exclude": [],
@@ -56,6 +63,9 @@
           },
           {
             "context": "Validate PR Milestone \u0026 Metadata"
+          },
+          {
+            "context": "Documentation Governance"
           },
           {
             "context": "required-checks"
