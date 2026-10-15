@@ -153,16 +153,18 @@ built from the same tree, do not share a release or a package name:
 
 | Stream | Kernel release (`uname -r`) | Package version | x86_64 boot to userspace |
 | :--- | :--- | :--- | :--- |
-| `bleeding` | `7.3.0-rc7-lusoris1-bleeding` | `7.3~rc7-lusoris1` | booted |
-| `mainstream` | `7.2.10-lusoris1-mainstream` | `7.2.10-lusoris1` | booted |
-| `lts` | `6.18.56-lusoris1-lts` | `6.18.56-lusoris1` | booted |
-| `realtime` | `7.2.10-lusoris1-realtime` | `7.2.10-lusoris1` | booted |
+| `bleeding` | `7.3.0-rc7-lusoris2-bleeding` | `7.3~rc7-lusoris2` | booted |
+| `mainstream` | `7.2.10-lusoris2-mainstream` | `7.2.10-lusoris2` | booted |
+| `lts` | `6.18.56-lusoris2-lts` | `6.18.56-lusoris2` | booted |
+| `realtime` | `7.2.10-lusoris2-realtime` | `7.2.10-lusoris2` | booted |
 
 A release candidate's package version spells `-rc7` as `~rc7`, so dpkg orders it before the
 final release, and its package files spell that `~` as `.` ([packaging section 2.2](packaging.md)).
 
-The table shows revision 1 of the current pins, which carries the BPF trampoline chain and zlib
-deflate. The earlier pins were released twice: revision 1 (`7.3.0-rc5-lusoris1-bleeding`,
+The table shows revision 2 of the current pins (tags `v7.3-rc7-bleeding-lusoris2`,
+`v7.2.10-mainstream-lusoris2`, `v6.18.56-lts-lusoris2`, `v7.2.10-realtime-lusoris2`), which adds
+the Kubernetes node fragment and, on `mainstream`, the `xe` and `amdgpu` drivers (section 4.1).
+Revision 1 of these pins carries the BPF trampoline chain and zlib deflate without them. The earlier pins were released twice: revision 1 (`7.3.0-rc5-lusoris1-bleeding`,
 `7.2.8-lusoris1-mainstream`, `6.18.54-lusoris1-lts`, `7.2.8-lusoris1-realtime`) without the
 trampoline chain, and revision 2 (`-lusoris2`) with it, but without zlib deflate on `realtime`.
 A new revision or a new upstream version is a new kernel release, so its image and headers
