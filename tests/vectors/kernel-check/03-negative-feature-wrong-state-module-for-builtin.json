@@ -1,0 +1,22 @@
+{
+  "requirement": {
+    "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+    "correlation-id": "vec-neg-03",
+    "architectures": ["x86-64"],
+    "abi": {
+      "minimum-release": "6.12"
+    },
+    "features": [
+      {
+        "symbol": "CONFIG_BPF_SYSCALL",
+        "state": "built-in",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-03"
+      }
+    ]
+  },
+  "config": "CONFIG_X86_64=y\nCONFIG_BPF_SYSCALL=m\n",
+  "release": "7.2.10",
+  "satisfied": false,
+  "reasons_contain": ["CONFIG_BPF_SYSCALL", "requires built-in", "=m"]
+}

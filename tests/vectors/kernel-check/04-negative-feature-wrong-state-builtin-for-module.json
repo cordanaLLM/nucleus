@@ -1,0 +1,22 @@
+{
+  "requirement": {
+    "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+    "correlation-id": "vec-neg-04",
+    "architectures": ["x86-64"],
+    "abi": {
+      "minimum-release": "6.12"
+    },
+    "features": [
+      {
+        "symbol": "CONFIG_OVERLAY_FS",
+        "state": "module",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-04"
+      }
+    ]
+  },
+  "config": "CONFIG_X86_64=y\nCONFIG_OVERLAY_FS=y\n",
+  "release": "7.2.10",
+  "satisfied": false,
+  "reasons_contain": ["CONFIG_OVERLAY_FS", "requires module", "=y"]
+}

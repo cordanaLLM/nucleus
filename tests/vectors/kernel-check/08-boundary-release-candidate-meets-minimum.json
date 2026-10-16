@@ -1,0 +1,22 @@
+{
+  "requirement": {
+    "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+    "correlation-id": "vec-bnd-08",
+    "architectures": ["x86-64"],
+    "abi": {
+      "minimum-release": "6.12"
+    },
+    "features": [
+      {
+        "symbol": "CONFIG_BPF_SYSCALL",
+        "state": "built-in",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-08"
+      }
+    ]
+  },
+  "config": "CONFIG_X86_64=y\nCONFIG_BPF_SYSCALL=y\n",
+  "release": "6.12.0-lusoris1",
+  "satisfied": true,
+  "reasons_contain": []
+}

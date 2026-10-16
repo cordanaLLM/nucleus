@@ -301,3 +301,30 @@ and `pytest tests/test_requirement_schema.py`. When the file did not change, onl
 When it did, a failing test is the signal: a name or bound the verifier's constants do not carry,
 or a corpus case on which the two readings split, is a change of the contract that
 `scripts/verify_kernel_requirement.py` must follow in the same change.
+
+### 5.2 Single-kernel checking (`--kernel-config`)
+
+Downstream consumers can verify an individual kernel configuration against a requirement document
+without `versions.json` or repository fragments, using `--kernel-config` and `--requirement-file`.
+This is the single implementation Aegis-OS consumes from its pinned nucleus checkout
+(`build/contract/producers.pin.json`) instead of maintaining `tools/kernel_requirement_check.py`.
+
+```bash
+python3 scripts/verify_kernel_requirement.py \
+  --kernel-config /path/to/kernel.config \
+  --requirement-file build/kernel-requirement.json \
+  --kernel-release 7.2.10 \
+  --report-json report.json
+```
+
+- `--kernel-config PATH`: the kernel configuration text to verify.
+- `--requirement-file PATH`: the requirement document (`aegis.p01-nucleus.kernel-requirement.v1`).
+- `--kernel-release RELEASE`: optional; checked against `abi.minimum-release` and exact `abi.module-abi`.
+  When omitted, the check prints `release: not given; minimum-release and module-abi not checked`.
+- `--report-json PATH`: writes the machine-readable decision (`nucleus.kernel-check-report.v1`).
+
+Exit codes:
+
+- `0`: all features and ABI floor/module-ABI rules satisfied.
+- `1`: one or more features or ABI requirements are unmet.
+- `2`: requirement document refused, or configuration unreadable or ungrammatical.

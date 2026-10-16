@@ -1,0 +1,22 @@
+{
+  "requirement": {
+    "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+    "correlation-id": "vec-neg-12",
+    "architectures": ["x86-64"],
+    "abi": {
+      "minimum-release": "6.12"
+    },
+    "features": [
+      {
+        "symbol": "CONFIG_DEBUG_INFO",
+        "state": "absent",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-12"
+      }
+    ]
+  },
+  "config": "CONFIG_X86_64=y\n",
+  "release": "7.2.10",
+  "satisfied": false,
+  "reasons_contain": ["CONFIG_DEBUG_INFO", "requires absent", "unrecorded"]
+}
