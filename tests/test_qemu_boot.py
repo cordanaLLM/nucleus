@@ -8,6 +8,7 @@ kernel runs in the build-matrix workflow on every x86_64 leg, and in the evidenc
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -333,6 +334,40 @@ def test_init_source_selection():
 
     with pytest.raises(boot_smoke.SmokeError, match="unsupported architecture"):
         boot_smoke.init_source("unknown_arch")
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_freestanding_init_needs_no_libc_copy(arch):
+    """A string array built on the stack makes gcc call memcpy, which -nostdlib cannot link.
+
+    Ubuntu's riscv64-linux-gnu-gcc 15.2 did exactly that for the prefix (build-matrix run
+    38917396118); only static or file-scope arrays live in .rodata without a copy.
+    """
+    src = boot_smoke.init_source(arch)
+    assert not re.search(r"^\s+(?!static\b)(const\s+)?char\s+\w+\[\]\s*=", src, re.MULTILINE)
+
+
+@pytest.mark.parametrize("arch", ["x86_64", "arm64", "riscv64"])
+def test_init_drains_console_before_power_off(arch):
+    """sync() does not wait for the serial line; without a drain, power-off cut the release.
+
+    bleeding/arm64 printed 'NUCLEUS-BOOT-SMOKE release=' and nothing more (run 38917396118).
+    """
+    src = boot_smoke.init_source(arch)
+    drain = (
+        src.find("tcdrain(STDOUT_FILENO)")
+        if arch == "x86_64"
+        else src.find("sys_ioctl(1, TCSBRK, 1)")
+    )
+    power_off = (
+        src.rfind("RB_POWER_OFF")
+        if arch == "x86_64"
+        else src.rfind("LINUX_REBOOT_CMD_POWER_OFF, 0)")
+    )
+    assert 0 <= drain < power_off
+    if arch != "x86_64":
+        assert "#define TCSBRK 0x5409" in src
+        assert "#define SYS_ioctl 29" in src
 
 
 def test_decompress_kernel_x86_passthrough(tmp_path):
