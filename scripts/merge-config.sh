@@ -130,7 +130,9 @@ parse_arguments() {
 
 # Succeeds when versions.json lists <value> under <key>, a stream or an architecture.
 declared_in_versions() {
-  python3 -c 'import json, sys; sys.exit(sys.argv[2] not in json.load(open("versions.json"))[sys.argv[1]])' "$1" "$2"
+  local names
+  names="$(python3 scripts/versions_query.py list "$1")" || return 1
+  grep -qxF -- "$2" <<<"${names}"
 }
 
 validate_environment() {

@@ -286,13 +286,21 @@ main() {
     exit 1
   fi
 
-  local version
-  version=$(python3 -c "
-import json
-with open('versions.json', 'r') as f:
-    data = json.load(f)
-print(data['streams']['${STREAM}']['version'])
-")
+  local version="" output line
+  if ! output="$(python3 "${SCRIPT_DIR}/versions_query.py" source "${STREAM}")"; then
+    echo "Error: Failed to query version for stream '${STREAM}' from versions.json" >&2
+    exit 1
+  fi
+  while IFS= read -r line; do
+    if [[ "${line}" == version=* ]]; then
+      version="${line#version=}"
+      break
+    fi
+  done <<<"${output}"
+  if [[ -z "${version}" ]]; then
+    echo "Error: Failed to query version for stream '${STREAM}' from versions.json" >&2
+    exit 1
+  fi
 
   echo "==> Synthesizing UKI for stream='${STREAM}' version='${version}' arch='${ARCH}'..."
   synthesize_uki_binary "${version}" "${efi_name}"

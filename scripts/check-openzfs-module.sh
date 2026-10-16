@@ -11,6 +11,8 @@
 # the extracted headers tree, then verifies vermagic matches the target kernel release.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 HEADERS_DEB=""
 WORK=""
 JOBS=4
@@ -119,49 +121,19 @@ check_tools() {
 }
 
 read_manifest() {
-  local py_code='
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    data = json.load(f)
-modules = data.get("modules", {})
-zfs = modules.get("openzfs")
-if not zfs:
-    sys.exit("modules.openzfs missing from manifest")
-src = zfs.get("source", {})
-for k in ("version", "linux_minimum", "linux_maximum"):
-    if k not in zfs:
-        sys.exit(f"modules.openzfs.{k} missing")
-for k in ("url", "signature_url", "sha256", "signers"):
-    if k not in src:
-        sys.exit(f"modules.openzfs.source.{k} missing")
-ver = zfs["version"]
-url = src["url"]
-sig_url = src["signature_url"]
-sha = src["sha256"]
-signers = ",".join(src["signers"])
-min_ver = zfs["linux_minimum"]
-max_ver = zfs["linux_maximum"]
-print(f"ZFS_VERSION={ver}")
-print(f"ZFS_URL={url}")
-print(f"ZFS_SIG_URL={sig_url}")
-print(f"ZFS_SHA256={sha}")
-print(f"ZFS_SIGNERS={signers}")
-print(f"LINUX_MINIMUM={min_ver}")
-print(f"LINUX_MAXIMUM={max_ver}")
-'
   local output
-  if ! output="$(python3 -c "${py_code}" "${VERSIONS}")"; then
+  if ! output="$(python3 "${SCRIPT_DIR}/versions_query.py" --versions="${VERSIONS}" openzfs)"; then
     refuse "manifest: failed to read modules.openzfs from ${VERSIONS}"
   fi
   while IFS='=' read -r key val; do
     case "${key}" in
-      ZFS_VERSION) ZFS_VERSION="${val}" ;;
-      ZFS_URL) ZFS_URL="${val}" ;;
-      ZFS_SIG_URL) ZFS_SIG_URL="${val}" ;;
-      ZFS_SHA256) ZFS_SHA256="${val}" ;;
-      ZFS_SIGNERS) IFS=',' read -r -a SIGNERS <<<"${val}" ;;
-      LINUX_MINIMUM) LINUX_MINIMUM="${val}" ;;
-      LINUX_MAXIMUM) LINUX_MAXIMUM="${val}" ;;
+      version) ZFS_VERSION="${val}" ;;
+      url) ZFS_URL="${val}" ;;
+      signature_url) ZFS_SIG_URL="${val}" ;;
+      sha256) ZFS_SHA256="${val}" ;;
+      signers) read -r -a SIGNERS <<<"${val}" ;;
+      linux_minimum) LINUX_MINIMUM="${val}" ;;
+      linux_maximum) LINUX_MAXIMUM="${val}" ;;
     esac
   done <<<"${output}"
 }

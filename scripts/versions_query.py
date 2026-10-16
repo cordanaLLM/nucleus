@@ -10,11 +10,15 @@ so every value they place on a command line has been checked against its shape f
                                         the Debian upstream version its packages carry
     versions_query.py arch <arch>       the architecture's ARCH, base defconfig, toolchain and
                                         Debian architecture
+    versions_query.py list <collection> the declared names under 'streams' or 'architectures',
+                                        one per line
+    versions_query.py openzfs           the OpenZFS out-of-tree module source, pins, and
+                                        supported kernel version range
 
-A value outside its shape, an unknown stream or an unknown architecture is refused with
-exit status 2 and nothing on standard output. versions.schema.json states the same shapes
-for the committed file; this module holds them for any file it is pointed at, including the
-throwaway manifests the tests build, which may name a file:// URL.
+A value outside its shape, an unknown stream, an unknown architecture or an unknown collection
+is refused with exit status 2 and nothing on standard output. versions.schema.json states the
+same shapes for the committed file; this module holds them for any file it is pointed at,
+including the throwaway manifests the tests build, which may name a file:// URL.
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 _FINGERPRINT = re.compile(r"[0-9A-F]{40}")
 _TAG = re.compile(r"v[0-9][0-9A-Za-z.-]*")
 _VERSION = re.compile(r"([0-9]+)[.]([0-9]+)(?:[.]([0-9]+))?(-rc[0-9]+)?")
+_ZFS_VERSION = re.compile(r"[0-9]+[.][0-9]+(?:[.][0-9]+)?")
+_BOUND = re.compile(r"[0-9]+[.][0-9]+")
 _RC = re.compile(r"-(rc[1-9])")
 _NAME = re.compile(r"[a-z0-9_]+")
 _DEFCONFIG = re.compile(r"[a-z0-9_]*defconfig")
@@ -131,28 +137,98 @@ def arch_fields(versions: Mapping[str, object], arch: str) -> list[tuple[str, st
     ]
 
 
+def openzfs_fields(versions: Mapping[str, object]) -> list[tuple[str, str]]:
+    """The checked build fields of the OpenZFS module, in a fixed order."""
+    modules = versions.get("modules")
+    if not isinstance(modules, dict) or "openzfs" not in modules:
+        raise QueryError("modules.openzfs missing from manifest")
+    zfs = modules["openzfs"]
+    if not isinstance(zfs, dict):
+        raise QueryError("modules.openzfs: must be an object")
+    for k in ("version", "linux_minimum", "linux_maximum"):
+        if k not in zfs:
+            raise QueryError(f"modules.openzfs.{k} missing")
+    source = zfs.get("source")
+    if not isinstance(source, dict):
+        raise QueryError("modules.openzfs.source missing")
+    for k in ("url", "signature_url", "sha256", "signers"):
+        if k not in source:
+            raise QueryError(f"modules.openzfs.source.{k} missing")
+    return [
+        ("version", _shaped(zfs.get("version"), _ZFS_VERSION, "modules.openzfs.version")),
+        ("url", _shaped(source.get("url"), _SHAPES["url"], "modules.openzfs.source.url")),
+        (
+            "signature_url",
+            _shaped(
+                source.get("signature_url"),
+                _SHAPES["signature_url"],
+                "modules.openzfs.source.signature_url",
+            ),
+        ),
+        (
+            "sha256",
+            _shaped(source.get("sha256"), _SHAPES["sha256"], "modules.openzfs.source.sha256"),
+        ),
+        ("signers", _signers(source, "modules.openzfs.source")),
+        (
+            "linux_minimum",
+            _shaped(zfs.get("linux_minimum"), _BOUND, "modules.openzfs.linux_minimum"),
+        ),
+        (
+            "linux_maximum",
+            _shaped(zfs.get("linux_maximum"), _BOUND, "modules.openzfs.linux_maximum"),
+        ),
+    ]
+
+
+def list_names(versions: Mapping[str, object], collection: str) -> list[str]:
+    """The names declared under streams or architectures, in order."""
+    if collection not in ("streams", "architectures"):
+        raise QueryError(
+            f"unknown list collection {collection!r}: must be 'streams' or 'architectures'"
+        )
+    items = versions.get(collection)
+    if not isinstance(items, dict) or not items:
+        raise QueryError(f"{collection}: missing or not an object in versions.json")
+    return list(items.keys())
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--versions", type=Path, default=Path("versions.json"))
-    parser.add_argument("query", choices=("source", "arch"))
-    parser.add_argument("name", help="the stream (source) or the architecture (arch)")
+    parser.add_argument("query", choices=("source", "arch", "list", "openzfs"))
+    parser.add_argument(
+        "name",
+        nargs="?",
+        default="",
+        help="the stream (source), architecture (arch), or collection (list)",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.query in ("source", "arch", "list") and not args.name:
+            raise QueryError(f"query {args.query!r} requires a name argument")
         versions = json.loads(args.versions.read_text(encoding="utf-8"))
         if not isinstance(versions, dict):
             raise QueryError("versions.json is not a JSON object")
         if args.query == "source":
             fields = source_fields(versions, args.name)
-        else:
+            print("\n".join(f"{key}={value}" for key, value in fields))
+        elif args.query == "arch":
             fields = arch_fields(versions, args.name)
+            print("\n".join(f"{key}={value}" for key, value in fields))
+        elif args.query == "openzfs":
+            fields = openzfs_fields(versions)
+            print("\n".join(f"{key}={value}" for key, value in fields))
+        elif args.query == "list":
+            names = list_names(versions, args.name)
+            print("\n".join(names))
     except (OSError, ValueError) as exc:
         print(f"versions_query: {exc}", file=sys.stderr)
         return 2
-    print("\n".join(f"{key}={value}" for key, value in fields))
     return 0
 
 
