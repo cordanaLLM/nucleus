@@ -157,12 +157,9 @@
     },
     {
       "id": "sched-ext",
-      "claim": "sched-ext eBPF schedulers (docs/streams.md); riscv64 does not declare SCHED_CLASS_EXT",
+      "claim": "sched-ext eBPF schedulers (docs/streams.md)",
       "streams": "all",
-      "architectures": [
-        "x86_64",
-        "arm64"
-      ],
+      "architectures": "all",
       "symbols": {
         "CONFIG_SCHED_CLASS_EXT": "y"
       }

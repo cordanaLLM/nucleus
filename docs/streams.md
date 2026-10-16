@@ -207,7 +207,7 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
 | `btf` | all | all | `DEBUG_INFO_BTF=y` |
-| `sched-ext` | all | x86_64, arm64 | `SCHED_CLASS_EXT=y` (riscv64 does not declare SCHED_CLASS_EXT) |
+| `sched-ext` | all | all | `SCHED_CLASS_EXT=y` |
 | `realtime` | `realtime` | all | `PREEMPT_RT=y` |
 
 `scripts/check_required_config.py` refuses a configuration in which a listed symbol is off
