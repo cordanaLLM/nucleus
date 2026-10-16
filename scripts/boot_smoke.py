@@ -360,6 +360,16 @@ def build_init(cc: str, workdir: Path, arch: str = "x86_64") -> bytes:
     return binary.read_bytes()
 
 
+def build_initramfs(cc: str, arch: str = "x86_64", init_binary: Path | None = None) -> bytes:
+    """Compile the static init (or read init_binary) and pack into a newc initramfs."""
+    if init_binary is not None:
+        init = init_binary.read_bytes()
+    else:
+        with tempfile.TemporaryDirectory(prefix="boot-smoke-init-") as tmp:
+            init = build_init(cc, Path(tmp), arch)
+    return initramfs(init)
+
+
 def initramfs(init: bytes) -> bytes:
     """The smallest root that boots: /init and the console it writes to."""
     return newc_archive(
@@ -449,13 +459,8 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
     with tempfile.TemporaryDirectory(prefix="boot-smoke-") as tmp:
         workdir = Path(tmp)
         kernel = decompress_kernel(args.kernel, arch, workdir)
-        init = (
-            args.init_binary.read_bytes()
-            if getattr(args, "init_binary", None)
-            else build_init(cc, workdir, arch)
-        )
         initrd = workdir / "initramfs.cpio"
-        initrd.write_bytes(initramfs(init))
+        initrd.write_bytes(build_initramfs(cc, arch, getattr(args, "init_binary", None)))
         console, timed_out = boot(args, initrd, kernel)
     missing = verdict(console, args.kernelrelease)
     if timed_out and missing:
@@ -471,8 +476,8 @@ def _parser() -> argparse.ArgumentParser:
         default="x86_64",
         help="target architecture (default: x86_64)",
     )
-    parser.add_argument("--kernel", type=Path, required=True, help="the vmlinuz to boot")
-    parser.add_argument("--kernelrelease", required=True, help="the release it must report")
+    parser.add_argument("--kernel", type=Path, help="the vmlinuz to boot")
+    parser.add_argument("--kernelrelease", help="the release it must report")
     parser.add_argument("--timeout", type=int, default=180, help="seconds before QEMU is killed")
     parser.add_argument("--log", type=Path, help="write the serial console here")
     parser.add_argument("--qemu", help="QEMU binary (default: per architecture)")
@@ -480,11 +485,42 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--accel", choices=("tcg", "kvm"), default="tcg")
     parser.add_argument("--cc", help="builds the static init (default: per architecture)")
     parser.add_argument("--init-binary", type=Path, help="a prebuilt init instead of compiling one")
+    parser.add_argument(
+        "--write-initramfs",
+        type=Path,
+        help="write the static-init initramfs for --arch to this path and exit 0 without booting",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.cc is None:
+        args.cc = default_cc(args.arch)
+    if args.write_initramfs is not None:
+        target = args.write_initramfs
+        if target.exists():
+            print(
+                f"boot_smoke: refusing to overwrite existing initramfs: {target}", file=sys.stderr
+            )
+            return 2
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            data = build_initramfs(args.cc, args.arch, getattr(args, "init_binary", None))
+            target.write_bytes(data)
+        except (SmokeError, OSError) as exc:
+            print(f"boot_smoke: {exc}", file=sys.stderr)
+            return 2
+        print(f"==> Wrote {args.arch} initramfs to {target}")
+        return 0
+
+    if args.kernel is None or args.kernelrelease is None:
+        print(
+            "boot_smoke: error: the following arguments are required: --kernel, --kernelrelease",
+            file=sys.stderr,
+        )
+        return 2
+
     if not 1 <= args.timeout <= 3600:
         print("boot_smoke: --timeout must be between 1 and 3600 seconds", file=sys.stderr)
         return 2
@@ -492,8 +528,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.qemu = DEFAULT_QEMU[args.arch]
     if args.console is None:
         args.console = DEFAULT_CONSOLE[args.arch]
-    if args.cc is None:
-        args.cc = default_cc(args.arch)
     try:
         missing, console = run(args)
     except (SmokeError, OSError) as exc:
