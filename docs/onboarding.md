@@ -35,7 +35,7 @@ Instead of compiling kernels inside image builders (which slows down Packer and 
 sequenceDiagram
     autonumber
     participant KF as nucleus (Sister Repo)
-    participant GH as GitHub Releases & Apt Repository
+    participant GH as GitHub Releases
     participant CI as imago (Image Forge)
 
     Note over KF: Kernel source fetched, verified, compiled

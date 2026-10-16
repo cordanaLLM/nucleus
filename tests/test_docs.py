@@ -362,3 +362,32 @@ def test_security_md_mirrored_in_community():
     assert norm_root == comm_security, (
         "docs/community/security.md must mirror SECURITY.md (differing only in versions.json link form)"
     )
+
+
+_APT_ARCHIVE = re.compile(r"apt\.example\.com|reprepro")
+_APT_ALLOWED = {
+    "docs/adr/0004-native-debian-and-uki-dual-packaging.md",
+    "docs/adr/0014-github-release-assets-as-the-debian-channel.md",
+}
+
+
+def apt_archive_claims(files: dict[str, str]) -> list[str]:
+    """Files that name the APT archive ADR-0014 superseded, outside the two records."""
+    return sorted(
+        name
+        for name, text in files.items()
+        if name not in _APT_ALLOWED and _APT_ARCHIVE.search(text)
+    )
+
+
+def test_no_document_claims_an_apt_archive():
+    """Debian packages are GitHub Release assets; no archive exists (ADR-0014, #116)."""
+    files = {
+        str(path.relative_to(REPO_ROOT)): path.read_text(encoding="utf-8")
+        for pattern in ("**/*.md", ".github/workflows/*.yml")
+        for path in REPO_ROOT.glob(pattern)
+        if ".workingdir" not in path.parts and "node_modules" not in path.parts
+    }
+    assert apt_archive_claims(files) == []
+    planted = {"docs/packaging.md": "Published to apt.example.com via reprepro."}
+    assert apt_archive_claims(planted) == ["docs/packaging.md"]
