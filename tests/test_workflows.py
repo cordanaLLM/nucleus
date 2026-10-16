@@ -587,7 +587,8 @@ def test_verify_requirements_never_cancels_a_pending_dispatch():
     group = " ".join(concurrency["group"].split())
     assert "github.event_name == 'repository_dispatch'" in group
     assert "github.run_id" in group
-    assert concurrency["cancel-in-progress"] is False
+    # Only a pull request run is cancelled when superseded; a dispatch run never is.
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
 
 
 def _publish_release_steps():
@@ -721,6 +722,15 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     assert restore["with"]["path"] == save["with"]["path"] == ".kernel-source-work"
     assert f"--work={restore['with']['path']}" in fetch["run"]
     assert '--dest="${RUNNER_TEMP}/linux-${STREAM}"' in fetch["run"]
+    check_patches = steps["Check the Carried Patches Apply"]
+    assert (
+        "scripts/check_patches_apply.py" in check_patches["run"]
+        and "STREAM" in check_patches["env"]
+    )
+    step_names = [s.get("name", "") for s in resolve["steps"]]
+    assert step_names.index("Check the Carried Patches Apply") < step_names.index(
+        "Resolve the Configuration"
+    )
     resolve_step = steps["Resolve the Configuration"]
     assert "--source-tree=" in resolve_step["run"] and "ARCHES" in resolve_step["env"]
     for step in resolve["steps"]:
@@ -1246,3 +1256,31 @@ def test_release_please_marks_tool_release_not_latest():
     assert "--latest=false" in edit_step["run"]
     assert edit_step["env"]["GH_TOKEN"] == "${{ github.token }}"
     assert edit_step["env"]["TAG_NAME"] == "${{ steps.release.outputs.tag_name }}"
+
+
+# praetor-docs.yml is installed and locked by praetor (renovate.json); its group is praetor's.
+CONCURRENCY_OWNED_ELSEWHERE = {"praetor-docs.yml"}
+CANCEL_ON_PULL_REQUEST = "${{ github.event_name == 'pull_request' }}"
+
+
+def test_pull_request_workflows_cancel_superseded_runs():
+    """A push to a pull request cancels its previous head's runs; a run for main is never cancelled."""
+    missing = []
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        if path.name in CONCURRENCY_OWNED_ELSEWHERE:
+            continue
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        on = workflow.get(True, workflow.get("on"))
+        if not isinstance(on, dict) or "pull_request" not in on:
+            continue
+        concurrency = workflow.get("concurrency") or {}
+        group = " ".join(str(concurrency.get("group", "")).split())
+        cancel = concurrency.get("cancel-in-progress")
+        # True is safe only where every event other than a pull request gets a group of its own.
+        if not group or not (
+            cancel == CANCEL_ON_PULL_REQUEST or (cancel is True and "github.run_id" in group)
+        ):
+            missing.append(path.name)
+    assert missing == [], (
+        f"pull_request workflows that keep superseded runs or cancel runs for main: {missing}"
+    )

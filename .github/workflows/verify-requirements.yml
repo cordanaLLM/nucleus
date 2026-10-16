@@ -86,7 +86,8 @@ concurrency:
   group: >-
     verify-requirements-${{ github.event_name == 'repository_dispatch'
     && format('dispatch-{0}', github.run_id) || github.ref }}
-  cancel-in-progress: false
+  # A new push to a pull request cancels its running run; a running run of any other event is not cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -280,7 +281,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             bash ca-certificates curl git gpg gpgv xz-utils python3 make gcc libc6-dev \
-            flex bison bc dwarves gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu zstd
+            flex bison bc dwarves gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu zstd patch
 
       # No job pushes, so the token is not written into .git/config.
       - name: Checkout Repository
@@ -329,6 +330,15 @@ jobs:
         with:
           path: .kernel-source-work
           key: ${{ steps.source.outputs.key }}
+
+      - name: Check the Carried Patches Apply
+        shell: bash
+        env:
+          STREAM: ${{ matrix.stream }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check_patches_apply.py --stream="${STREAM}" \
+            --source-tree="${RUNNER_TEMP}/linux-${STREAM}"
 
       - name: Resolve the Configuration
         shell: bash
