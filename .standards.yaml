@@ -4,9 +4,21 @@ repository:
   owner: cordanaLLM
   name: nucleus
   visibility: public
-  description: ""
-  homepage: ""
-  topics: []
+  description: "Kernel forge: compiles, hardens, gates and signs Linux kernels (four streams, three architectures) as Debian packages for imago."
+  homepage: "https://cordanallm.github.io/nucleus/"
+  topics:
+    - kernel
+    - ebpf
+    - sched-ext
+    - bbrv3
+    - kspp
+    - debian-packages
+    - cloud-images
+    - arm64
+    - x86-64
+    - riscv64
+    - preempt-rt
+    - reproducible-builds
   # Declared so every checkout renders .github/rulesets/main.json for main, including
   # a clone whose origin HEAD names another branch.
   default_branch: main
