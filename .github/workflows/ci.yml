@@ -85,11 +85,15 @@ jobs:
           PATH="${RUNNER_TEMP}/py314/bin:${PATH}" python -m pytest -q -p no:cacheprovider
 
       # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
-      # commit carries fails only at "Set up job" of the workflow that uses it.
+      # commit carries fails only at "Set up job" of the workflow that uses it. zizmor
+      # checks each pin against its upstream; the fixtures prove the gate still refuses.
       - name: Verify Action Pins Upstream
         env:
           GH_TOKEN: ${{ github.token }}
-        run: make lint-pins
+          NUCLEUS_REQUIRE_PIN_FIXTURES: "1"
+        run: |
+          make lint-pins
+          python -m pytest -q -p no:cacheprovider tests/test_lint_pins.py
 
   # The job above runs without ukify, so it can only prove refusals. This one builds a real
   # UKI with package-uki.sh, which is the positive case of issue #21. The input is Ubuntu's own
