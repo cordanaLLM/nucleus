@@ -1248,7 +1248,7 @@ CANCEL_ON_PULL_REQUEST = "${{ github.event_name == 'pull_request' }}"
 
 
 def test_pull_request_workflows_cancel_superseded_runs():
-    """A push to a pull request supersedes the runs of its previous head on the shared runners."""
+    """A push to a pull request cancels its previous head's runs; a run for main is never cancelled."""
     missing = []
     for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
         if path.name in CONCURRENCY_OWNED_ELSEWHERE:
@@ -1258,9 +1258,13 @@ def test_pull_request_workflows_cancel_superseded_runs():
         if not isinstance(on, dict) or "pull_request" not in on:
             continue
         concurrency = workflow.get("concurrency") or {}
-        cancels = concurrency.get("cancel-in-progress") in (True, CANCEL_ON_PULL_REQUEST)
-        if not concurrency.get("group") or not cancels:
+        group = " ".join(str(concurrency.get("group", "")).split())
+        cancel = concurrency.get("cancel-in-progress")
+        # True is safe only where every event other than a pull request gets a group of its own.
+        if not group or not (
+            cancel == CANCEL_ON_PULL_REQUEST or (cancel is True and "github.run_id" in group)
+        ):
             missing.append(path.name)
     assert missing == [], (
-        f"pull_request workflows without a cancelling concurrency group: {missing}"
+        f"pull_request workflows that keep superseded runs or cancel runs for main: {missing}"
     )
