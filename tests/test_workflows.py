@@ -714,6 +714,15 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     assert restore["with"]["path"] == save["with"]["path"] == ".kernel-source-work"
     assert f"--work={restore['with']['path']}" in fetch["run"]
     assert '--dest="${RUNNER_TEMP}/linux-${STREAM}"' in fetch["run"]
+    check_patches = steps["Check the Carried Patches Apply"]
+    assert (
+        "scripts/check_patches_apply.py" in check_patches["run"]
+        and "STREAM" in check_patches["env"]
+    )
+    step_names = [s.get("name", "") for s in resolve["steps"]]
+    assert step_names.index("Check the Carried Patches Apply") < step_names.index(
+        "Resolve the Configuration"
+    )
     resolve_step = steps["Resolve the Configuration"]
     assert "--source-tree=" in resolve_step["run"] and "ARCHES" in resolve_step["env"]
     for step in resolve["steps"]:
