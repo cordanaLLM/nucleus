@@ -86,6 +86,7 @@ nav:
       - ADR-0011 BPF Trampolines & Release Revisions: adr/0011-bpf-trampoline-ftrace-and-release-revisions.md
       - ADR-0012 SLSA Build Level 3 Reusable Workflow: adr/0012-slsa-build-level-3-reusable-workflow.md
       - ADR-0013 BTF on Every Architecture: adr/0013-btf-on-every-architecture.md
+      - ADR-0014 GitHub Release Assets as the Debian Channel: adr/0014-github-release-assets-as-the-debian-channel.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md
