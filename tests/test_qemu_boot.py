@@ -253,3 +253,157 @@ def test_a_compiler_that_fails_is_refused_with_its_message(tmp_path):
     assert result.returncode == 2
     assert "could not build a static init" in result.stderr
     assert "planted: cannot find -lc" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("arch", "machine_args", "console", "qemu"),
+    [
+        ("x86_64", [], "ttyS0", "qemu-system-x86_64"),
+        ("arm64", ["-M", "virt", "-cpu", "max"], "ttyAMA0", "qemu-system-aarch64"),
+        ("riscv64", ["-M", "virt", "-bios", "default"], "ttyS0", "qemu-system-riscv64"),
+    ],
+)
+def test_qemu_command_per_arch(arch, machine_args, console, qemu):
+    args = boot_smoke._parser().parse_args(
+        [f"--arch={arch}", "--kernel=/k", f"--kernelrelease={KR}"]
+    )
+    command = boot_smoke.qemu_command(args, Path("/initrd"))
+    expected = [
+        qemu,
+        *machine_args,
+        "-accel",
+        "tcg",
+        "-m",
+        "512M",
+        "-smp",
+        "1",
+        "-kernel",
+        "/k",
+        "-initrd",
+        "/initrd",
+        "-append",
+        f"console={console} panic=-1 rdinit=/init",
+        "-nographic",
+        "-no-reboot",
+    ]
+    assert command == expected
+
+
+def test_qemu_command_console_override():
+    args = boot_smoke._parser().parse_args(
+        ["--arch=arm64", "--kernel=/k", f"--kernelrelease={KR}", "--console=ttyS9"]
+    )
+    command = boot_smoke.qemu_command(args, Path("/initrd"))
+    append = command[command.index("-append") + 1]
+    assert "console=ttyS9" in append
+
+
+def test_init_source_selection():
+    x86_src = boot_smoke.init_source("x86_64")
+    arm_src = boot_smoke.init_source("arm64")
+    riscv_src = boot_smoke.init_source("riscv64")
+
+    assert "#include <stdio.h>" in x86_src
+    assert "main(void)" in x86_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in x86_src
+
+    assert "svc #0" in arm_src
+    assert "SYS_uname 160" in arm_src
+    assert "SYS_write 64" in arm_src
+    assert "SYS_sync 81" in arm_src
+    assert "SYS_reboot 142" in arm_src
+    assert "SYS_exit 93" in arm_src
+    assert "_start" in arm_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in arm_src
+
+    assert "ecall" in riscv_src
+    assert "SYS_uname 160" in riscv_src
+    assert "SYS_write 64" in riscv_src
+    assert "SYS_sync 81" in riscv_src
+    assert "SYS_reboot 142" in riscv_src
+    assert "SYS_exit 93" in riscv_src
+    assert "_start" in riscv_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in riscv_src
+
+    with pytest.raises(boot_smoke.SmokeError, match="unsupported architecture"):
+        boot_smoke.init_source("unknown_arch")
+
+
+def test_decompress_kernel_x86_passthrough(tmp_path):
+    k = tmp_path / "vmlinuz"
+    k.write_bytes(b"plain-x86-bzImage")
+    assert boot_smoke.decompress_kernel(k, "x86_64", tmp_path) == k
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_non_gzip_refused(tmp_path, arch):
+    k = tmp_path / f"vmlinuz-{arch}"
+    k.write_bytes(b"not-gzip-data")
+    with pytest.raises(boot_smoke.SmokeError, match="not a gzip-compressed Image"):
+        boot_smoke.decompress_kernel(k, arch, tmp_path)
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_oversize_refused(tmp_path, arch, monkeypatch):
+    import gzip
+
+    k = tmp_path / f"vmlinuz-{arch}.gz"
+    k.write_bytes(gzip.compress(b"x" * 1024))
+    monkeypatch.setattr(boot_smoke, "MAX_IMAGE_BYTES", 512)
+    with pytest.raises(boot_smoke.SmokeError, match="within 512 bytes"):
+        boot_smoke.decompress_kernel(k, arch, tmp_path)
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_success(tmp_path, arch):
+    import gzip
+
+    k = tmp_path / f"vmlinuz-{arch}.gz"
+    payload = b"uncompressed-kernel-Image-bytes"
+    k.write_bytes(gzip.compress(payload))
+    out = boot_smoke.decompress_kernel(k, arch, tmp_path)
+    assert out.is_file()
+    assert out.read_bytes() == payload
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_fake_qemu_missing_init_line_fails_verdict_on_arch(tmp_path, arch):
+    import gzip
+
+    kernel = tmp_path / f"vmlinuz-{arch}"
+    kernel.write_bytes(gzip.compress(b"fake-image"))
+    stub = _stub(tmp_path, f"printf '%s' '{BANNER}'")
+    init = tmp_path / "init"
+    init.write_bytes(b"\x7fELF")
+    res = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--arch={arch}",
+            f"--kernel={kernel}",
+            f"--kernelrelease={KR}",
+            f"--qemu={stub}",
+            f"--init-binary={init}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 1
+    assert "init never printed" in res.stderr
+
+
+def test_default_cc_selection(monkeypatch):
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.setattr(boot_smoke.platform, "machine", lambda: "x86_64")
+    assert boot_smoke.default_cc("x86_64") == "gcc"
+    assert boot_smoke.default_cc("arm64") == "aarch64-linux-gnu-gcc"
+    assert boot_smoke.default_cc("riscv64") == "riscv64-linux-gnu-gcc"
+
+    monkeypatch.setattr(boot_smoke.platform, "machine", lambda: "aarch64")
+    assert boot_smoke.default_cc("arm64") == "gcc"
+
+    monkeypatch.setenv("CC", "my-custom-cc")
+    assert boot_smoke.default_cc("x86_64") == "my-custom-cc"
+    assert boot_smoke.default_cc("arm64") == "my-custom-cc"
+    assert boot_smoke.default_cc("riscv64") == "my-custom-cc"

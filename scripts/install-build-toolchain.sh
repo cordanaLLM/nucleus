@@ -12,7 +12,7 @@
 # the uutils install Ubuntu 26.04 ships races in the kernel's parallel device-tree install.
 #
 # Usage: install-build-toolchain.sh [--with-qemu]
-#   --with-qemu   also install qemu-system-x86 for scripts/boot_smoke.py
+#   --with-qemu   also install QEMU for $ARCH (default x86_64) for scripts/boot_smoke.py
 set -euo pipefail
 
 readonly PACKAGES=(
@@ -25,7 +25,18 @@ main() {
   local -a packages=("${PACKAGES[@]}")
   case "${1:-}" in
     "") ;;
-    --with-qemu) packages+=(qemu-system-x86) ;;
+    --with-qemu)
+      local arch="${ARCH:-x86_64}"
+      case "${arch}" in
+        x86_64) packages+=(qemu-system-x86) ;;
+        arm64) packages+=(qemu-system-arm) ;;
+        riscv64) packages+=(qemu-system-misc opensbi) ;;
+        *)
+          echo "Refused: unknown architecture ${arch} for --with-qemu" >&2
+          exit 1
+          ;;
+      esac
+      ;;
     *)
       echo "Refused: unknown argument $1 (usage: $0 [--with-qemu])" >&2
       exit 1

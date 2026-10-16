@@ -289,12 +289,19 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     build = steps["Compile Kernel Package"]["run"]
     assert "./scripts/build_kernel.sh" in build and "/usr/lib/ccache" in build
     boot = steps["Boot the Kernel to Userspace"]
-    assert boot["if"].startswith("matrix.arch == 'x86_64'")
+    assert boot["if"] == "env.DRY_RUN != 'true'"
     assert "scripts/boot_smoke.py" in boot["run"]
+    assert '--arch="${ARCH}"' in boot["run"]
+    refuse_silent = steps["Refuse a boot whose console stays silent"]
+    assert refuse_silent["if"] == "matrix.arch != 'x86_64' && env.DRY_RUN != 'true'"
+    assert "--console=" in refuse_silent["run"]
     stage = steps["Stage Artifacts and Checksums"]["run"]
     assert 'OUTPUT_DIR="output/${STREAM}-${ARCH}" ./scripts/publish_release.sh' in stage
     assert order.index("Compile Kernel Package") < order.index("Boot the Kernel to Userspace")
     assert order.index("Boot the Kernel to Userspace") < order.index(
+        "Refuse a boot whose console stays silent"
+    )
+    assert order.index("Refuse a boot whose console stays silent") < order.index(
         "Stage Artifacts and Checksums"
     )
     restore = steps["Restore the Compiler Cache"]

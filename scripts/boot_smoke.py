@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 # Copyright 2026 The Lusoris Authors
 # SPDX-License-Identifier: EUPL-1.2
-"""Boot a built x86_64 kernel under QEMU and refuse it unless it reaches userspace.
+"""Boot a built kernel under QEMU and refuse it unless it reaches userspace.
 
 The smoke test compiles a static ``/init`` that prints the running kernel's release and powers
-the machine off, packs it into a newc initramfs with a ``/dev/console`` node, and boots::
+the machine off, packs it into a newc initramfs with a ``/dev/console`` node, and boots:
 
-    qemu-system-x86_64 -kernel <vmlinuz> -initrd <initramfs> -nographic -no-reboot \\
-        -append 'console=ttyS0 panic=-1 rdinit=/init'
+    x86_64:
+      qemu-system-x86_64 -kernel <vmlinuz> -initrd <initramfs> -nographic -no-reboot \\
+          -append 'console=ttyS0 panic=-1 rdinit=/init'
+
+    arm64:
+      qemu-system-aarch64 -M virt -cpu max -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
+          -append 'console=ttyAMA0 panic=-1 rdinit=/init'
+
+    riscv64:
+      qemu-system-riscv64 -M virt -bios default -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
+          -append 'console=ttyS0 panic=-1 rdinit=/init'
 
 It passes only when the serial console shows both ``Linux version <kernelrelease> `` and the
 init's ``NUCLEUS-BOOT-SMOKE release=<kernelrelease>`` line within the timeout. A kernel that
@@ -22,16 +31,38 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 MARKER = "NUCLEUS-BOOT-SMOKE release="
+MAX_IMAGE_BYTES = 256 * 1024 * 1024
+
+DEFAULT_QEMU: dict[str, str] = {
+    "x86_64": "qemu-system-x86_64",
+    "arm64": "qemu-system-aarch64",
+    "riscv64": "qemu-system-riscv64",
+}
+
+DEFAULT_CONSOLE: dict[str, str] = {
+    "x86_64": "ttyS0",
+    "arm64": "ttyAMA0",
+    "riscv64": "ttyS0",
+}
+
+ARCH_MACHINE_ARGS: dict[str, list[str]] = {
+    "x86_64": [],
+    "arm64": ["-M", "virt", "-cpu", "max"],
+    "riscv64": ["-M", "virt", "-bios", "default"],
+}
+
 INIT_SOURCE = r"""
 #include <stdio.h>
 #include <sys/reboot.h>
@@ -48,6 +79,166 @@ int main(void)
     sync();
     reboot(RB_POWER_OFF);
     return 1;
+}
+"""
+
+INIT_SOURCE_ARM64 = r"""/* Freestanding init for arm64 (AArch64). */
+#define SYS_uname 160
+#define SYS_write 64
+#define SYS_sync 81
+#define SYS_reboot 142
+#define SYS_exit 93
+
+#define LINUX_REBOOT_MAGIC1 0xfee1dead
+#define LINUX_REBOOT_MAGIC2 672274793
+#define LINUX_REBOOT_CMD_POWER_OFF 0x4321fedc
+
+struct new_utsname {
+    char sysname[65];
+    char nodename[65];
+    char release[65];
+    char version[65];
+    char machine[65];
+    char domainname[65];
+};
+
+static inline long sys_uname(struct new_utsname *buf) {
+    register long x8 __asm__("x8") = SYS_uname;
+    register long x0 __asm__("x0") = (long)buf;
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8) : "memory");
+    return x0;
+}
+
+static inline long sys_write(int fd, const void *buf, unsigned long count) {
+    register long x8 __asm__("x8") = SYS_write;
+    register long x0 __asm__("x0") = (long)fd;
+    register long x1 __asm__("x1") = (long)buf;
+    register long x2 __asm__("x2") = (long)count;
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
+    return x0;
+}
+
+static inline long sys_sync(void) {
+    register long x8 __asm__("x8") = SYS_sync;
+    register long x0 __asm__("x0");
+    __asm__ volatile("svc #0" : "=r"(x0) : "r"(x8) : "memory");
+    return x0;
+}
+
+static inline long sys_reboot(int magic1, int magic2, int cmd, void *arg) {
+    register long x8 __asm__("x8") = SYS_reboot;
+    register long x0 __asm__("x0") = (long)magic1;
+    register long x1 __asm__("x1") = (long)magic2;
+    register long x2 __asm__("x2") = (long)cmd;
+    register long x3 __asm__("x3") = (long)arg;
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3) : "memory");
+    return x0;
+}
+
+static inline void sys_exit(int code) {
+    register long x8 __asm__("x8") = SYS_exit;
+    register long x0 __asm__("x0") = (long)code;
+    __asm__ volatile("svc #0" : : "r"(x0), "r"(x8) : "memory");
+    for (;;) {}
+}
+
+static unsigned long mystrlen(const char *s) {
+    unsigned long n = 0;
+    while (*s++) n++;
+    return n;
+}
+
+void _start(void) {
+    struct new_utsname name;
+    if (sys_uname(&name) == 0) {
+        const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
+        sys_write(1, prefix, sizeof(prefix) - 1);
+        sys_write(1, name.release, mystrlen(name.release));
+        sys_write(1, "\n", 1);
+    }
+    sys_sync();
+    sys_reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, 0);
+    sys_exit(1);
+}
+"""
+
+INIT_SOURCE_RISCV64 = r"""/* Freestanding init for riscv64. */
+#define SYS_uname 160
+#define SYS_write 64
+#define SYS_sync 81
+#define SYS_reboot 142
+#define SYS_exit 93
+
+#define LINUX_REBOOT_MAGIC1 0xfee1dead
+#define LINUX_REBOOT_MAGIC2 672274793
+#define LINUX_REBOOT_CMD_POWER_OFF 0x4321fedc
+
+struct new_utsname {
+    char sysname[65];
+    char nodename[65];
+    char release[65];
+    char version[65];
+    char machine[65];
+    char domainname[65];
+};
+
+static inline long sys_uname(struct new_utsname *buf) {
+    register long a7 __asm__("a7") = SYS_uname;
+    register long a0 __asm__("a0") = (long)buf;
+    __asm__ volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+    return a0;
+}
+
+static inline long sys_write(int fd, const void *buf, unsigned long count) {
+    register long a7 __asm__("a7") = SYS_write;
+    register long a0 __asm__("a0") = (long)fd;
+    register long a1 __asm__("a1") = (long)buf;
+    register long a2 __asm__("a2") = (long)count;
+    __asm__ volatile("ecall" : "+r"(a0) : "r"(a7), "r"(a1), "r"(a2) : "memory");
+    return a0;
+}
+
+static inline long sys_sync(void) {
+    register long a7 __asm__("a7") = SYS_sync;
+    register long a0 __asm__("a0");
+    __asm__ volatile("ecall" : "=r"(a0) : "r"(a7) : "memory");
+    return a0;
+}
+
+static inline long sys_reboot(int magic1, int magic2, int cmd, void *arg) {
+    register long a7 __asm__("a7") = SYS_reboot;
+    register long a0 __asm__("a0") = (long)magic1;
+    register long a1 __asm__("a1") = (long)magic2;
+    register long a2 __asm__("a2") = (long)cmd;
+    register long a3 __asm__("a3") = (long)arg;
+    __asm__ volatile("ecall" : "+r"(a0) : "r"(a7), "r"(a1), "r"(a2), "r"(a3) : "memory");
+    return a0;
+}
+
+static inline void sys_exit(int code) {
+    register long a7 __asm__("a7") = SYS_exit;
+    register long a0 __asm__("a0") = (long)code;
+    __asm__ volatile("ecall" : : "r"(a0), "r"(a7) : "memory");
+    for (;;) {}
+}
+
+static unsigned long mystrlen(const char *s) {
+    unsigned long n = 0;
+    while (*s++) n++;
+    return n;
+}
+
+void _start(void) {
+    struct new_utsname name;
+    if (sys_uname(&name) == 0) {
+        const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
+        sys_write(1, prefix, sizeof(prefix) - 1);
+        sys_write(1, name.release, mystrlen(name.release));
+        sys_write(1, "\n", 1);
+    }
+    sys_sync();
+    sys_reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, 0);
+    sys_exit(1);
 }
 """
 
@@ -84,15 +275,82 @@ def newc_archive(entries: Sequence[CpioEntry]) -> bytes:
     return bytes(out)
 
 
-def build_init(cc: str, workdir: Path) -> bytes:
+def init_source(arch: str) -> str:
+    """Return the C source code for the init program for the given architecture."""
+    if arch == "x86_64":
+        return INIT_SOURCE
+    if arch == "arm64":
+        return INIT_SOURCE_ARM64
+    if arch == "riscv64":
+        return INIT_SOURCE_RISCV64
+    raise SmokeError(f"unsupported architecture for init: {arch}")
+
+
+def default_cc(arch: str) -> str:
+    """Return the default C compiler for building the init on the given architecture."""
+    if arch == "x86_64":
+        return os.environ.get("CC", "gcc")
+    if "CC" in os.environ:
+        return os.environ["CC"]
+    machine = platform.machine().lower()
+    if arch == "arm64":
+        if machine in ("aarch64", "arm64"):
+            return "gcc"
+        return "aarch64-linux-gnu-gcc"
+    if arch == "riscv64":
+        if machine in ("riscv64", "rv64"):
+            return "gcc"
+        return "riscv64-linux-gnu-gcc"
+    return "gcc"
+
+
+def decompress_kernel(kernel_path: Path, arch: str, workdir: Path) -> Path:
+    """Decompress a gzip kernel to a temp Image before boot for arm64/riscv64."""
+    if arch == "x86_64":
+        return kernel_path
+    try:
+        data = kernel_path.read_bytes()
+    except OSError as exc:
+        raise SmokeError(f"cannot read kernel image {kernel_path}: {exc}") from exc
+    if data[:2] != b"\x1f\x8b":
+        raise SmokeError(f"{kernel_path}: not a gzip-compressed Image for {arch}")
+    inflater = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+    try:
+        image = inflater.decompress(data, MAX_IMAGE_BYTES)
+    except zlib.error as exc:
+        raise SmokeError(f"{kernel_path}: gzip decompression failed: {exc}") from exc
+    if inflater.unconsumed_tail or not inflater.eof:
+        raise SmokeError(
+            f"{kernel_path}: not a complete gzip-compressed Image within {MAX_IMAGE_BYTES} bytes"
+        )
+    dest = workdir / "Image"
+    dest.write_bytes(image)
+    return dest
+
+
+def build_init(cc: str, workdir: Path, arch: str = "x86_64") -> bytes:
     """Compile the static init program and return it."""
     if shutil.which(cc) is None:
         raise SmokeError(f"{cc} is required to build the smoke test's init and is not installed")
     source = workdir / "init.c"
     binary = workdir / "init"
-    source.write_text(INIT_SOURCE, encoding="utf-8")
+    source.write_text(init_source(arch), encoding="utf-8")
+    if arch == "x86_64":
+        cmd = [cc, "-static", "-Os", "-o", str(binary), str(source)]
+    else:
+        cmd = [
+            cc,
+            "-static",
+            "-nostdlib",
+            "-ffreestanding",
+            "-fno-stack-protector",
+            "-Os",
+            "-o",
+            str(binary),
+            str(source),
+        ]
     result = subprocess.run(
-        [cc, "-static", "-Os", "-o", str(binary), str(source)],
+        cmd,
         capture_output=True,
         text=True,
         check=False,
@@ -113,25 +371,36 @@ def initramfs(init: bytes) -> bytes:
     )
 
 
-def qemu_command(args: argparse.Namespace, initrd: Path) -> list[str]:
+def qemu_command(args: argparse.Namespace, initrd: Path, kernel: Path | None = None) -> list[str]:
     """The QEMU invocation for one boot."""
-    return [
-        args.qemu,
-        "-accel",
-        args.accel,
-        "-m",
-        "512M",
-        "-smp",
-        "1",
-        "-kernel",
-        str(args.kernel),
-        "-initrd",
-        str(initrd),
-        "-append",
-        "console=ttyS0 panic=-1 rdinit=/init",
-        "-nographic",
-        "-no-reboot",
-    ]
+    arch = getattr(args, "arch", "x86_64")
+    qemu = (
+        args.qemu if getattr(args, "qemu", None) else DEFAULT_QEMU.get(arch, "qemu-system-x86_64")
+    )
+    console = args.console if getattr(args, "console", None) else DEFAULT_CONSOLE.get(arch, "ttyS0")
+    kernel_path = kernel if kernel is not None else args.kernel
+    machine_args = ARCH_MACHINE_ARGS.get(arch, [])
+    cmd = [qemu]
+    cmd.extend(machine_args)
+    cmd.extend(
+        [
+            "-accel",
+            args.accel,
+            "-m",
+            "512M",
+            "-smp",
+            "1",
+            "-kernel",
+            str(kernel_path),
+            "-initrd",
+            str(initrd),
+            "-append",
+            f"console={console} panic=-1 rdinit=/init",
+            "-nographic",
+            "-no-reboot",
+        ]
+    )
+    return cmd
 
 
 def verdict(console: str, kernelrelease: str) -> list[str]:
@@ -148,11 +417,11 @@ def verdict(console: str, kernelrelease: str) -> list[str]:
     return missing
 
 
-def boot(args: argparse.Namespace, initrd: Path) -> tuple[str, bool]:
+def boot(args: argparse.Namespace, initrd: Path, kernel: Path | None = None) -> tuple[str, bool]:
     """Run QEMU once; return the console and whether it was killed at the timeout."""
     try:
         result = subprocess.run(
-            qemu_command(args, initrd),
+            qemu_command(args, initrd, kernel),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=args.timeout,
@@ -170,14 +439,24 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Build the initramfs, boot, and judge the console."""
     if not args.kernel.is_file() or args.kernel.stat().st_size == 0:
         raise SmokeError(f"{args.kernel} is not a kernel image")
-    if shutil.which(args.qemu) is None:
-        raise SmokeError(f"{args.qemu} is required for the boot smoke test and is not installed")
+    arch = getattr(args, "arch", "x86_64")
+    qemu = (
+        args.qemu if getattr(args, "qemu", None) else DEFAULT_QEMU.get(arch, "qemu-system-x86_64")
+    )
+    if shutil.which(qemu) is None:
+        raise SmokeError(f"{qemu} is required for the boot smoke test and is not installed")
+    cc = args.cc if getattr(args, "cc", None) else default_cc(arch)
     with tempfile.TemporaryDirectory(prefix="boot-smoke-") as tmp:
         workdir = Path(tmp)
-        init = args.init_binary.read_bytes() if args.init_binary else build_init(args.cc, workdir)
+        kernel = decompress_kernel(args.kernel, arch, workdir)
+        init = (
+            args.init_binary.read_bytes()
+            if getattr(args, "init_binary", None)
+            else build_init(cc, workdir, arch)
+        )
         initrd = workdir / "initramfs.cpio"
         initrd.write_bytes(initramfs(init))
-        console, timed_out = boot(args, initrd)
+        console, timed_out = boot(args, initrd, kernel)
     missing = verdict(console, args.kernelrelease)
     if timed_out and missing:
         missing.append(f"QEMU was killed after {args.timeout}s")
@@ -186,13 +465,20 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser.add_argument(
+        "--arch",
+        choices=("x86_64", "arm64", "riscv64"),
+        default="x86_64",
+        help="target architecture (default: x86_64)",
+    )
     parser.add_argument("--kernel", type=Path, required=True, help="the vmlinuz to boot")
     parser.add_argument("--kernelrelease", required=True, help="the release it must report")
     parser.add_argument("--timeout", type=int, default=180, help="seconds before QEMU is killed")
     parser.add_argument("--log", type=Path, help="write the serial console here")
-    parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--qemu", help="QEMU binary (default: per architecture)")
+    parser.add_argument("--console", help="serial console device (default: per architecture)")
     parser.add_argument("--accel", choices=("tcg", "kvm"), default="tcg")
-    parser.add_argument("--cc", default=os.environ.get("CC", "gcc"), help="builds the static init")
+    parser.add_argument("--cc", help="builds the static init (default: per architecture)")
     parser.add_argument("--init-binary", type=Path, help="a prebuilt init instead of compiling one")
     return parser
 
@@ -202,6 +488,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 1 <= args.timeout <= 3600:
         print("boot_smoke: --timeout must be between 1 and 3600 seconds", file=sys.stderr)
         return 2
+    if args.qemu is None:
+        args.qemu = DEFAULT_QEMU[args.arch]
+    if args.console is None:
+        args.console = DEFAULT_CONSOLE[args.arch]
+    if args.cc is None:
+        args.cc = default_cc(args.arch)
     try:
         missing, console = run(args)
     except (SmokeError, OSError) as exc:
