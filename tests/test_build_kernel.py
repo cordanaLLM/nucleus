@@ -22,6 +22,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUILD = REPO_ROOT / "scripts" / "build_kernel.sh"
 PACKAGE = REPO_ROOT / "scripts" / "package-deb.sh"
+DATE_WRAPPER = REPO_ROOT / "scripts" / "lib" / "date-from-epoch.sh"
 VERSIONS = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
 HOST = {"x86_64": "x86_64", "aarch64": "arm64", "arm64": "arm64", "riscv64": "riscv64"}.get(
     os.uname().machine, os.uname().machine
@@ -438,3 +439,65 @@ def test_package_deb_has_no_date_based_version_and_no_simulation():
     assert "date +" not in text
     assert "SIMULATION" not in text and "printf" not in text
     assert "sha256sum" not in text, "checksums are publish_release.sh's, over gated artifacts"
+
+
+def test_date_wrapper_formats_rfc_with_epoch():
+    env = {**os.environ, "SOURCE_DATE_EPOCH": "1700000000"}
+    result = _run(DATE_WRAPPER, "-R", env=env)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "Tue, 14 Nov 2023 22:13:20 +0000"
+
+
+def test_date_wrapper_passes_other_arguments_through():
+    result = _run(DATE_WRAPPER, "+%s", "-d", "@5")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "5"
+
+
+@pytest.mark.parametrize(
+    "epoch",
+    [
+        None,
+        "",
+        "garbage",
+        "1700000000abc",
+        "-1700000000",
+        "1700 0000",
+    ],
+)
+def test_date_wrapper_refuses_unset_or_garbage_epoch(epoch):
+    env = {k: v for k, v in os.environ.items() if k != "SOURCE_DATE_EPOCH"}
+    if epoch is not None:
+        env["SOURCE_DATE_EPOCH"] = epoch
+    result = _run(DATE_WRAPPER, "-R", env=env)
+    assert result.returncode == 1
+    assert "SOURCE_DATE_EPOCH" in result.stderr
+
+
+def test_build_kernel_dry_run_mentions_date_wrapper(tmp_path):
+    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", "--dry-run", *_dirs(tmp_path))
+    assert result.returncode == 0, result.stderr
+    assert "date wrapper" in result.stdout
+    assert "prepended to PATH for bindeb-pkg" in result.stdout
+
+
+def test_date_wrapper_placed_on_path_only_for_bindeb_pkg():
+    text = BUILD.read_text(encoding="utf-8")
+    assert 'PATH="${date_dir}:${PATH}"' in text
+    assert "kernel_make" in text and "bindeb-pkg" in text
+    # The date wrapper must NOT be exported globally into ambient PATH.
+    compile_fn = text.split("compile_packages()")[1].split("collect_artifacts()")[0]
+    assert "export PATH=" not in compile_fn
+    # Wrapper itself must resolve the real date without PATH search (never recurse).
+    wrapper_text = DATE_WRAPPER.read_text(encoding="utf-8")
+    assert "command -v date" not in wrapper_text
+    assert "which date" not in wrapper_text
+    assert "type -p date" not in wrapper_text
+
+
+def test_fixed_environment_drops_the_builders_debian_identity():
+    # mkdebian prefers DEBFULLNAME and DEBEMAIL over KBUILD_BUILD_USER and KBUILD_BUILD_HOST
+    # for the debian/changelog maintainer line, which every package ships.
+    text = BUILD.read_text(encoding="utf-8")
+    fixed = text.split("fixed_environment() {")[1].split("\n}\n")[0]
+    assert re.search(r"^\s*unset DEBFULLNAME DEBEMAIL$", fixed, re.MULTILINE)
