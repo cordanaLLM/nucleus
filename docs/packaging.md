@@ -115,18 +115,23 @@ of every arm64 and riscv64 build does. Ubuntu keeps GNU `install` as `gnuinstall
 build's `PATH`; with neither, it refuses. Replacing uutils altogether is not an option there:
 `build-essential` depends on it, and `bindeb-pkg` checks the build dependencies.
 
-The packages are not bit-for-bit reproducible, for two known reasons:
+The packages are not yet shown to be bit-for-bit reproducible. One known cause is left, and one is
+handled:
 
 - The modules are signed at build time with a key generated for that build
   (`CONFIG_MODULE_SIG_ALL`); the key stays in the build tree, which CI discards. Two builds of one
   tag therefore differ in their module signatures.
-- The kernel's `scripts/package/mkdebian` dates `debian/changelog` with `$(date -R)`, the wall
-  clock of the build, and every package, `linux-libc-dev` included, ships it as
-  `usr/share/doc/<package>/changelog.Debian.gz`. The bleeding/x86_64 build of 2026-09-29 dates it
-  `Tue, 29 Sep 2026 02:23:03 +0000`, while its `SOURCE_DATE_EPOCH` is 2026-09-27.
+- The kernel's `scripts/package/mkdebian` dates `debian/changelog` with `$(date -R)`, which would
+  ordinarily stamp the wall clock into `usr/share/doc/<package>/changelog.Debian.gz`. `build_kernel.sh`
+  eliminates this variance by prepending a `date` wrapper (`scripts/lib/date-from-epoch.sh`) to `PATH`
+  only for the `bindeb-pkg` make call. When invoked with exactly `-R`, the wrapper formats
+  `SOURCE_DATE_EPOCH` in UTC (`date -u -R -d "@${SOURCE_DATE_EPOCH}"`), while passing any other
+  invocations through unchanged to the real `date` binary. The changelog's maintainer line is
+  `nucleus <nucleus@forge>`: `build_kernel.sh` sets `KBUILD_BUILD_USER` and `KBUILD_BUILD_HOST` and
+  unsets `DEBFULLNAME` and `DEBEMAIL`, which `mkdebian` would otherwise prefer.
 
-Issue #77 tracks both, and a CI job that builds one tag twice and compares the two output
-directories with `scripts/verify-reproducibility.sh` (section 3).
+Issue #77 tracks the module signing key reproducibility, and a CI job that builds one tag twice and
+compares the two output directories with `scripts/verify-reproducibility.sh` (section 3).
 
 ### 2.2 Localversion & Package Naming Contract
 

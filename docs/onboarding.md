@@ -120,16 +120,16 @@ python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-l
 
 The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. When preparing a patch candidate:
 
-1. Create a descriptive patch file under `patches/common/` or `patches/<stream>/`:
+1. Create a descriptive patch file under `patches/common/<patch-name>.patch` or `patches/<stream>/<patch-name>.patch`:
 
    ```bash
    # Example: patches/common/<patch-name>.patch
    ```
 
-2. Verify that the patch applies cleanly against the unpacked kernel source:
+2. Verify that all carried patches for the target stream apply cleanly:
 
    ```bash
-   patch -p1 --dry-run < patches/common/<patch-name>.patch
+   python3 scripts/check_patches_apply.py --stream=<stream> --source-tree=<path-to-kernel-source>
    ```
 
 3. Commit adhering to Conventional Commits: `feat(patches): add custom tuning patch for mainstream`.

@@ -67,6 +67,7 @@ INIT_SOURCE = r"""
 #include <stdio.h>
 #include <sys/reboot.h>
 #include <sys/utsname.h>
+#include <termios.h>
 #include <unistd.h>
 
 int main(void)
@@ -76,6 +77,7 @@ int main(void)
     if (uname(&name) == 0)
         printf("NUCLEUS-BOOT-SMOKE release=%s\n", name.release);
     fflush(stdout);
+    tcdrain(STDOUT_FILENO);
     sync();
     reboot(RB_POWER_OFF);
     return 1;
@@ -86,6 +88,8 @@ INIT_SOURCE_ARM64 = r"""/* Freestanding init for arm64 (AArch64). */
 #define SYS_uname 160
 #define SYS_write 64
 #define SYS_sync 81
+#define SYS_ioctl 29
+#define TCSBRK 0x5409
 #define SYS_reboot 142
 #define SYS_exit 93
 
@@ -114,6 +118,15 @@ static inline long sys_write(int fd, const void *buf, unsigned long count) {
     register long x0 __asm__("x0") = (long)fd;
     register long x1 __asm__("x1") = (long)buf;
     register long x2 __asm__("x2") = (long)count;
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
+    return x0;
+}
+
+static inline long sys_ioctl(int fd, unsigned long cmd, unsigned long arg) {
+    register long x8 __asm__("x8") = SYS_ioctl;
+    register long x0 __asm__("x0") = (long)fd;
+    register long x1 __asm__("x1") = (long)cmd;
+    register long x2 __asm__("x2") = (long)arg;
     __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
     return x0;
 }
@@ -151,11 +164,12 @@ static unsigned long mystrlen(const char *s) {
 void _start(void) {
     struct new_utsname name;
     if (sys_uname(&name) == 0) {
-        const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
+        static const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
         sys_write(1, prefix, sizeof(prefix) - 1);
         sys_write(1, name.release, mystrlen(name.release));
         sys_write(1, "\n", 1);
     }
+    sys_ioctl(1, TCSBRK, 1);
     sys_sync();
     sys_reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, 0);
     sys_exit(1);
@@ -166,6 +180,8 @@ INIT_SOURCE_RISCV64 = r"""/* Freestanding init for riscv64. */
 #define SYS_uname 160
 #define SYS_write 64
 #define SYS_sync 81
+#define SYS_ioctl 29
+#define TCSBRK 0x5409
 #define SYS_reboot 142
 #define SYS_exit 93
 
@@ -194,6 +210,15 @@ static inline long sys_write(int fd, const void *buf, unsigned long count) {
     register long a0 __asm__("a0") = (long)fd;
     register long a1 __asm__("a1") = (long)buf;
     register long a2 __asm__("a2") = (long)count;
+    __asm__ volatile("ecall" : "+r"(a0) : "r"(a7), "r"(a1), "r"(a2) : "memory");
+    return a0;
+}
+
+static inline long sys_ioctl(int fd, unsigned long cmd, unsigned long arg) {
+    register long a7 __asm__("a7") = SYS_ioctl;
+    register long a0 __asm__("a0") = (long)fd;
+    register long a1 __asm__("a1") = (long)cmd;
+    register long a2 __asm__("a2") = (long)arg;
     __asm__ volatile("ecall" : "+r"(a0) : "r"(a7), "r"(a1), "r"(a2) : "memory");
     return a0;
 }
@@ -231,11 +256,12 @@ static unsigned long mystrlen(const char *s) {
 void _start(void) {
     struct new_utsname name;
     if (sys_uname(&name) == 0) {
-        const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
+        static const char prefix[] = "NUCLEUS-BOOT-SMOKE release=";
         sys_write(1, prefix, sizeof(prefix) - 1);
         sys_write(1, name.release, mystrlen(name.release));
         sys_write(1, "\n", 1);
     }
+    sys_ioctl(1, TCSBRK, 1);
     sys_sync();
     sys_reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, 0);
     sys_exit(1);
