@@ -184,7 +184,8 @@ and up to 40 minutes on arm64. With the cache the x86_64 and riscv64 compiles to
 
 Measured sizes of the local builds (2026-09-29, `docker` `ubuntu:26.04` on an x86_64 host, 32
 threads, so arm64 and riscv64 were cross-compiled there and have no headers package; riscv64
-carries no debug information, so it has no BTF either); imago accepts up to 512 MiB per artifact,
+was then built without debug information and BTF, which it now carries, so its packages are
+larger than measured here); imago accepts up to 512 MiB per artifact,
 and `scripts/check_kernel_artifacts.py` refuses a larger artifact before checksumming
 (`test_an_artifact_above_the_imago_bound_is_refused`):
 

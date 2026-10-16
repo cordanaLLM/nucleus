@@ -167,8 +167,7 @@ artifact gate exists so that one cannot pass.
 
 What is not done: no UKI is built from a nucleus kernel yet (`package-uki.sh` needs an initramfs
 and per-architecture stubs); arm64 and riscv64 kernels are compiled and gated but not booted;
-riscv64 kernels carry no debug information and therefore no BTF, because
-`kconfig/riscv64.config` does not request it; a release is x86_64 only, because
+a release is x86_64 only, because
 `imago.nucleus.kernel-artifact.v1` has no architecture field; and `verify_kernel_requirement.py`
 still reports the module ABI as unverifiable, since it reads configurations, not build records.
 

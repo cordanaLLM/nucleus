@@ -147,8 +147,17 @@
       }
     },
     {
+      "id": "btf",
+      "claim": "BTF in vmlinux for CO-RE eBPF (docs/streams.md, issue #112)",
+      "streams": "all",
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_DEBUG_INFO_BTF": "y"
+      }
+    },
+    {
       "id": "sched-ext",
-      "claim": "sched-ext eBPF schedulers (docs/streams.md); riscv64 builds no BTF",
+      "claim": "sched-ext eBPF schedulers (docs/streams.md); riscv64 does not declare SCHED_CLASS_EXT",
       "streams": "all",
       "architectures": [
         "x86_64",

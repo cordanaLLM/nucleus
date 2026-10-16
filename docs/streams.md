@@ -206,7 +206,8 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
 | `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
-| `sched-ext` | all | x86_64, arm64 | `SCHED_CLASS_EXT=y` (riscv64 builds no BTF) |
+| `btf` | all | all | `DEBUG_INFO_BTF=y` |
+| `sched-ext` | all | x86_64, arm64 | `SCHED_CLASS_EXT=y` (riscv64 does not declare SCHED_CLASS_EXT) |
 | `realtime` | `realtime` | all | `PREEMPT_RT=y` |
 
 `scripts/check_required_config.py` refuses a configuration in which a listed symbol is off
