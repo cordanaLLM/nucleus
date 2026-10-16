@@ -218,10 +218,11 @@ through them. The exceptions expire on 2027-01-13 and close with cordanaLLM/prae
 
 ## 5. The praetor pin
 
-`PRAETOR_COMMIT` in `.github/workflows/ci.yml` is the one place the pin lives: a full commit
-SHA of `cordanaLLM/praetor`. `versions.json` pins kernel streams, not tools. The
-`Praetor Governance` job checks praetor out at that commit, builds `praetorctl` from it and
-runs:
+`PRAETOR_REF` in `.github/workflows/ci.yml` is the one place the pin lives: a full commit
+SHA of `cordanaLLM/praetor`. The git hooks (`.config/lefthook/engine.sh`) read the same
+`PRAETOR_REF` line, so a hook judges with the pinned engine, not the praetorctl on `PATH`.
+`versions.json` pins kernel streams, not tools. The `Praetor Governance` job checks praetor
+out at that commit, builds `praetorctl` from it and runs:
 
 1. `praetorctl plan --catalog-root praetor-src`: `.standards.lock` matches the catalog of the
    pinned praetor.
@@ -243,7 +244,7 @@ name the catalog content, not a praetor release: `praetorctl adopt` takes the fi
 digits of a digest over every archetype and facet under praetor's `.config/archetypes/`, so the
 version moves when that catalog changes and stays put when only praetor's code does. No check
 reads it; the digests hold the vendored catalog to the lock. The version does not name the
-pin either; `PRAETOR_COMMIT` does.
+pin either; `PRAETOR_REF` does.
 
 ### Building praetorctl at the pin
 
@@ -251,7 +252,7 @@ The CI job builds with these flags; build the same way locally:
 
 ```bash
 git clone https://github.com/cordanaLLM/praetor.git praetor-src
-git -C praetor-src checkout <PRAETOR_COMMIT>
+git -C praetor-src checkout <PRAETOR_REF>
 cd praetor-src
 GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-mod=readonly go mod download
 GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS=-mod=readonly go mod verify
@@ -274,10 +275,10 @@ Pass it to the Makefile targets as `PRAETORCTL=<bin dir>/praetorctl`.
    covers every archetype and facet in praetor's catalog. Copy back nothing else; adoption
    rewrites many other files, and none of them belongs to a re-pin. praetor has no lock-only
    command yet.
-4. Set `PRAETOR_COMMIT` in `.github/workflows/ci.yml` to the full SHA.
+4. Set `PRAETOR_REF` in `.github/workflows/ci.yml` to the full SHA.
 5. Run `make governance-check PRAETOR_SRC=<praetor checkout>`, `make context`,
    `make ruleset`, `make lint` and `make test`, and commit every file they changed.
-   `governance-check` refuses a praetor checkout whose `HEAD` is not `PRAETOR_COMMIT`; it
+   `governance-check` refuses a praetor checkout whose `HEAD` is not `PRAETOR_REF`; it
    cannot tell which commit your `praetorctl` was built from, so build it at the pin.
 
 A pin whose catalog and lock did not move needs step 4 and step 5 only.

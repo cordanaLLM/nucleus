@@ -157,11 +157,11 @@ and `.windsurfrules` are compiled from it: after every change to `AGENTS.md`, ru
 `make context` and commit the regenerated files in the same commit. The `Praetor Governance`
 CI job fails when they differ from `AGENTS.md`.
 
-The praetor commit this repository is governed by is pinned in one place, `PRAETOR_COMMIT` in
+The praetor commit this repository is governed by is pinned in one place, `PRAETOR_REF` in
 `.github/workflows/ci.yml`. `versions.json` pins kernel streams, not tools. To move the pin,
 follow [Moving the pin](../repository-governance.md#moving-the-pin): copy the catalog files
 from the new commit when they changed, regenerate `.standards.lock` in a scratch clone, set
-`PRAETOR_COMMIT` to the full SHA, and run `make governance-check`, `make context`,
+`PRAETOR_REF` to the full SHA, and run `make governance-check`, `make context`,
 `make ruleset`, `make lint` and `make test`.
 
 A change that adds, removes or renames a job in a workflow that runs on pull requests also

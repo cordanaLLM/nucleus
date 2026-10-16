@@ -18,7 +18,7 @@ KERNELRELEASE ?=
 DIR_A ?=
 DIR_B ?=
 
-# praetorctl built from the commit PRAETOR_COMMIT in .github/workflows/ci.yml names, and a
+# praetorctl built from the commit PRAETOR_REF in .github/workflows/ci.yml names, and a
 # praetor checkout at that commit for the catalog check (docs/repository-governance.md).
 PRAETORCTL ?= praetorctl
 PRAETOR_SRC ?=
@@ -134,10 +134,10 @@ ruleset: ## Re-render .github/rulesets/main.json from .standards.yaml and the wo
 
 governance-check: ## Run the praetor checks CI runs (PRAETOR_SRC=<praetor checkout at the pin> adds the catalog checks)
 	@if [ -n "$(PRAETOR_SRC)" ]; then \
-		pin=$$(sed -n 's/^  PRAETOR_COMMIT: "\([0-9a-f]\{40\}\)"$$/\1/p' .github/workflows/ci.yml); \
+		pin=$$(sed -n 's/^  PRAETOR_REF: "\([0-9a-f]\{40\}\)"$$/\1/p' .github/workflows/ci.yml); \
 		head=$$(git -C "$(PRAETOR_SRC)" rev-parse HEAD); \
 		if [ -z "$$pin" ] || [ "$$head" != "$$pin" ]; then \
-			echo "==> ERROR: PRAETOR_SRC is at '$$head', PRAETOR_COMMIT is '$$pin'." >&2; \
+			echo "==> ERROR: PRAETOR_SRC is at '$$head', PRAETOR_REF is '$$pin'." >&2; \
 			exit 1; \
 		fi; \
 		$(PRAETORCTL) plan --catalog-root "$(PRAETOR_SRC)"; \

@@ -19,7 +19,7 @@ env:
   # .config/archetypes/ must match this commit's copies and .standards.lock must pin
   # them. Bump it as described in docs/repository-governance.md; versions.json pins
   # kernel streams, not tools.
-  PRAETOR_COMMIT: "7057d9957b3a7b98d60899aad55bbee406e0e96c"
+  PRAETOR_REF: "7057d9957b3a7b98d60899aad55bbee406e0e96c"
 
 jobs:
   lint-and-test:
@@ -216,7 +216,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: cordanaLLM/praetor
-          ref: ${{ env.PRAETOR_COMMIT }}
+          ref: ${{ env.PRAETOR_REF }}
           path: praetor-src
           persist-credentials: false
 
@@ -233,7 +233,7 @@ jobs:
           GOFLAGS: -mod=readonly
         run: |
           set -euo pipefail
-          test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_COMMIT}"
+          test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_REF}"
           mkdir -p "${RUNNER_TEMP}/bin"
           (cd praetor-src && go mod download && go mod verify \
             && go vet ./cmd/standardsctl \
