@@ -251,7 +251,11 @@ and never gate. It checks twice: against the declared fragments, then against th
 from the verified source; a missing resolved `.config` is an error, not a pass. A resolved
 `.config` is accepted only for the leg its Kconfig header names (`# Linux/<ARCH> <release>
 Kernel Configuration`); `mainstream` and `realtime` share a release, so the header cannot tell
-those two apart. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).
+those two apart. When a document specifies `abi.module-abi`, the verifier checks it against the
+kernel release recorded in `--build-record STREAM:ARCH=PATH` for each bound stream on each listed
+architecture ([ADR-0015](adr/0015-module-abi-from-the-build-record.md)); `verify-requirements.yml`
+builds no kernels and provides no build records, so any document setting `abi.module-abi` fails
+there. The policy and the contract are [ADR-0007](adr/0007-document-driven-kernel-requirements.md).
 
 ### 5.1 The owner's JSON Schema
 

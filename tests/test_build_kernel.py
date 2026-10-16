@@ -8,11 +8,13 @@ every request that cannot produce an honest artifact is refused before anything 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -297,6 +299,108 @@ def test_no_placeholder_artifact_survives_in_the_build_script():
     assert "touch " not in text
     assert "/dev/urandom" not in text
     assert "-lusoris1" not in text, "the revision comes from --revision, not a literal"
+
+
+def _extract_record_py() -> str:
+    text = BUILD.read_text(encoding="utf-8")
+    match = re.search(r"readonly RECORD_PY='(.*?)'\n\n", text, re.DOTALL)
+    assert match is not None
+    return match.group(1)
+
+
+def test_record_py_records_module_symvers_sha256_and_symbols(tmp_path):
+    record_py = _extract_record_py()
+    record_file = tmp_path / "build.json"
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    config_file = out_dir / "kernel-mainstream-x86_64.config"
+    config_file.write_text("CONFIG_FOO=y\n", encoding="utf-8")
+
+    symvers = tmp_path / "Module.symvers"
+    symvers_content = (
+        "0x12345678\tfoo\tvmlinux\tEXPORT_SYMBOL\n0x87654321\tbar\tvmlinux\tEXPORT_SYMBOL_GPL\n"
+    )
+    symvers.write_text(symvers_content, encoding="utf-8")
+
+    res = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            record_py,
+            str(record_file),
+            str(out_dir),
+            str(symvers),
+            "stream=mainstream",
+            "arch=x86_64",
+            "version=7.2.10",
+            "kernelversion=7.2.10",
+            "revision=1",
+            "localversion=-lusoris1-mainstream",
+            "kernelrelease=7.2.10-lusoris1-mainstream",
+            "package_version=7.2.10-lusoris1",
+            "kernel_arch=x86",
+            "debian_arch=amd64",
+            "cross_compile=",
+            "host_arch=x86_64",
+            "profiles=",
+            "source_date_epoch=1234567890",
+            "build_timestamp=2026-10-16",
+            "build_seconds=42",
+            "config=kernel-mainstream-x86_64.config",
+            f"output_dir={out_dir}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    data = json.loads(record_file.read_text(encoding="utf-8"))
+    assert data["module_symvers_sha256"] == hashlib.sha256(symvers.read_bytes()).hexdigest()
+    assert data["module_symbols"] == 2
+    assert data["kernelrelease"] == "7.2.10-lusoris1-mainstream"
+
+
+def test_record_py_fails_when_module_symvers_missing(tmp_path):
+    record_py = _extract_record_py()
+    record_file = tmp_path / "build.json"
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    config_file = out_dir / "kernel-mainstream-x86_64.config"
+    config_file.write_text("CONFIG_FOO=y\n", encoding="utf-8")
+    missing_symvers = tmp_path / "nonexistent-Module.symvers"
+
+    res = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            record_py,
+            str(record_file),
+            str(out_dir),
+            str(missing_symvers),
+            "stream=mainstream",
+            "arch=x86_64",
+            "version=7.2.10",
+            "kernelversion=7.2.10",
+            "revision=1",
+            "localversion=-lusoris1-mainstream",
+            "kernelrelease=7.2.10-lusoris1-mainstream",
+            "package_version=7.2.10-lusoris1",
+            "kernel_arch=x86",
+            "debian_arch=amd64",
+            "cross_compile=",
+            "host_arch=x86_64",
+            "profiles=",
+            "source_date_epoch=1234567890",
+            "build_timestamp=2026-10-16",
+            "build_seconds=42",
+            "config=kernel-mainstream-x86_64.config",
+            f"output_dir={out_dir}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode != 0
 
 
 # --- package-deb.sh (issue #31) -----------------------------------------------------------------

@@ -162,7 +162,8 @@ What is not done: no UKI is built from a nucleus kernel yet (`package-uki.sh` ne
 and per-architecture stubs); arm64 and riscv64 kernels are compiled and gated but not booted;
 a release is x86_64 only, because
 `imago.nucleus.kernel-artifact.v1` has no architecture field; and `verify_kernel_requirement.py`
-still reports the module ABI as unverifiable, since it reads configurations, not build records.
+checks the module ABI against the build record's kernel release when one is given; `verify-requirements.yml`
+builds nothing, so a document that sets `module-abi` fails there.
 
 `scripts/package-uki.sh` had two placeholders of the same class, both removed under
 issue #21. It copied `vmlinuz` to a `.efi` name when `ukify` was absent, and it fell
