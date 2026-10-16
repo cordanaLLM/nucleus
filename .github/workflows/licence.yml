@@ -14,7 +14,8 @@ permissions:
 
 concurrency:
   group: licence-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a pull request cancels its running run; a run for main is never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   reuse:
