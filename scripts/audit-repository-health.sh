@@ -82,11 +82,11 @@ audit_manifest_schema() {
   echo "==> [4/7] Auditing versions.json against versions.schema.json..."
   python3 -c "
 import json, jsonschema, sys
-with open('${ROOT_DIR}/versions.schema.json') as sf, open('${ROOT_DIR}/versions.json') as mf:
+with open(sys.argv[1], encoding='utf-8') as sf, open(sys.argv[2], encoding='utf-8') as mf:
     schema = json.load(sf)
     manifest = json.load(mf)
     jsonschema.validate(instance=manifest, schema=schema)
-" || {
+" "${ROOT_DIR}/versions.schema.json" "${ROOT_DIR}/versions.json" || {
     echo "    Error: versions.json failed schema validation!"
     return 1
   }
@@ -96,12 +96,10 @@ with open('${ROOT_DIR}/versions.schema.json') as sf, open('${ROOT_DIR}/versions.
 audit_stream_synchrony() {
   echo "==> [5/7] Auditing stream synchrony across versions.json, docs, and build scripts..."
   local streams
-  streams=$(python3 -c "
-import json
-with open('${ROOT_DIR}/versions.json') as f:
-    data = json.load(f)
-    print(' '.join(data.get('streams', {}).keys()))
-")
+  if ! streams="$(python3 "${ROOT_DIR}/scripts/versions_query.py" --versions="${ROOT_DIR}/versions.json" list streams)"; then
+    echo "    Error: Failed to query streams from versions.json" >&2
+    return 1
+  fi
 
   for s in ${streams}; do
     if ! python3 "${ROOT_DIR}/scripts/versions_query.py" --versions="${ROOT_DIR}/versions.json" source "${s}" >/dev/null; then
@@ -113,7 +111,7 @@ with open('${ROOT_DIR}/versions.json') as f:
       return 1
     fi
   done
-  echo "    ✓ All streams (${streams}) synchronized across manifest, build source, and docs."
+  echo "    ✓ All streams (${streams//$'\n'/ }) synchronized across manifest, build source, and docs."
 }
 
 audit_static_linters() {
