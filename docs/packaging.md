@@ -247,14 +247,25 @@ Exit status 0 passes, 1 refuses and lists every finding, 2 means the request can
 
 ### 2.5 Boot Smoke Test
 
-Every x86_64 kernel is booted to userspace before it is kept: each x86_64 leg of the matrix
+Every built kernel is booted to userspace before it is kept: each leg of the matrix
 after its build, and the release kernel in `publish-release.yml`'s build container, before
 anything is checksummed or signed.
 `scripts/boot_smoke.py` compiles a static `init` that prints the running kernel's release and
-powers the machine off, packs it with a `/dev/console` node into a newc initramfs, and boots:
+powers the machine off, packs it with a `/dev/console` node into a newc initramfs, and boots
+under QEMU (TCG). For `x86_64` it compiles a libc-based init; for `arm64` and `riscv64` it compiles
+a freestanding C init with raw syscalls and decompresses the gzip `vmlinuz` Image before boot:
 
 ```bash
+# x86_64
 qemu-system-x86_64 -accel tcg -m 512M -smp 1 -kernel vmlinuz-<kernelrelease> \
+  -initrd <initramfs> -append 'console=ttyS0 panic=-1 rdinit=/init' -nographic -no-reboot
+
+# arm64
+qemu-system-aarch64 -M virt -cpu max -accel tcg -m 512M -smp 1 -kernel <Image> \
+  -initrd <initramfs> -append 'console=ttyAMA0 panic=-1 rdinit=/init' -nographic -no-reboot
+
+# riscv64
+qemu-system-riscv64 -M virt -bios default -accel tcg -m 512M -smp 1 -kernel <Image> \
   -initrd <initramfs> -append 'console=ttyS0 panic=-1 rdinit=/init' -nographic -no-reboot
 ```
 
@@ -264,7 +275,8 @@ QEMU at once (`panic=-1` with `-no-reboot`); a hang is killed at the timeout. Lo
 x86_64 kernels booted under TCG in 4 to 21 s.
 
 ```bash
-python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
+python3 scripts/boot_smoke.py --arch=x86_64 \
+  --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
   --kernelrelease=7.2.10-lusoris1-mainstream --log=boot.log
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```

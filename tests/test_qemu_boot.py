@@ -7,6 +7,8 @@ kernel runs in the build-matrix workflow on every x86_64 leg, and in the evidenc
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -253,3 +255,227 @@ def test_a_compiler_that_fails_is_refused_with_its_message(tmp_path):
     assert result.returncode == 2
     assert "could not build a static init" in result.stderr
     assert "planted: cannot find -lc" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("arch", "machine_args", "console", "qemu"),
+    [
+        ("x86_64", [], "ttyS0", "qemu-system-x86_64"),
+        ("arm64", ["-M", "virt", "-cpu", "max", "-nic", "none"], "ttyAMA0", "qemu-system-aarch64"),
+        (
+            "riscv64",
+            ["-M", "virt", "-bios", "default", "-nic", "none"],
+            "ttyS0",
+            "qemu-system-riscv64",
+        ),
+    ],
+)
+def test_qemu_command_per_arch(arch, machine_args, console, qemu):
+    args = boot_smoke._parser().parse_args(
+        [f"--arch={arch}", "--kernel=/k", f"--kernelrelease={KR}"]
+    )
+    command = boot_smoke.qemu_command(args, Path("/initrd"))
+    expected = [
+        qemu,
+        *machine_args,
+        "-accel",
+        "tcg",
+        "-m",
+        "512M",
+        "-smp",
+        "1",
+        "-kernel",
+        "/k",
+        "-initrd",
+        "/initrd",
+        "-append",
+        f"console={console} panic=-1 rdinit=/init",
+        "-nographic",
+        "-no-reboot",
+    ]
+    assert command == expected
+
+
+def test_qemu_command_console_override():
+    args = boot_smoke._parser().parse_args(
+        ["--arch=arm64", "--kernel=/k", f"--kernelrelease={KR}", "--console=ttyS9"]
+    )
+    command = boot_smoke.qemu_command(args, Path("/initrd"))
+    append = command[command.index("-append") + 1]
+    assert "console=ttyS9" in append
+
+
+def test_init_source_selection():
+    x86_src = boot_smoke.init_source("x86_64")
+    arm_src = boot_smoke.init_source("arm64")
+    riscv_src = boot_smoke.init_source("riscv64")
+
+    assert "#include <stdio.h>" in x86_src
+    assert "main(void)" in x86_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in x86_src
+
+    assert "svc #0" in arm_src
+    assert "SYS_uname 160" in arm_src
+    assert "SYS_write 64" in arm_src
+    assert "SYS_sync 81" in arm_src
+    assert "SYS_reboot 142" in arm_src
+    assert "SYS_exit 93" in arm_src
+    assert "_start" in arm_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in arm_src
+
+    assert "ecall" in riscv_src
+    assert "SYS_uname 160" in riscv_src
+    assert "SYS_write 64" in riscv_src
+    assert "SYS_sync 81" in riscv_src
+    assert "SYS_reboot 142" in riscv_src
+    assert "SYS_exit 93" in riscv_src
+    assert "_start" in riscv_src
+    assert "NUCLEUS-BOOT-SMOKE release=" in riscv_src
+
+    with pytest.raises(boot_smoke.SmokeError, match="unsupported architecture"):
+        boot_smoke.init_source("unknown_arch")
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_freestanding_init_needs_no_libc_copy(arch):
+    """A string array built on the stack makes gcc call memcpy, which -nostdlib cannot link.
+
+    Ubuntu's riscv64-linux-gnu-gcc 15.2 did exactly that for the prefix (build-matrix run
+    38917396118); only static or file-scope arrays live in .rodata without a copy.
+    """
+    src = boot_smoke.init_source(arch)
+    assert not re.search(r"^\s+(?!static\b)(const\s+)?char\s+\w+\[\]\s*=", src, re.MULTILINE)
+
+
+@pytest.mark.parametrize("arch", ["x86_64", "arm64", "riscv64"])
+def test_init_drains_console_before_power_off(arch):
+    """sync() does not wait for the serial line; without a drain, power-off cut the release.
+
+    bleeding/arm64 printed 'NUCLEUS-BOOT-SMOKE release=' and nothing more (run 38917396118).
+    """
+    src = boot_smoke.init_source(arch)
+    drain = (
+        src.find("tcdrain(STDOUT_FILENO)")
+        if arch == "x86_64"
+        else src.find("sys_ioctl(1, TCSBRK, 1)")
+    )
+    power_off = (
+        src.rfind("RB_POWER_OFF")
+        if arch == "x86_64"
+        else src.rfind("LINUX_REBOOT_CMD_POWER_OFF, 0)")
+    )
+    assert 0 <= drain < power_off
+    if arch != "x86_64":
+        assert "#define TCSBRK 0x5409" in src
+        assert "#define SYS_ioctl 29" in src
+
+
+def test_decompress_kernel_x86_passthrough(tmp_path):
+    k = tmp_path / "vmlinuz"
+    k.write_bytes(b"plain-x86-bzImage")
+    assert boot_smoke.decompress_kernel(k, "x86_64", tmp_path) == k
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_non_gzip_refused(tmp_path, arch):
+    k = tmp_path / f"vmlinuz-{arch}"
+    k.write_bytes(b"not-gzip-data")
+    with pytest.raises(boot_smoke.SmokeError, match="not a gzip-compressed Image"):
+        boot_smoke.decompress_kernel(k, arch, tmp_path)
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_oversize_refused(tmp_path, arch, monkeypatch):
+    import gzip
+
+    k = tmp_path / f"vmlinuz-{arch}.gz"
+    k.write_bytes(gzip.compress(b"x" * 1024))
+    monkeypatch.setattr(boot_smoke, "MAX_IMAGE_BYTES", 512)
+    with pytest.raises(boot_smoke.SmokeError, match="within 512 bytes"):
+        boot_smoke.decompress_kernel(k, arch, tmp_path)
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_decompress_kernel_success(tmp_path, arch):
+    import gzip
+
+    k = tmp_path / f"vmlinuz-{arch}.gz"
+    payload = b"uncompressed-kernel-Image-bytes"
+    k.write_bytes(gzip.compress(payload))
+    out = boot_smoke.decompress_kernel(k, arch, tmp_path)
+    assert out.is_file()
+    assert out.read_bytes() == payload
+
+
+@pytest.mark.parametrize("arch", ["arm64", "riscv64"])
+def test_fake_qemu_missing_init_line_fails_verdict_on_arch(tmp_path, arch):
+    import gzip
+
+    kernel = tmp_path / f"vmlinuz-{arch}"
+    kernel.write_bytes(gzip.compress(b"fake-image"))
+    stub = _stub(tmp_path, f"printf '%s' '{BANNER}'")
+    init = tmp_path / "init"
+    init.write_bytes(b"\x7fELF")
+    res = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--arch={arch}",
+            f"--kernel={kernel}",
+            f"--kernelrelease={KR}",
+            f"--qemu={stub}",
+            f"--init-binary={init}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 1
+    assert "init never printed" in res.stderr
+
+
+def test_default_cc_selection(monkeypatch):
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.setattr(boot_smoke.platform, "machine", lambda: "x86_64")
+    assert boot_smoke.default_cc("x86_64") == "gcc"
+    assert boot_smoke.default_cc("arm64") == "aarch64-linux-gnu-gcc"
+    assert boot_smoke.default_cc("riscv64") == "riscv64-linux-gnu-gcc"
+
+    monkeypatch.setattr(boot_smoke.platform, "machine", lambda: "aarch64")
+    assert boot_smoke.default_cc("arm64") == "gcc"
+
+    monkeypatch.setenv("CC", "my-custom-cc")
+    assert boot_smoke.default_cc("x86_64") == "my-custom-cc"
+    assert boot_smoke.default_cc("arm64") == "my-custom-cc"
+    assert boot_smoke.default_cc("riscv64") == "my-custom-cc"
+
+
+# The Ubuntu 26.04 package that ships each QEMU binary boot_smoke.py runs, from the package file
+# lists at packages.ubuntu.com/resolute (checked 2026-10-16). qemu-system-misc no longer ships
+# qemu-system-riscv64; qemu-system-riscv does.
+QEMU_BINARY_PACKAGE = {
+    "qemu-system-x86_64": "qemu-system-x86",
+    "qemu-system-aarch64": "qemu-system-arm",
+    "qemu-system-riscv64": "qemu-system-riscv",
+}
+
+
+@pytest.mark.parametrize("arch", ["x86_64", "arm64", "riscv64"])
+def test_toolchain_installs_the_package_that_ships_the_arch_qemu(tmp_path, arch):
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    log = tmp_path / "apt.log"
+    stub = stub_dir / "apt-get"
+    stub.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub_dir}:{os.environ['PATH']}", "ARCH": arch}
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "install-build-toolchain.sh"), "--with-qemu"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    installed = log.read_text().split("install", 1)[1].split()
+    assert QEMU_BINARY_PACKAGE[boot_smoke.DEFAULT_QEMU[arch]] in installed

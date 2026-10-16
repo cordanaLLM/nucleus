@@ -110,12 +110,13 @@ Or directly via the build script:
 
 ## 5. MicroVM Boot Verification Matrix
 
-Automated microVM boot testing under QEMU is implemented for `x86_64` kernels only (`scripts/boot_smoke.py`). In CI (`.github/workflows/build-matrix.yml`), `x86_64` builds boot a static init in QEMU (TCG) and require the kernel banner and init marker within the timeout. Target `arm64` builds run natively on hosted ARM runners (`ubuntu-24.04-arm`) and are verified by the artifact gate (`scripts/check_kernel_artifacts.py`) without QEMU boot testing; `riscv64` targets are cross-compiled and artifact-gated without QEMU boot testing.
+Automated microVM boot testing under QEMU is implemented across all supported architectures (`scripts/boot_smoke.py`). In CI (`.github/workflows/build-matrix.yml`), builds for `x86_64`, `arm64`, and `riscv64` boot a static init in QEMU (TCG) and require the kernel banner and init marker within the timeout. For `arm64` and `riscv64`, the workflow also proves that a nonexistent console device refuses the boot when the console stays silent.
 
 ```bash
-# Automated x86_64 boot smoke test (scripts/boot_smoke.py)
+# Automated boot smoke test across architectures (scripts/boot_smoke.py)
 python3 scripts/boot_smoke.py \
-  --kernel=output/mainstream-x86_64/vmlinuz-<kernelrelease> \
+  --arch=<arch> \
+  --kernel=output/<stream>-<arch>/vmlinuz-<kernelrelease> \
   --kernelrelease=<kernelrelease>
 ```
 
@@ -123,4 +124,4 @@ The smoke test verifies:
 
 1. Detection of `Linux version <kernelrelease>` from the serial console.
 2. The static `/init` printed its `NUCLEUS-BOOT-SMOKE release=<kernelrelease>` line.
-3. QEMU exited before the timeout: the init powers the machine off with `reboot(RB_POWER_OFF)`, and a run killed at the timeout fails.
+3. QEMU exited before the timeout: the init powers the machine off with `reboot(LINUX_REBOOT_CMD_POWER_OFF)`, and a run killed at the timeout fails.
