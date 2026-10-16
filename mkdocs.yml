@@ -86,6 +86,7 @@ nav:
       - ADR-0011 BPF Trampolines & Release Revisions: adr/0011-bpf-trampoline-ftrace-and-release-revisions.md
       - ADR-0012 SLSA Build Level 3 Reusable Workflow: adr/0012-slsa-build-level-3-reusable-workflow.md
       - ADR-0013 BTF on Every Architecture: adr/0013-btf-on-every-architecture.md
+      - ADR-0015 Module ABI from the Build Record: adr/0015-module-abi-from-the-build-record.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

@@ -653,11 +653,50 @@ def test_an_architecture_this_forge_does_not_build_fails():
     assert reason == f"{CID}: alpha arm64: this forge builds no arm64 kernel"
 
 
-def test_a_module_abi_fails_closed_before_a_kernel_is_built():
-    req = _requirement(KVM_MODULE, module_abi="6.9.4-1-cachyos")
+def test_a_module_abi_without_build_record_fails_naming_stream_and_arch():
+    req = _requirement(KVM_MODULE, minimum="6.9.4", module_abi="6.9.4-1-cachyos")
     verdict = vkr.decide(req, [_stream(req, "alpha", "6.9.4", True, x86_64=MET)])
     assert (verdict.satisfied, verdict.held) == (False, ())
-    assert "module-abi 6.9.4-1-cachyos" in verdict.reasons[0] and "#18" in verdict.reasons[0]
+    assert verdict.reasons == (
+        f"{CID}: abi.module-abi 6.9.4-1-cachyos: no build record for alpha on x86_64; it cannot be verified",
+    )
+
+
+def test_a_module_abi_mismatch_with_build_record_fails_with_both_values():
+    req = _requirement(KVM_MODULE, module_abi="7.2.8-lusoris2-realtime")
+    records = {
+        ("realtime", "x86_64"): {
+            "stream": "realtime",
+            "arch": "x86_64",
+            "kernelrelease": "7.2.8-lusoris1-realtime",
+        }
+    }
+    verdict = vkr.decide(
+        req, [_stream(req, "realtime", "7.2.8", True, x86_64=MET)], build_records=records
+    )
+    assert (verdict.satisfied, verdict.held) == (False, ())
+    (reason,) = verdict.reasons
+    assert reason == (
+        f"{CID}: abi.module-abi 7.2.8-lusoris2-realtime does not match realtime on x86_64: "
+        "observed kernel release 7.2.8-lusoris1-realtime"
+    )
+    assert "7.2.8-lusoris2-realtime" in reason and "7.2.8-lusoris1-realtime" in reason
+
+
+def test_a_module_abi_matching_build_record_passes():
+    req = _requirement(KVM_MODULE, module_abi="7.2.8-lusoris1-realtime")
+    records = {
+        ("realtime", "x86_64"): {
+            "stream": "realtime",
+            "arch": "x86_64",
+            "kernelrelease": "7.2.8-lusoris1-realtime",
+        }
+    }
+    verdict = vkr.decide(
+        req, [_stream(req, "realtime", "7.2.8", True, x86_64=MET)], build_records=records
+    )
+    assert verdict.satisfied and verdict.held == ("realtime",)
+    assert verdict.reasons == ()
 
 
 def test_a_document_no_stream_is_bound_to_fails():
@@ -949,6 +988,66 @@ def test_main_refuses_a_resolved_config_without_a_kconfig_header(tmp_path, capsy
         _cli(tmp_path, f"--resolved-config=lts:x86_64={path}")
     assert info.value.code == 2
     assert "Kernel Configuration' header" in capsys.readouterr().err
+
+
+def test_main_refuses_a_build_record_with_wrong_stream_key(tmp_path, capsys):
+    record = tmp_path / "build.json"
+    record.write_text(
+        json.dumps(
+            {
+                "stream": "mainstream",
+                "arch": "x86_64",
+                "kernelrelease": "7.2.8-lusoris1-mainstream",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--build-record=realtime:x86_64={record}")
+    assert info.value.code == 2
+    assert "differs from key realtime:x86_64" in capsys.readouterr().err
+
+
+def test_main_refuses_a_build_record_without_kernelrelease(tmp_path, capsys):
+    record = tmp_path / "build.json"
+    record.write_text(
+        json.dumps(
+            {
+                "stream": "realtime",
+                "arch": "x86_64",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as info:
+        _cli(tmp_path, f"--build-record=realtime:x86_64={record}")
+    assert info.value.code == 2
+    assert "kernelrelease missing" in capsys.readouterr().err
+
+
+def test_main_evaluates_module_abi_with_build_record(tmp_path, capsys):
+    record = tmp_path / "build.json"
+    record.write_text(
+        json.dumps(
+            {
+                "stream": "realtime",
+                "arch": "x86_64",
+                "kernelrelease": "7.2.8-lusoris1-realtime",
+            }
+        ),
+        encoding="utf-8",
+    )
+    raw = (FIXTURES / "aegis-os.json").read_bytes()
+    doc = json.loads(raw)
+    doc["abi"]["module-abi"] = "7.2.8-lusoris1-realtime"
+    code = _cli(
+        tmp_path,
+        f"--build-record=realtime:x86_64={record}",
+        aegis=json.dumps(doc).encode("utf-8"),
+    )
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "PASS: held by realtime" in out
 
 
 def _plan(tmp_path: Path, **documents) -> dict:

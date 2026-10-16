@@ -263,24 +263,33 @@ collect_artifacts() {
   fi
 }
 
+check_module_symvers() {
+  local symvers="${KBUILD_DIR}/Module.symvers"
+  [[ -f "${symvers}" ]] || refuse "Module.symvers is missing at ${symvers} after the build"
+  [[ -s "${symvers}" ]] || refuse "Module.symvers is empty at ${symvers} after the build"
+}
+
 # The record is what the release reads: the measured kernelrelease and the digest of the
 # configuration that went into the packages. Values reach Python as arguments, never as code.
 readonly RECORD_PY='
 import hashlib, json, sys
 from pathlib import Path
-record_path, out = Path(sys.argv[1]), Path(sys.argv[2])
-record = dict(arg.split("=", 1) for arg in sys.argv[3:])
+record_path, out, symvers_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+record = dict(arg.split("=", 1) for arg in sys.argv[4:])
 for key in ("revision", "source_date_epoch", "build_seconds"):
     record[key] = int(record[key])
 record["profiles"] = record["profiles"].split()
 config = out / record["config"]
 record["config_sha256"] = hashlib.sha256(config.read_bytes()).hexdigest()
+symvers_bytes = symvers_path.read_bytes()
+record["module_symvers_sha256"] = hashlib.sha256(symvers_bytes).hexdigest()
+record["module_symbols"] = len(symvers_bytes.splitlines())
 record["artifacts"] = sorted(path.name for path in out.iterdir())
 record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 '
 
 write_record() {
-  python3 -c "${RECORD_PY}" "${LEG_DIR}/build.json" "${OUTPUT_DIR}" \
+  python3 -c "${RECORD_PY}" "${LEG_DIR}/build.json" "${OUTPUT_DIR}" "${KBUILD_DIR}/Module.symvers" \
     "stream=${STREAM}" "arch=${ARCH}" "version=${SRC[version]}" "kernelversion=${SRC[kernelversion]}" \
     "revision=${REVISION}" "localversion=${LOCAL_VERSION}" "kernelrelease=${KERNELRELEASE}" \
     "package_version=${PACKAGE_VERSION}" "kernel_arch=${ARC[kernel_arch]}" \
@@ -314,6 +323,7 @@ main() {
   resolve_config
   compile_packages
   collect_artifacts
+  check_module_symvers
   run_gate
   write_record
   echo "==> ${STREAM}/${ARCH}: ${KERNELRELEASE} in ${OUTPUT_DIR}, record ${LEG_DIR}/build.json"

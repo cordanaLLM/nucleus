@@ -18,8 +18,9 @@ The policy is docs/adr/0007-document-driven-kernel-requirements.md:
   release is at least ``abi.minimum-release`` and every feature is in exactly its state;
 - the other streams are evaluated and reported, and never gate;
 - ``abi.target-release`` is recorded and never checked;
-- ``abi.module-abi`` names the release of a built kernel, and none exists before issue
-  #18, so a document that sets it fails closed.
+- ``abi.module-abi`` names the release of a built kernel, and is verified against
+  the kernel release recorded in ``--build-record STREAM:ARCH=PATH`` for every bound
+  stream on every listed architecture; without one it fails closed.
 
 Two evidence levels (docs/adr/0008-signed-kernel-sources-and-resolved-configuration.md):
 
@@ -721,13 +722,18 @@ def stream_failures(correlation_id: str, minimum: str, result: StreamResult) -> 
     return out
 
 
-def decide(requirement: Requirement, results: Sequence[StreamResult]) -> Verdict:
+def decide(
+    requirement: Requirement,
+    results: Sequence[StreamResult],
+    build_records: Mapping[tuple[str, str], Mapping[str, object]] | None = None,
+) -> Verdict:
     """Every bound stream must hold the document, or it fails (docs/adr/0007).
 
     A bound stream holds when its release is at least minimum-release and every feature is
     in its required state on every listed architecture. Unbound streams never gate, and
-    target-release is never consulted. module-abi fails closed: it names the release of a
-    built kernel, and none exists before issue #18. ``held`` names the bound streams that
+    target-release is never consulted. module-abi is verified against the kernelrelease
+    recorded in build_records for every bound stream and listed architecture; missing
+    or mismatched records fail closed. ``held`` names the bound streams that
     passed; every reason carries the correlation-id, the stream, and for a feature the
     architecture, symbol, required-by, required state and observed value.
     """
@@ -737,14 +743,32 @@ def decide(requirement: Requirement, results: Sequence[StreamResult]) -> Verdict
     if not bound:
         reasons.append(f"{correlation_id}: no stream is bound to this requirement")
     module_abi = requirement.abi.module_abi
+    abi_failed_streams: set[str] = set()
     if module_abi is not None:
-        reasons.append(
-            f"{correlation_id}: abi.module-abi {module_abi} names the release of a built "
-            "kernel; none exists before issue #18, so it cannot be verified"
-        )
+        records = build_records or {}
+        arches = [
+            ARCHITECTURES.get(token, token) for token in dict.fromkeys(requirement.architectures)
+        ]
+        for result in bound:
+            for arch in arches:
+                record = records.get((result.stream, arch))
+                if record is None:
+                    reasons.append(
+                        f"{correlation_id}: abi.module-abi {module_abi}: no build record for "
+                        f"{result.stream} on {arch}; it cannot be verified"
+                    )
+                    abi_failed_streams.add(result.stream)
+                else:
+                    observed = record.get("kernelrelease")
+                    if observed != module_abi:
+                        reasons.append(
+                            f"{correlation_id}: abi.module-abi {module_abi} does not match "
+                            f"{result.stream} on {arch}: observed kernel release {observed}"
+                        )
+                        abi_failed_streams.add(result.stream)
     for result in bound:
         reasons.extend(stream_failures(correlation_id, requirement.abi.minimum_release, result))
-    held = () if module_abi is not None else tuple(r.stream for r in bound if r.satisfied)
+    held = tuple(r.stream for r in bound if r.satisfied and r.stream not in abi_failed_streams)
     return Verdict(not reasons, held, tuple(reasons))
 
 
@@ -757,6 +781,7 @@ def verify_document(
     expected_sha256: str | None = None,
     expected_correlation_id: str | None = None,
     resolved: Resolved | None = None,
+    build_records: Mapping[tuple[str, str], Mapping[str, object]] | None = None,
 ) -> Outcome:
     """Parse, evaluate and decide one document; a refused document is REJECTED, not raised.
 
@@ -786,7 +811,7 @@ def verify_document(
             message = f"no resolved configuration for {', '.join(missing)}"
             return Outcome(source, "ERROR", error_kind="MissingEvidence", error=message)
     results = evaluate_streams(requirement, versions, kconfig_dir, bound_streams, resolved)
-    verdict = decide(requirement, results)
+    verdict = decide(requirement, results, build_records)
     status = "PASS" if verdict.satisfied else "FAIL"
     return Outcome(source, status, requirement, tuple(bound_streams), results, verdict)
 
@@ -799,7 +824,7 @@ POLICY = {
     "architectures": "every architecture the document lists must pass",
     "minimum_release": "leading dotted numeric components, zero-padded, suffix ignored",
     "target_release": "recorded, never checked",
-    "module_abi": "fails closed until a built kernel exists (issue #18)",
+    "module_abi": "checked against the build record kernel release for every bound stream on every listed architecture",
     "runtime_probes": "checked through their kconfig symbol; the probe is deferred to boot",
 }
 
@@ -944,7 +969,7 @@ def _requirement_lines(requirement: Requirement) -> list[str]:
         f"target-release {target} (recorded, not checked)"
     ]
     if abi.module_abi is not None:
-        lines.append(f"  module-abi {abi.module_abi}: cannot be verified before issue #18")
+        lines.append(f"  module-abi {abi.module_abi}: checked against the build record")
     if requirement.artifact is None:
         lines.append("  artifact expectation: none")
     else:
@@ -1012,6 +1037,7 @@ class Options:
     report_json: Path | None
     resolved: dict[tuple[str, str], dict[str, str]] | None = None
     plan: Path | None = None
+    build_records: dict[tuple[str, str], dict[str, object]] | None = None
 
     @property
     def level(self) -> str:
@@ -1070,6 +1096,14 @@ def _parser() -> argparse.ArgumentParser:
         metavar="STREAM:ARCH=PATH",
         help="a resolved .config (scripts/merge-config.sh --source-tree); any one of them "
         "raises the evidence level to resolved",
+    )
+    add(
+        "--build-record",
+        action="append",
+        default=[],
+        metavar="STREAM:ARCH=PATH",
+        help="a build.json record (scripts/build_kernel.sh); used to verify "
+        "abi.module-abi against the compiled kernel release",
     )
     add(
         "--plan",
@@ -1141,6 +1175,41 @@ def _resolved_configs(
     return configs
 
 
+def _build_records(
+    values: Sequence[str], versions: Mapping[str, object]
+) -> dict[tuple[str, str], dict[str, object]] | None:
+    """--build-record values, each read as build.json; None when none is given."""
+    if not values:
+        return None
+    records: dict[tuple[str, str], dict[str, object]] = {}
+    for key, path in _pairs(values, "--build-record", None).items():
+        match = _RESOLVED_KEY.fullmatch(key)
+        if match is None:
+            raise ValueError(f"--build-record expects STREAM:ARCH=PATH, got {_shown(key)}")
+        stream, arch = match.groups()
+        if stream not in versions["streams"] or arch not in versions["architectures"]:
+            raise ValueError(f"--build-record {key}: versions.json builds no such kernel")
+        rec_path = Path(path)
+        try:
+            data = json.loads(rec_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"--build-record {key}: cannot read {rec_path}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"--build-record {key}: {rec_path} is not a JSON object")
+        rec_stream = data.get("stream")
+        rec_arch = data.get("arch")
+        if rec_stream != stream or rec_arch != arch:
+            raise ValueError(
+                f"--build-record {key}: {rec_path} records stream {rec_stream} on {rec_arch}, "
+                f"differs from key {key}"
+            )
+        kernelrelease = data.get("kernelrelease")
+        if not isinstance(kernelrelease, str) or not kernelrelease:
+            raise ValueError(f"--build-record {key}: {rec_path} kernelrelease missing")
+        records[(stream, arch)] = data
+    return records
+
+
 def _options(args: argparse.Namespace) -> Options:
     versions = json.loads(args.versions.read_text(encoding="utf-8"))
     rows = {row["label"]: row for row in versions["downstream"]["requirements"]}
@@ -1157,6 +1226,7 @@ def _options(args: argparse.Namespace) -> Options:
         report_json=args.report_json,
         resolved=_resolved_configs(args.resolved_config, versions),
         plan=args.plan,
+        build_records=_build_records(args.build_record, versions),
     )
     if args.nucleus_revision is not None and _REVISION.fullmatch(args.nucleus_revision) is None:
         raise ValueError("--nucleus-revision must be a full 40-character commit")
@@ -1199,6 +1269,7 @@ def _run_document(label: str, options: Options) -> Outcome:
             options.digests.get(label),
             options.correlation_ids.get(label),
             options.resolved,
+            options.build_records,
         )
     except (KconfigError, OSError) as exc:
         return Outcome(source, "ERROR", error_kind=type(exc).__name__, error=str(exc))
