@@ -897,8 +897,8 @@ def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
     would write to GitHub from a pull request job.
     """
     parsed = yaml.safe_load((WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))
-    pin = parsed["env"]["PRAETOR_COMMIT"]
-    assert re.fullmatch(r"[0-9a-f]{40}", pin), f"PRAETOR_COMMIT must be a full commit SHA: {pin}"
+    pin = parsed["env"]["PRAETOR_REF"]
+    assert re.fullmatch(r"[0-9a-f]{40}", pin), f"PRAETOR_REF must be a full commit SHA: {pin}"
     assert (REPO_ROOT / ".standards.lock").is_file(), ".standards.lock must be committed"
 
     steps = parsed["jobs"]["governance"]["steps"]
@@ -911,7 +911,7 @@ def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
     checkout = next(
         step for step in steps if step.get("with", {}).get("repository") == "cordanaLLM/praetor"
     )
-    assert checkout["with"]["ref"] == "${{ env.PRAETOR_COMMIT }}"
+    assert checkout["with"]["ref"] == "${{ env.PRAETOR_REF }}"
 
     commands = [
         step["run"].strip() for step in steps if "run" in step and step.get("name") != DRAFT_STEP
@@ -928,7 +928,44 @@ def test_praetor_pin_is_a_full_commit_and_governance_job_verifies_it():
     ]
     positions = [commands.index(command) for command in order]
     assert positions == sorted(positions), f"governance steps out of order: {commands}"
-    assert 'test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_COMMIT}"' in commands[0]
+    assert 'test "$(git -C praetor-src rev-parse HEAD)" = "${PRAETOR_REF}"' in commands[0]
+
+
+def test_hook_engine_finds_the_ci_pin():
+    """Git hook engine.sh declared_pins finds the PRAETOR_REF declared in ci.yml."""
+    engine_sh = REPO_ROOT / ".config" / "lefthook" / "engine.sh"
+    assert engine_sh.is_file(), f"missing engine script at {engine_sh}"
+    engine_content = engine_sh.read_text(encoding="utf-8")
+
+    pipeline = (
+        "tr -d '\\r' <\"$file\" | "
+        "sed -n 's/^[[:space:]]*PRAETOR_REF[[:space:]]*[:=][[:space:]]*//p' | "
+        "sed -e 's/[[:space:]]*#.*$//' "
+        '-e "s/^[\\"\']//" '
+        '-e "s/[\\"\'][[:space:]]*\\$//" '
+        "-e 's/[[:space:]]*$//'"
+    )
+    assert pipeline in engine_content, (
+        f"literal pipeline string from engine.sh not found in {engine_sh}"
+    )
+
+    found = []
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        cmd = f'file="{wf}"; {pipeline}'
+        res = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, check=True)
+        lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        found.extend(lines)
+
+    distinct = sorted(set(found))
+    assert len(distinct) == 1, (
+        f"expected exactly one distinct PRAETOR_REF value across workflows, found {distinct}"
+    )
+
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "ci.yml").read_text(encoding="utf-8"))
+    expected_pin = parsed["env"].get("PRAETOR_REF")
+    assert distinct[0] == expected_pin, (
+        f"hook pipeline found {distinct[0]!r}, expected ci.yml PRAETOR_REF {expected_pin!r}"
+    )
 
 
 def test_actionlint_passes():

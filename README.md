@@ -195,7 +195,7 @@ Output `.deb` packages, the kernel image and the resolved configuration are stag
 
 ### Governance Recipes
 
-The repository is governed by praetor, pinned as `PRAETOR_COMMIT` in `.github/workflows/ci.yml`
+The repository is governed by praetor, pinned as `PRAETOR_REF` in `.github/workflows/ci.yml`
 ([Repository Governance](docs/repository-governance.md)):
 
 ```bash
