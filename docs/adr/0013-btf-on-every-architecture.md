@@ -93,7 +93,7 @@ The changes were compiled, resolved, and verified in GitHub Actions workflow `bu
 
 ### Neutral
 
-- **sched-ext on riscv64**: While `CONFIG_SCHED_CLASS_EXT` requires `CONFIG_DEBUG_INFO_BTF`, `SCHED_CLASS_EXT` is not yet declared for riscv64; tracked in issue #160.
+- **sched-ext on riscv64**: with BTF in place, `kconfig/riscv64.config` declares `CONFIG_SCHED_CLASS_EXT=y` and the `sched-ext` claim covers every architecture (issue #160).
 - **Cross-Compilation Headers**: riscv64 builds continue to be cross-compiled and omit `linux-headers` packages.
 
 ---

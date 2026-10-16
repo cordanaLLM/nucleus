@@ -79,6 +79,15 @@ def test_btf_is_declared_with_its_chain_wherever_sched_ext_is():
         assert config.get("CONFIG_DEBUG_INFO_REDUCED") in (None, "n"), arch
 
 
+def test_every_architecture_fragment_declares_sched_ext():
+    """Every architecture fragment declares CONFIG_SCHED_CLASS_EXT=y (issue #160)."""
+    for arch in VERSIONS["architectures"]:
+        config = vkr.read_config(KCONFIG / f"{arch}.config")
+        assert config.get("CONFIG_SCHED_CLASS_EXT") == "y", (
+            f"kconfig/{arch}.config does not declare CONFIG_SCHED_CLASS_EXT=y"
+        )
+
+
 def test_every_architecture_fragment_declares_btf():
     """Every architecture fragment in kconfig/*.config must declare CONFIG_DEBUG_INFO_BTF=y."""
     for arch in VERSIONS["architectures"]:

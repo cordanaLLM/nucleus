@@ -72,6 +72,7 @@ All kernels in `cordanaLLM/nucleus` are compiled using the GNU Compiler Collecti
 - **KASLR**: `CONFIG_RANDOMIZE_BASE` (the security baseline) depends on `CONFIG_RELOCATABLE` on riscv since Linux 7.2, and the riscv defconfig leaves it unset, so `kconfig/riscv64.config` declares it.
 - **BPF trampolines**: `CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS` (the security baseline) needs `DYNAMIC_FTRACE_WITH_CALL_OPS` on riscv, which a `CFI` build loses, and `HAVE_DYNAMIC_FTRACE` needs GCC's `-fpatchable-function-entry=8` and, with compressed instructions (`RISCV_ISA_C`), `-fmin-function-alignment` ([ADR-0011](../adr/0011-bpf-trampoline-ftrace-and-release-revisions.md)).
 - **BTF for CO-RE eBPF**: `kconfig/riscv64.config` declares `CONFIG_DEBUG_KERNEL`, `CONFIG_DEBUG_INFO_DWARF5` and `CONFIG_DEBUG_INFO_BTF` so that BTF debug metadata is built into vmlinux (the build host needs pahole 1.22 or newer).
+- **sched-ext Dynamic Schedulers**: `kconfig/riscv64.config` declares `CONFIG_SCHED_CLASS_EXT=y` to enable BPF-extensible scheduler class policies; its dependency on `CONFIG_DEBUG_INFO_BTF` is met by the BTF chain declared beside it.
 
 ---
 
