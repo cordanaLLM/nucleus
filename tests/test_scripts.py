@@ -140,3 +140,32 @@ def test_shellcheck_clean():
     cmd = ["shellcheck", "-s", "bash"] + [str(s) for s in scripts]
     result = subprocess.run(cmd, capture_output=True, text=True)
     assert result.returncode == 0, f"ShellCheck failed:\n{result.stdout}\n{result.stderr}"
+
+
+# Each standalone script keeps its own refuse(): the scripts source no shared library (#156,
+# ledger nucleus-156-shell-prelude). This test keeps the copies identical instead.
+REFUSE_BODY = 'refuse() {\n  echo "Refused: $*" >&2\n  exit 1\n}'
+# fetch-kernel-requirements.sh runs only in CI and refuses as a workflow error annotation.
+REFUSE_ANNOTATION = {"fetch-kernel-requirements.sh"}
+_REFUSE = re.compile(r"^refuse\(\) *\{\n.*?^\}", re.MULTILINE | re.DOTALL)
+
+
+def refuse_drift(scripts: dict[str, str]) -> list[str]:
+    """Scripts whose refuse() differs from REFUSE_BODY, outside REFUSE_ANNOTATION."""
+    drift = []
+    for name, text in sorted(scripts.items()):
+        match = _REFUSE.search(text)
+        if match is not None and name not in REFUSE_ANNOTATION and match.group(0) != REFUSE_BODY:
+            drift.append(name)
+    return drift
+
+
+def test_every_refuse_copy_is_identical():
+    scripts = {
+        path.name: path.read_text(encoding="utf-8") for path in (REPO_ROOT / "scripts").glob("*.sh")
+    }
+    defining = sorted(name for name, text in scripts.items() if _REFUSE.search(text))
+    assert len(defining) >= 7, defining
+    assert refuse_drift(scripts) == []
+    planted = {"a.sh": REFUSE_BODY.replace("Refused: ", "Refused - ")}
+    assert refuse_drift(planted) == ["a.sh"]
