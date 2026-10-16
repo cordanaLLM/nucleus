@@ -252,6 +252,11 @@ ALLOW_LIST_ABSENT_PATHS = [
         "upstream kernel source tree coding style checker",
     ),
     (
+        "docs/patches.md",
+        "patches/common",
+        "directory layout declared in documentation while no carried patches exist",
+    ),
+    (
         "docs/hardware/amd-rocm.md",
         "kconfig/drivers",
         "document explicitly states no kconfig/drivers directory exists",
