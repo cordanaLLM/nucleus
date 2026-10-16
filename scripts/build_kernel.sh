@@ -135,6 +135,7 @@ state_plan() {
     echo "    source:  ${source} (verified by scripts/fetch-kernel-source.sh)"
   fi
   echo "    resolve: scripts/merge-config.sh --arch=${ARCH} --stream=${STREAM} --source-tree=${source} --build-dir=${KBUILD_DIR} --output=${OUTPUT_DIR}/kernel-${STREAM}-${ARCH}.config"
+  echo "    wrapper: date wrapper (${LEG_DIR}/date-wrapper/date) prepended to PATH for bindeb-pkg (pins debian/changelog via SOURCE_DATE_EPOCH)"
   echo "    build:   DEB_BUILD_PROFILES='${PROFILES}' make O=${KBUILD_DIR} ARCH=${ARC[kernel_arch]} CROSS_COMPILE=${ARC[cross_compile]} -j${JOBS} bindeb-pkg LOCALVERSION=${LOCAL_VERSION} KDEB_PKGVERSION=${PACKAGE_VERSION}"
   echo "    env:     SOURCE_DATE_EPOCH and KBUILD_BUILD_TIMESTAMP from the source release, KBUILD_BUILD_USER=nucleus, KBUILD_BUILD_HOST=forge"
   echo "    record:  make -s kernelrelease (expected ${SRC[kernelversion]}${LOCAL_VERSION}), ${LEG_DIR}/build.json"
@@ -144,7 +145,7 @@ state_plan() {
 
 check_tools() {
   local tool
-  for tool in make python3 dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install "${ARC[cross_compile]}gcc"; do
+  for tool in make python3 dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install date "${ARC[cross_compile]}gcc"; do
     command -v "${tool}" >/dev/null 2>&1 || refuse "${tool} is required to build ${ARCH} packages and is not installed"
   done
   if ! gnu_install >/dev/null; then
@@ -196,6 +197,7 @@ prepare_dirs() {
   KBUILD_DIR="${LEG_DIR}/kbuild"
   # Packages of an earlier build of this leg would otherwise be collected with this one, and its
   # record would still claim a gated kernel if this build fails.
+  rm -rf "${LEG_DIR}/date-wrapper"
   rm -f "${LEG_DIR}"/*.deb "${LEG_DIR}"/*.buildinfo "${LEG_DIR}"/*.changes "${LEG_DIR}/build.json"
 }
 
@@ -208,9 +210,11 @@ obtain_source() {
 }
 
 # The kernel image carries no clock and no builder identity: its timestamp is the release
-# commit's, which git archive gives every file in the tree, the Makefile included. The packages
-# still carry the wall clock: scripts/package/mkdebian dates debian/changelog with `date -R`, and
-# every package ships that as changelog.Debian.gz (docs/adr/0009, Consequences).
+# commit's, which git archive gives every file in the tree, the Makefile included.
+# scripts/package/mkdebian dates debian/changelog with `date -R`, which compile_packages
+# answers from SOURCE_DATE_EPOCH through a wrapper on the bindeb-pkg PATH; module signatures
+# still differ per build (issue #77). mkdebian names the maintainer from DEBFULLNAME and DEBEMAIL before
+# KBUILD_BUILD_USER and KBUILD_BUILD_HOST, so a builder's own values are dropped.
 fixed_environment() {
   local epoch
   epoch="$(stat -c %Y "${SOURCE_TREE}/Makefile")"
@@ -218,6 +222,7 @@ fixed_environment() {
   export SOURCE_DATE_EPOCH="${epoch}"
   KBUILD_BUILD_TIMESTAMP="$(LC_ALL=C TZ=UTC date -u -d "@${epoch}")"
   export KBUILD_BUILD_TIMESTAMP KBUILD_BUILD_USER="nucleus" KBUILD_BUILD_HOST="forge"
+  unset DEBFULLNAME DEBEMAIL
   export LC_ALL=C TZ=UTC DEB_BUILD_PROFILES="${PROFILES}"
   echo "==> SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} (${KBUILD_BUILD_TIMESTAMP}), profiles: ${PROFILES}"
 }
@@ -232,11 +237,29 @@ kernel_make() {
     CROSS_COMPILE="${ARC[cross_compile]}" LOCALVERSION="${LOCAL_VERSION}" "$@"
 }
 
+prepare_date_wrapper() {
+  local date_dir="${LEG_DIR}/date-wrapper"
+  local script_dir="scripts"
+  if [[ "${BASH_SOURCE[0]}" == */* ]]; then
+    script_dir="${BASH_SOURCE[0]%/*}"
+  fi
+  local tracked="${script_dir}/lib/date-from-epoch.sh"
+  [[ -f "${tracked}" ]] || refuse "${tracked} not found"
+  mkdir -p "${date_dir}"
+  cp -f "${tracked}" "${date_dir}/date"
+  chmod +x "${date_dir}/date"
+}
+
 compile_packages() {
   local log="${LEG_DIR}/build.log"
+  local real_date date_dir
+  real_date="$(command -v date)"
+  [[ -n "${real_date}" && -x "${real_date}" ]] || refuse "cannot find real date binary"
+  prepare_date_wrapper
+  date_dir="${LEG_DIR}/date-wrapper"
   echo "==> make -j${JOBS} bindeb-pkg (log: ${log})"
   SECONDS=0
-  if ! kernel_make -j"${JOBS}" KDEB_PKGVERSION="${PACKAGE_VERSION}" bindeb-pkg >"${log}" 2>&1; then
+  if ! PATH="${date_dir}:${PATH}" REAL_DATE="${real_date}" kernel_make -j"${JOBS}" KDEB_PKGVERSION="${PACKAGE_VERSION}" bindeb-pkg >"${log}" 2>&1; then
     tail -n 60 "${log}" >&2
     refuse "make bindeb-pkg failed for ${STREAM}/${ARCH} after ${SECONDS}s"
   fi
