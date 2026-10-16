@@ -11,11 +11,11 @@ the machine off, packs it into a newc initramfs with a ``/dev/console`` node, an
           -append 'console=ttyS0 panic=-1 rdinit=/init'
 
     arm64:
-      qemu-system-aarch64 -M virt -cpu max -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
+      qemu-system-aarch64 -M virt -cpu max -nic none -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
           -append 'console=ttyAMA0 panic=-1 rdinit=/init'
 
     riscv64:
-      qemu-system-riscv64 -M virt -bios default -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
+      qemu-system-riscv64 -M virt -bios default -nic none -kernel <Image> -initrd <initramfs> -nographic -no-reboot \\
           -append 'console=ttyS0 panic=-1 rdinit=/init'
 
 It passes only when the serial console shows both ``Linux version <kernelrelease> `` and the
@@ -59,8 +59,8 @@ DEFAULT_CONSOLE: dict[str, str] = {
 
 ARCH_MACHINE_ARGS: dict[str, list[str]] = {
     "x86_64": [],
-    "arm64": ["-M", "virt", "-cpu", "max"],
-    "riscv64": ["-M", "virt", "-bios", "default"],
+    "arm64": ["-M", "virt", "-cpu", "max", "-nic", "none"],
+    "riscv64": ["-M", "virt", "-bios", "default", "-nic", "none"],
 }
 
 INIT_SOURCE = r"""

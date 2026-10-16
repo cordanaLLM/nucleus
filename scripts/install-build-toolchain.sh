@@ -30,7 +30,7 @@ main() {
       case "${arch}" in
         x86_64) packages+=(qemu-system-x86) ;;
         arm64) packages+=(qemu-system-arm) ;;
-        riscv64) packages+=(qemu-system-misc opensbi) ;;
+        riscv64) packages+=(qemu-system-riscv opensbi) ;;
         *)
           echo "Refused: unknown architecture ${arch} for --with-qemu" >&2
           exit 1

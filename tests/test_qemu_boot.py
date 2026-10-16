@@ -7,6 +7,7 @@ kernel runs in the build-matrix workflow on every x86_64 leg, and in the evidenc
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -259,8 +260,13 @@ def test_a_compiler_that_fails_is_refused_with_its_message(tmp_path):
     ("arch", "machine_args", "console", "qemu"),
     [
         ("x86_64", [], "ttyS0", "qemu-system-x86_64"),
-        ("arm64", ["-M", "virt", "-cpu", "max"], "ttyAMA0", "qemu-system-aarch64"),
-        ("riscv64", ["-M", "virt", "-bios", "default"], "ttyS0", "qemu-system-riscv64"),
+        ("arm64", ["-M", "virt", "-cpu", "max", "-nic", "none"], "ttyAMA0", "qemu-system-aarch64"),
+        (
+            "riscv64",
+            ["-M", "virt", "-bios", "default", "-nic", "none"],
+            "ttyS0",
+            "qemu-system-riscv64",
+        ),
     ],
 )
 def test_qemu_command_per_arch(arch, machine_args, console, qemu):
@@ -407,3 +413,34 @@ def test_default_cc_selection(monkeypatch):
     assert boot_smoke.default_cc("x86_64") == "my-custom-cc"
     assert boot_smoke.default_cc("arm64") == "my-custom-cc"
     assert boot_smoke.default_cc("riscv64") == "my-custom-cc"
+
+
+# The Ubuntu 26.04 package that ships each QEMU binary boot_smoke.py runs, from the package file
+# lists at packages.ubuntu.com/resolute (checked 2026-10-16). qemu-system-misc no longer ships
+# qemu-system-riscv64; qemu-system-riscv does.
+QEMU_BINARY_PACKAGE = {
+    "qemu-system-x86_64": "qemu-system-x86",
+    "qemu-system-aarch64": "qemu-system-arm",
+    "qemu-system-riscv64": "qemu-system-riscv",
+}
+
+
+@pytest.mark.parametrize("arch", ["x86_64", "arm64", "riscv64"])
+def test_toolchain_installs_the_package_that_ships_the_arch_qemu(tmp_path, arch):
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    log = tmp_path / "apt.log"
+    stub = stub_dir / "apt-get"
+    stub.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub_dir}:{os.environ['PATH']}", "ARCH": arch}
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "install-build-toolchain.sh"), "--with-qemu"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    installed = log.read_text().split("install", 1)[1].split()
+    assert QEMU_BINARY_PACKAGE[boot_smoke.DEFAULT_QEMU[arch]] in installed
