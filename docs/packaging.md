@@ -38,9 +38,9 @@ flowchart TD
 
     UKI_STAGE --> UKI_BIN["BOOTX64.EFI (unsigned UKI)"]
 
-    DEB_IMG --> APT_REPO["APT Repository (apt.example.com)"]
-    DEB_HDR --> APT_REPO
-    DEB_DEV --> APT_REPO
+    DEB_IMG --> GH_RELEASE["GitHub Release Assets (cosign-signed SHA256SUMS)"]
+    DEB_HDR --> GH_RELEASE
+    DEB_DEV --> GH_RELEASE
 
     UKI_BIN -.->|"planned"| OCI_REG["OCI Registry (ghcr.io/cordanallm/nucleus/kernels)"]
 ```
@@ -419,9 +419,9 @@ The repository does not orchestrate initramfs creation or provide dracut configu
 
 ## 5. Distribution & Downstream Delivery
 
-### 5.1 Authenticated APT Repository
+### 5.1 No APT Repository
 
-Not implemented: no APT archive is published; packages are GitHub Release assets.
+No APT archive is published; packages are GitHub Release assets ([ADR-0014](adr/0014-github-release-assets-as-the-debian-channel.md)).
 
 ### 5.2 OCI Registry Distribution (UKI Artifacts)
 
