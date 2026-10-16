@@ -21,7 +21,8 @@ directory unless all of these hold:
 - the kernelrelease starts with the stream's kernel version and ends with ``-lusoris<N>-<stream>``;
 - the image package carries ``./boot/vmlinuz-<kernelrelease>``, byte-identical to the
   ``vmlinuz-<kernelrelease>`` beside it, and ``./boot/config-<kernelrelease>``, byte-identical
-  to the resolved ``kernel-<stream>-<arch>.config``;
+  to the resolved ``kernel-<stream>-<arch>.config``, carrying ``CONFIG_DEBUG_INFO_BTF=y`` on
+  every architecture;
 - that kernel image is a kernel of this release for this architecture: on x86 a bzImage whose
   setup header (``HdrS`` at 0x202) points at a version string that starts with
   ``<kernelrelease> ``; on arm64 and riscv a gzip-compressed ``Image`` with the architecture's
@@ -306,6 +307,15 @@ def check_kernel_image(data: bytes, exp: Expectation) -> list[str]:
     return []
 
 
+def check_kernel_config(data: bytes, exp: Expectation) -> list[str]:
+    """The kernel configuration must carry CONFIG_DEBUG_INFO_BTF=y on every architecture."""
+    name = f"./boot/config-{exp.kernelrelease}"
+    lines = {line.strip() for line in data.decode("utf-8", "replace").splitlines()}
+    if "CONFIG_DEBUG_INFO_BTF=y" not in lines:
+        return [f"{name}: {exp.arch} kernel {exp.kernelrelease} lacks CONFIG_DEBUG_INFO_BTF=y"]
+    return []
+
+
 def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
     """The image package must carry the kernel beside it and the configuration it was built from."""
     vmlinuz = f"./boot/vmlinuz-{exp.kernelrelease}"
@@ -324,6 +334,8 @@ def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
             problems.append(f"{beside}: differs from {member} in {image.name}")
     if members.get(vmlinuz):
         problems.extend(check_kernel_image(members[vmlinuz], exp))
+    if members.get(config):
+        problems.extend(check_kernel_config(members[config], exp))
     return problems
 
 

@@ -243,6 +243,38 @@ def test_kernelrelease_must_be_the_streams_version_with_the_builds_suffix(kernel
         assert any(finding in problem for problem in problems), problems
 
 
+@pytest.mark.parametrize("arch", ["x86_64", "arm64", "riscv64"])
+def test_kernel_config_must_carry_btf(arch):
+    """The configuration inside the package must carry CONFIG_DEBUG_INFO_BTF=y on every arch."""
+    exp = _exp(arch=arch, cross=(arch != "x86_64"))
+    assert gate.check_kernel_config(b"CONFIG_DEBUG_INFO_BTF=y\n", exp) == []
+    problems = gate.check_kernel_config(b"CONFIG_X86_64=y\n", exp)
+    assert len(problems) == 1
+    assert f"./boot/config-{KR}" in problems[0]
+    assert arch in problems[0]
+    assert "lacks CONFIG_DEBUG_INFO_BTF=y" in problems[0]
+
+
+def test_check_image_refuses_config_without_btf(monkeypatch, tmp_path):
+    """check_image refuses an image package whose config lacks CONFIG_DEBUG_INFO_BTF=y."""
+    exp = _exp()
+    out = tmp_path / "out"
+    out.mkdir()
+    config_no_btf = b"CONFIG_X86_64=y\n"
+    (out / exp.config_name).write_bytes(config_no_btf)
+    (out / exp.vmlinuz_name).write_bytes(KERNEL)
+    fake_members = {
+        f"./boot/vmlinuz-{KR}": KERNEL,
+        f"./boot/config-{KR}": config_no_btf,
+    }
+    monkeypatch.setattr(gate, "image_members", lambda img, wanted: fake_members)
+    fake_deb = out / f"linux-image-{KR}_{PKGVER}_amd64.deb"
+    fake_deb.write_bytes(b"fake-deb")
+    problems = gate.check_image(fake_deb, out, exp)
+    expected = f"./boot/config-{KR}: {ARCH} kernel {KR} lacks CONFIG_DEBUG_INFO_BTF=y"
+    assert expected in problems
+
+
 def test_listing_refuses_zero_bytes_strangers_and_missing_files(tmp_path):
     out = tmp_path / "out"
     out.mkdir()
@@ -490,3 +522,13 @@ def test_a_measured_release_the_packages_do_not_carry_is_refused(tmp_path):
     result = _cli(out, kernelrelease=other)
     assert result.returncode == 1
     assert "does not end with" in result.stderr or "none of" in result.stderr
+
+
+@needs_dpkg
+def test_a_release_whose_config_lacks_btf_is_refused(tmp_path):
+    """A kernel package whose /boot/config-<release> lacks CONFIG_DEBUG_INFO_BTF=y is refused."""
+    config_no_btf = b"CONFIG_X86_64=y\n# CONFIG_DEBUG_INFO_BTF is not set\n"
+    out = _release(tmp_path, config=config_no_btf)
+    result = _cli(out)
+    assert result.returncode == 1
+    assert f"./boot/config-{KR}: {ARCH} kernel {KR} lacks CONFIG_DEBUG_INFO_BTF=y" in result.stderr

@@ -79,6 +79,15 @@ def test_btf_is_declared_with_its_chain_wherever_sched_ext_is():
         assert config.get("CONFIG_DEBUG_INFO_REDUCED") in (None, "n"), arch
 
 
+def test_every_architecture_fragment_declares_btf():
+    """Every architecture fragment in kconfig/*.config must declare CONFIG_DEBUG_INFO_BTF=y."""
+    for arch in VERSIONS["architectures"]:
+        config = vkr.read_config(KCONFIG / f"{arch}.config")
+        assert config.get("CONFIG_DEBUG_INFO_BTF") == "y", (
+            f"kconfig/{arch}.config does not declare CONFIG_DEBUG_INFO_BTF=y"
+        )
+
+
 def test_proc_config_gz_exists_where_a_requirement_can_probe_it():
     """The kernel-config probe reads /proc/config.gz: IKCONFIG and IKCONFIG_PROC."""
     for arch in vkr.ARCHITECTURES.values():
