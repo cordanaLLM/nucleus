@@ -35,3 +35,14 @@
 4. **Modular KConfig**: Avoid monolith `.config` files. Configuration is partitioned into composable fragments that `scripts/merge-config.sh` merges in a fixed order: `kconfig/security-hardened.config`, `kconfig/<arch>.config`, `kconfig/k8s-node.config`, then `kconfig/streams/<stream>.config` when the stream has one. The last line for a symbol wins, `# CONFIG_X is not set` included, and the output carries no timestamp. Against a verified tree (`--source-tree`), the fragments are applied with the kernel's `scripts/kconfig/merge_config.sh -m` on top of the architecture's defconfig and resolved with `make olddefconfig`; there is no `kconfig/base.config`.
 5. **Survival**: A resolved configuration is used only when every value a fragment requests is in it unchanged, `# CONFIG_X is not set` included (`scripts/kconfig_survival.py`). A fragment line `olddefconfig` dropped configures nothing, so the check fails instead of the kernel silently lacking it. A symbol an architecture cannot have belongs in that architecture's fragment, never in a shared one, and the check is never relaxed to make a leg pass.
 6. **Claims are checked**: Every option the documentation claims a stream builds is listed in `kconfig/required-config.json`, and a resolved configuration in which one is off is refused (`scripts/check_required_config.py`). A claim the forge cannot build is removed from the documentation, never from the list alone.
+
+---
+
+## 4. Fuzzing
+
+The requirement parser reads documents that other repositories publish, so it is fuzzed as well as tested. `fuzz/fuzz_verify_kernel_requirement.py` is an [Atheris](https://github.com/google/atheris) harness over `parse_requirement`, `parse_config_text`, `release_components` and `at_least`, starting from the seeds in `fuzz/corpus/verify_kernel_requirement/`.
+
+- A crash is any exception other than `RequirementError` from `parse_requirement` or `KconfigError` from `parse_config_text`, any exception from the release helpers, a release with a negative or surplus component, or a release that is not at least itself.
+- `make fuzz` runs it for `FUZZ_SECONDS` (default 60) after `pip install --require-hashes -r requirements-fuzz.txt`. Atheris ships wheels for x86_64 Linux and Python 3.12 to 3.14 only.
+- CI runs it for 60 seconds in the `lint-and-test` job, step "Fuzz the requirement parser"; a crash fails the job.
+- `tests/test_fuzz_harness.py` runs the seeds and hostile inputs through the harness without Atheris, and plants defects that the harness must report.

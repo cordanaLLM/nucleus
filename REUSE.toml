@@ -64,6 +64,7 @@ SPDX-License-Identifier = "CC0-1.0"
 path = [
     "tests/fixtures/kernel-requirement/aegis-os.json",
     "tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json",
+    "fuzz/corpus/verify_kernel_requirement/aegis-os.json",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Lusoris <lusoris@proton.me>"
@@ -72,7 +73,10 @@ SPDX-License-Identifier = "EUPL-1.2"
 # Copied from cordanaLLM/imago (kernel/requirement.json) at commit
 # 16f964b4dafa, when that repository was under the Apache License 2.0.
 [[annotations]]
-path = ["tests/fixtures/kernel-requirement/imago.json"]
+path = [
+    "tests/fixtures/kernel-requirement/imago.json",
+    "fuzz/corpus/verify_kernel_requirement/imago.json",
+]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 The Lusoris Authors"
 SPDX-License-Identifier = "Apache-2.0"
