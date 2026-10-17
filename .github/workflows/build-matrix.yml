@@ -19,6 +19,8 @@ on:
       - "scripts/probe-build-space.sh"
       - "scripts/check_kernel_artifacts.py"
       - "scripts/boot_smoke.py"
+      - "scripts/package-uki.sh"
+      - "scripts/check_uki.py"
       - "scripts/publish_release.sh"
       - "docker/Dockerfile.builder"
       - "kconfig/**"
@@ -225,6 +227,48 @@ jobs:
             --timeout=600 || rc=$?
           if [[ "${rc}" -ne 1 ]]; then
             echo "Expected exit status 1 for silent console ${SILENT_CONSOLE}, got ${rc}" >&2
+            exit 1
+          fi
+
+      # UKI synthesis: Ubuntu 26.04 systemd-boot-efi ships linuxx64.efi.stub on amd64 and
+      # linuxaa64.efi.stub on arm64. riscv64 is cross-compiled on an x86_64 runner, which has
+      # no riscv64 stub, so the UKI build check skips riscv64. The UKI is a build check only:
+      # never staged into the artifact dir, SHA256SUMS or releases.
+      - name: Build UKI from Nucleus Kernel
+        if: matrix.arch != 'riscv64' && env.DRY_RUN != 'true'
+        env:
+          KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends systemd-ukify systemd-boot-efi
+          uki_dir="${RUNNER_TEMP}/uki-${STREAM}-${ARCH}"
+          mkdir -p "${uki_dir}"
+          initrd="${uki_dir}/initramfs.cpio"
+          python3 scripts/boot_smoke.py --arch="${ARCH}" --write-initramfs="${initrd}"
+          ./scripts/package-uki.sh --stream="${STREAM}" --arch="${ARCH}" \
+            --vmlinuz="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
+            --initrd="${initrd}" \
+            --output-dir="${uki_dir}"
+
+      - name: Refuse a UKI when vmlinuz is not a kernel
+        if: matrix.arch != 'riscv64' && env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          neg_dir="${RUNNER_TEMP}/uki-negative-${STREAM}-${ARCH}"
+          mkdir -p "${neg_dir}"
+          initrd="${RUNNER_TEMP}/uki-${STREAM}-${ARCH}/initramfs.cpio"
+          rc=0
+          ./scripts/package-uki.sh --stream="${STREAM}" --arch="${ARCH}" \
+            --vmlinuz="${initrd}" \
+            --output-dir="${neg_dir}" || rc=$?
+          if [[ "${rc}" -eq 0 ]]; then
+            echo "Expected package-uki.sh to fail on non-kernel binary, but it succeeded" >&2
+            exit 1
+          fi
+          if [[ -n "$(find "${neg_dir}" -type f -iname '*.efi')" ]]; then
+            echo "package-uki.sh left a .efi file in ${neg_dir} after failure" >&2
             exit 1
           fi
 
