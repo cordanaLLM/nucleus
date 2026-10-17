@@ -17,6 +17,7 @@ KERNELRELEASE ?=
 # verify-reproducibility: the two build output directories to compare.
 DIR_A ?=
 DIR_B ?=
+FUZZ_SECONDS ?= 60
 
 # praetorctl built from the commit PRAETOR_REF in .github/workflows/ci.yml names, and a
 # praetor checkout at that commit for the catalog check (docs/repository-governance.md).
@@ -26,7 +27,7 @@ PRAETOR_SRC ?=
 # A check whose tool is missing fails and names it; it never passes by skipping.
 require-tool = command -v $(1) >/dev/null 2>&1 || { echo "==> ERROR: $(1) is not installed (pip install --require-hashes -r requirements-test.txt)." >&2; exit 1; }
 
-.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean context ruleset governance-check
+.PHONY: help init fmt fmt-check lint lint-workflows lint-manifest lint-pins test test-coverage test-boot boot-smoke docs-serve docs-build audit build-kernel merge-config fetch-source resolve-config package-deb package-uki verify-reproducibility docker-builder clean context ruleset governance-check fuzz
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-24s\033[0m %s\n", $$1, $$2}'
@@ -96,6 +97,11 @@ test-coverage: ## Run test suite with coverage report
 
 test-boot: ## Run the hermetic tests of the boot smoke test (no QEMU needed)
 	@pytest tests/test_qemu_boot.py -v
+
+fuzz: ## Fuzz the requirement parser with atheris for FUZZ_SECONDS (default 60; needs requirements-fuzz.txt)
+	@python3 -c 'import atheris' 2>/dev/null || { echo "==> ERROR: atheris is not installed (pip install --require-hashes -r requirements-fuzz.txt)." >&2; exit 1; }
+	@mkdir -p build/fuzz-corpus
+	@python3 fuzz/fuzz_verify_kernel_requirement.py -max_total_time=$(FUZZ_SECONDS) build/fuzz-corpus fuzz/corpus/verify_kernel_requirement
 
 boot-smoke: ## Boot a built x86_64 kernel to userspace under QEMU (KERNEL=<vmlinuz> KERNELRELEASE=<release>)
 	@python3 scripts/boot_smoke.py --kernel="$(KERNEL)" --kernelrelease="$(KERNELRELEASE)"

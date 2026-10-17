@@ -85,6 +85,17 @@ jobs:
           "${RUNNER_TEMP}/py314/bin/pip" install --no-cache-dir --require-hashes -r requirements-test.txt
           PATH="${RUNNER_TEMP}/py314/bin:${PATH}" python -m pytest -q -p no:cacheprovider
 
+      # The harness Scorecard's Fuzzing check looks for (docs/principles.md, Fuzzing). Atheris
+      # ships x86_64 wheels for Python 3.12 to 3.14 only. The corpus is copied so that the
+      # inputs the fuzzer adds stay out of the checkout.
+      - name: Fuzz the requirement parser
+        run: |
+          set -euo pipefail
+          python3.12 -m venv "${RUNNER_TEMP}/fuzz"
+          "${RUNNER_TEMP}/fuzz/bin/pip" install --no-cache-dir --require-hashes -r requirements-fuzz.txt
+          cp -r fuzz/corpus/verify_kernel_requirement "${RUNNER_TEMP}/corpus"
+          "${RUNNER_TEMP}/fuzz/bin/python" fuzz/fuzz_verify_kernel_requirement.py -max_total_time=60 "${RUNNER_TEMP}/corpus"
+
       # actionlint checks the form of a pin, not that it exists: a SHA that no upstream
       # commit carries fails only at "Set up job" of the workflow that uses it. zizmor
       # checks each pin against its upstream; the fixtures prove the gate still refuses.

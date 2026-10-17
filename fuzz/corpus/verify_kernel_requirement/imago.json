@@ -1,0 +1,55 @@
+{
+  "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+  "correlation-id": "imago-kernel-requirement-0001",
+  "architectures": [
+    "x86-64"
+  ],
+  "abi": {
+    "minimum-release": "6.18",
+    "target-release": "7.2"
+  },
+  "features": [
+    {
+      "symbol": "CONFIG_KVM",
+      "state": "module",
+      "probe": "kernel-config",
+      "required-by": "FLAVOR-BASE"
+    },
+    {
+      "symbol": "CONFIG_IOMMU_API",
+      "state": "built-in",
+      "probe": "iommu-groups",
+      "required-by": "FLAVOR-AI-INFER"
+    },
+    {
+      "symbol": "CONFIG_VFIO",
+      "state": "module",
+      "probe": "iommu-groups",
+      "required-by": "FLAVOR-AI-INFER"
+    },
+    {
+      "symbol": "CONFIG_VFIO_PCI",
+      "state": "module",
+      "probe": "iommu-groups",
+      "required-by": "FLAVOR-AI-INFER"
+    },
+    {
+      "symbol": "CONFIG_BPF_SYSCALL",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "FLAVOR-K8S-NODE"
+    },
+    {
+      "symbol": "CONFIG_DEBUG_INFO_BTF",
+      "state": "built-in",
+      "probe": "btf-vmlinux",
+      "required-by": "FLAVOR-K8S-NODE"
+    },
+    {
+      "symbol": "CONFIG_CGROUP_BPF",
+      "state": "built-in",
+      "probe": "kernel-config",
+      "required-by": "FLAVOR-DOCKER"
+    }
+  ]
+}
