@@ -5,8 +5,9 @@
 # succeeded (scripts/required_checks_gate.py). A skipped check counts only
 # when it is named with --allow-skip: Semgrep and Trivy, which the change detector in
 # security-scans.yml may exclude, and whose skip the required Security Scan Gate judges.
-# The wait covers build-matrix.yml on a pull request that touches the build path: its longest
-# leg may run 90 minutes (arm64), and the longest measured leg took 40 minutes (run 36507112520).
+# The wait covers build-matrix.yml on a pull request that touches the build path: it runs its
+# twelve legs six at a time, in two waves of at most 90 minutes each (arm64); the longest
+# measured leg took 40 minutes (run 36507112520).
 # Branch protection: require the "required-checks" status check.
 
 name: required-aggregator
@@ -31,7 +32,7 @@ jobs:
     name: required-checks
     runs-on: ubuntu-24.04
     # The gate's own --timeout plus ten minutes for the checkout and the last poll.
-    timeout-minutes: 110
+    timeout-minutes: 200
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -56,5 +57,5 @@ jobs:
           REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           python3 scripts/required_checks_gate.py --repo "${REPO}" --ref "${REF}"
-          --self required-checks --interval 20 --timeout 6000
+          --self required-checks --interval 20 --timeout 11400
           --allow-skip "Semgrep SAST" --allow-skip "Trivy Filesystem CVE Scan"

@@ -220,14 +220,35 @@ def test_build_matrix_compiles_every_pull_request_that_touches_the_build_path():
     )
 
 
-def test_required_checks_waits_longer_than_the_longest_build_leg():
-    legs = max(entry["timeout"] for entry in _build_matrix()["strategy"]["matrix"]["include"])
+def test_build_matrix_leaves_hosted_runners_to_other_repositories():
+    """The kernel legs share the organisation's hosted runners: at most half run at once."""
+    strategy = _build_matrix()["strategy"]
+    legs = len(strategy["matrix"]["stream"]) * len(strategy["matrix"]["arch"])
+    cap = strategy.get("max-parallel")
+    assert isinstance(cap, int) and 0 < cap <= legs // 2, f"max-parallel {cap} for {legs} legs"
+
+
+def test_build_matrix_runs_one_build_per_branch():
+    """A pull request run and a dispatch on its branch share one group, so they never overlap."""
+    group = yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))[
+        "concurrency"
+    ]["group"]
+    assert group == "build-matrix-${{ github.head_ref || github.ref_name }}"
+
+
+def test_required_checks_waits_longer_than_every_build_wave():
+    strategy = _build_matrix()["strategy"]
+    count = len(strategy["matrix"]["stream"]) * len(strategy["matrix"]["arch"])
+    waves = (count + strategy["max-parallel"] - 1) // strategy["max-parallel"]
+    legs = waves * max(entry["timeout"] for entry in strategy["matrix"]["include"])
     job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
         "jobs"
     ]["required-checks"]
     run = job["steps"][-1]["run"]
     wait = int(re.search(r"--timeout (\d+)", run)[1])
-    assert wait > legs * 60, f"the gate gives up at {wait} s, before a {legs}-minute leg ends"
+    assert wait > legs * 60, (
+        f"the gate gives up at {wait} s, before {waves} waves ({legs} minutes) end"
+    )
     assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
 
 
