@@ -34,6 +34,11 @@ Two evidence levels (docs/adr/0008-signed-kernel-sources-and-resolved-configurat
 ``--plan`` prints the legs to resolve: every stream on every architecture versions.json builds.
 A resolved .config must name, in its Kconfig header, the architecture and release of the leg it
 is given for.
+
+Single-kernel mode (``--kernel-config``): checks one requirement document against a single
+kernel's own configuration text, with an optional release for ABI floor verification. This is
+the one implementation Aegis-OS consumes from its pinned nucleus checkout
+(``build/contract/producers.pin.json``) instead of keeping ``tools/kernel_requirement_check.py``.
 """
 
 from __future__ import annotations
@@ -74,6 +79,8 @@ _U64_MAX = (1 << 64) - 1
 
 # kernel.rs Architecture: mkosi's spellings, mapped to the names versions.json builds.
 ARCHITECTURES = {"x86-64": "x86_64", "arm64": "arm64"}
+# The configuration's own architecture symbol per listed spelling (mkosi's).
+ARCHITECTURE_SYMBOLS = {"x86-64": "CONFIG_X86_64", "arm64": "CONFIG_ARM64"}
 # kernel.rs RequiredState.
 STATES = ("built-in", "module", "present", "absent")
 # kernel.rs ProbeSource::path. kernel-config reads the configuration itself; the other four
@@ -215,6 +222,20 @@ class Verdict:
     satisfied: bool
     held: tuple[str, ...]
     reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class KernelVerdict:
+    """The decision of check_kernel: features checked, release, and rejections."""
+
+    requirement: Requirement
+    checks: tuple[FeatureCheck, ...]
+    release: str | None
+    reasons: tuple[str, ...]
+
+    @property
+    def satisfied(self) -> bool:
+        return not self.reasons
 
 
 @dataclass(frozen=True)
@@ -565,16 +586,25 @@ def describe_observed(observed: str | None) -> str:
 # --- configurations: the merge scripts/merge-config.sh performs ------------------------------
 
 
-def read_config(path: Path) -> dict[str, str]:
-    """Symbols a kconfig fragment or a .config records, the last line for a symbol winning.
+MAX_CONFIG_BYTES = 4 << 20  # 4 MiB
+MAX_CONFIG_LINES = 65_536
+
+
+def parse_config_text(text: str, where: str) -> dict[str, str]:
+    """Symbols a kconfig fragment or .config text records, the last line for a symbol winning.
 
     After trimming spaces, tabs and carriage returns, a line is blank, ``CONFIG_X=value``,
     the Kconfig unset form ``# CONFIG_X is not set`` (read as n), or another ``#`` comment.
     Any other line raises KconfigError, as scripts/merge-config.sh refuses it.
+    Refuses text exceeding MAX_CONFIG_BYTES or MAX_CONFIG_LINES with KconfigError.
     """
+    if len(text.encode("utf-8", "surrogatepass")) > MAX_CONFIG_BYTES:
+        raise KconfigError(f"{where}: configuration exceeds {MAX_CONFIG_BYTES} bytes")
+    lines = text.split("\n")
+    if len(lines) > MAX_CONFIG_LINES:
+        raise KconfigError(f"{where}: configuration exceeds {MAX_CONFIG_LINES} lines")
     values: dict[str, str] = {}
-    text = path.read_text(encoding="utf-8")
-    for number, raw in enumerate(text.split("\n"), start=1):
+    for number, raw in enumerate(lines, start=1):
         line = raw.strip(" \t\r")
         assignment = _ASSIGNMENT.fullmatch(line)
         if assignment:
@@ -584,8 +614,23 @@ def read_config(path: Path) -> dict[str, str]:
         if unset:
             values[unset.group(1)] = "n"
         elif line and not line.startswith("#"):
-            raise KconfigError(f"{path}:{number}: not an assignment, an unset or a comment: {line}")
+            raise KconfigError(
+                f"{where}:{number}: not an assignment, an unset or a comment: {line}"
+            )
     return values
+
+
+def read_config(path: Path) -> dict[str, str]:
+    """Symbols a kconfig fragment or a .config records, the last line for a symbol winning."""
+    return parse_config_text(path.read_text(encoding="utf-8"), str(path))
+
+
+def config_architecture(config: Mapping[str, str]) -> str | None:
+    """Return the mkosi spelling of the configuration's own architecture, or None."""
+    for spelling, symbol in ARCHITECTURE_SYMBOLS.items():
+        if config.get(symbol) == "y":
+            return spelling
+    return None
 
 
 def fragment_layers(kconfig_dir: Path, arch: str, stream: str) -> list[Path]:
@@ -625,6 +670,47 @@ def check_features(
         observed = config.get(feature.symbol)
         checks.append(FeatureCheck(feature, observed, state_satisfied(feature.state, observed)))
     return tuple(checks)
+
+
+def check_kernel(
+    requirement: Requirement,
+    config: Mapping[str, str],
+    release: str | None = None,
+) -> KernelVerdict:
+    """Decide requirement against one kernel configuration (Aegis E10-5 semantics).
+
+    Checks each feature against config via check_features. Unmet features, architecture
+    mismatches, and release floor/module-ABI discrepancies generate rejections prefixed with
+    the requirement's correlation id.
+    """
+    cid = requirement.correlation_id
+    reasons: list[str] = []
+    found_arch = config_architecture(config)
+    for arch in dict.fromkeys(requirement.architectures):
+        if arch != found_arch:
+            target = found_arch or "no listed architecture"
+            reasons.append(
+                f"{cid}: architecture {arch} is listed and the configuration is for {target}"
+            )
+    if release is not None:
+        if not at_least(release, requirement.abi.minimum_release):
+            reasons.append(
+                f"{cid}: kernel release {release} is below abi.minimum-release "
+                f"{requirement.abi.minimum_release}"
+            )
+        if requirement.abi.module_abi is not None and release != requirement.abi.module_abi:
+            reasons.append(
+                f"{cid}: kernel release {release} is not abi.module-abi "
+                f"{requirement.abi.module_abi}"
+            )
+    checks = check_features(requirement.features, config)
+    for check in checks:
+        if not check.satisfied:
+            reasons.append(
+                f"{cid}: {check.feature.symbol} (required-by {check.feature.required_by}) "
+                f"requires {check.feature.state}, observed {describe_observed(check.observed)}"
+            )
+    return KernelVerdict(requirement, checks, release, tuple(reasons))
 
 
 def stream_result(
@@ -827,6 +913,42 @@ POLICY = {
     "module_abi": "checked against the build record kernel release for every bound stream on every listed architecture",
     "runtime_probes": "checked through their kconfig symbol; the probe is deferred to boot",
 }
+
+KERNEL_REPORT_SCHEMA = "nucleus.kernel-check-report.v1"
+
+
+def kernel_feature_line(check: FeatureCheck) -> str:
+    """The printable record of one feature check in single-kernel mode."""
+    feature = check.feature
+    status = "satisfied" if check.satisfied else "NOT satisfied"
+    return (
+        f"{feature.symbol}: required {feature.state}, config {describe_observed(check.observed)} "
+        f"-> {status} ({feature.required_by}, probe {feature.probe})"
+    )
+
+
+def _kernel_check_entry(check: FeatureCheck) -> dict[str, object]:
+    feature = check.feature
+    return {
+        "symbol": feature.symbol,
+        "required": feature.state,
+        "observed": check.observed,
+        "satisfied": check.satisfied,
+        "required-by": feature.required_by,
+        "probe": feature.probe,
+    }
+
+
+def kernel_report_json(verdict: KernelVerdict) -> dict[str, object]:
+    """The nucleus.kernel-check-report.v1 record for single-kernel mode."""
+    return {
+        "schema": KERNEL_REPORT_SCHEMA,
+        "correlation-id": verdict.requirement.correlation_id,
+        "release": verdict.release,
+        "checks": [_kernel_check_entry(c) for c in verdict.checks],
+        "reasons": list(verdict.reasons),
+        "satisfied": verdict.satisfied,
+    }
 
 
 def _probe_json(probe: str) -> dict[str, str]:
@@ -1058,13 +1180,33 @@ def _pairs(values: Sequence[str], flag: str, pattern: re.Pattern[str] | None) ->
     return pairs
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+def _add_single_kernel_args(parser: argparse.ArgumentParser) -> None:
+    add = parser.add_argument
+    add(
+        "--kernel-config",
+        type=Path,
+        metavar="PATH",
+        help="check a single kernel configuration against one requirement file",
+    )
+    add(
+        "--requirement-file",
+        type=Path,
+        metavar="PATH",
+        help="the requirement document to check with --kernel-config",
+    )
+    add(
+        "--kernel-release",
+        metavar="RELEASE",
+        help="the kernel release to verify against the requirement ABI in --kernel-config mode",
+    )
+
+
+def _add_multi_stream_args(parser: argparse.ArgumentParser) -> None:
     add = parser.add_argument
     add(
         "--requirement",
         action="append",
-        required=True,
+        default=[],
         metavar="LABEL=PATH",
         help="a document to verify; LABEL is its versions.json downstream.requirements label",
     )
@@ -1112,6 +1254,13 @@ def _parser() -> argparse.ArgumentParser:
         help="write every stream and architecture pair versions.json builds, the legs the "
         "resolve job resolves, as a GitHub Actions matrix, and verify nothing",
     )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    _add_single_kernel_args(parser)
+    _add_multi_stream_args(parser)
+    add = parser.add_argument
     add("--kconfig-dir", type=Path, default=Path("kconfig"))
     add("--versions", type=Path, default=Path("versions.json"))
     add("--nucleus-revision", metavar="SHA", help="the nucleus commit being verified")
@@ -1289,9 +1438,64 @@ def resolve_plan(versions: Mapping[str, object]) -> dict[str, list[dict[str, str
     return {"include": [{"stream": stream, "arches": arches} for stream in versions["streams"]]}
 
 
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.kernel_config is not None:
+        if args.requirement:
+            parser.error("--kernel-config and --requirement are mutually exclusive")
+        if args.requirement_file is None:
+            parser.error("--kernel-config requires --requirement-file")
+        if args.plan is not None:
+            parser.error("--plan cannot be used with --kernel-config")
+        if args.resolved_config:
+            parser.error("--resolved-config cannot be used with --kernel-config")
+        if args.build_record:
+            parser.error("--build-record cannot be used with --kernel-config")
+        if args.ref or args.sha256 or args.correlation_id:
+            parser.error("--ref, --sha256, --correlation-id cannot be used with --kernel-config")
+    else:
+        if args.requirement_file is not None:
+            parser.error("--requirement-file requires --kernel-config")
+        if args.kernel_release is not None:
+            parser.error("--kernel-release requires --kernel-config")
+        if not args.requirement:
+            parser.error("one of --requirement or --kernel-config is required")
+
+
+def _run_single_kernel(args: argparse.Namespace) -> int:
+    try:
+        raw_req = args.requirement_file.read_bytes()
+        requirement = parse_requirement(raw_req)
+        config_text = args.kernel_config.read_text(encoding="utf-8")
+        config = parse_config_text(config_text, str(args.kernel_config))
+    except (RequirementError, KconfigError, OSError, ValueError) as exc:
+        print(f"FAIL: {exc}")
+        return 2
+    verdict = check_kernel(requirement, config, args.kernel_release)
+    for check in verdict.checks:
+        print(kernel_feature_line(check))
+    if verdict.release is None:
+        print("release: not given; minimum-release and module-abi not checked")
+    else:
+        print(f"release: {verdict.release}")
+    for reason in verdict.reasons:
+        print(f"rejected: {reason}")
+    cid = verdict.requirement.correlation_id
+    if verdict.satisfied:
+        print(f"PASS: {cid}: {len(verdict.checks)} features satisfied")
+    else:
+        print(f"FAIL: {cid}: {len(verdict.reasons)} rejections")
+    if args.report_json is not None:
+        report = kernel_report_json(verdict)
+        args.report_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return 0 if verdict.satisfied else 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    _validate_args(parser, args)
+    if args.kernel_config is not None:
+        return _run_single_kernel(args)
     try:
         options = _options(args)
     except (ValueError, OSError, KeyError) as exc:

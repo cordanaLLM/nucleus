@@ -1,0 +1,40 @@
+{
+  "requirement": {
+    "schema": "aegis.p01-nucleus.kernel-requirement.v1",
+    "correlation-id": "vec-pos-01",
+    "architectures": ["x86-64"],
+    "abi": {
+      "minimum-release": "6.12"
+    },
+    "features": [
+      {
+        "symbol": "CONFIG_BPF_SYSCALL",
+        "state": "built-in",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-01"
+      },
+      {
+        "symbol": "CONFIG_OVERLAY_FS",
+        "state": "module",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-01"
+      },
+      {
+        "symbol": "CONFIG_DEBUG_INFO",
+        "state": "absent",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-01"
+      },
+      {
+        "symbol": "CONFIG_SECURITY",
+        "state": "present",
+        "probe": "kernel-config",
+        "required-by": "REQ-VEC-01"
+      }
+    ]
+  },
+  "config": "CONFIG_X86_64=y\nCONFIG_BPF_SYSCALL=y\nCONFIG_OVERLAY_FS=m\n# CONFIG_DEBUG_INFO is not set\nCONFIG_SECURITY=y\n",
+  "release": "7.2.10",
+  "satisfied": true,
+  "reasons_contain": []
+}
