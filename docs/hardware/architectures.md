@@ -110,7 +110,7 @@ Or directly via the build script:
 
 ## 5. MicroVM Boot Verification Matrix
 
-Automated microVM boot testing under QEMU is implemented across all supported architectures (`scripts/boot_smoke.py`). In CI (`.github/workflows/build-matrix.yml`), builds for `x86_64`, `arm64`, and `riscv64` boot a static init in QEMU (TCG) and require the kernel banner and init marker within the timeout. For `arm64` and `riscv64`, the workflow also proves that a nonexistent console device refuses the boot when the console stays silent.
+Automated microVM boot testing under QEMU is implemented across all supported architectures (`scripts/boot_smoke.py`). In CI (`.github/workflows/build-matrix.yml`), builds for `x86_64`, `arm64`, and `riscv64` boot a static init in QEMU (TCG) and require the kernel banner and init marker within the timeout. Every leg then judges its own console log again with a release it did not build (`--judge-log`, step `Refuse a console of another release`), which must be refused. For `arm64` and `riscv64`, the workflow also proves that a nonexistent console device refuses the boot when the console stays silent.
 
 ```bash
 # Automated boot smoke test across architectures (scripts/boot_smoke.py)

@@ -298,6 +298,13 @@ python3 scripts/boot_smoke.py --arch=x86_64 \
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```
 
+The build matrix boots every leg, on all three architectures, and then plants a wrong release:
+`--judge-log=<log> --kernelrelease=<release>` judges the console the boot wrote without booting
+again. The step `Refuse a console of another release` runs it with the leg's release, which must
+pass, and with `<release>-planted`, which must be refused with exit status 1, so a verdict that
+stopped comparing the release would turn the leg red. On arm64 and riscv64 a boot on a console
+device that does not exist must be refused as well (`Refuse a boot whose console stays silent`).
+
 Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`).
 
 ---

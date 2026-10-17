@@ -521,3 +521,24 @@ def test_write_initramfs_refuses_existing_path(tmp_path):
     assert result.returncode != 0
     assert "refus" in result.stderr.lower() or "exist" in result.stderr.lower()
     assert existing.read_bytes() == b"existing-content"
+
+
+def test_judge_log_passes_the_release_the_console_shows(tmp_path):
+    log = tmp_path / "boot.log"
+    log.write_text(BANNER + MARKER, encoding="utf-8")
+    assert boot_smoke.main(["--judge-log", str(log), "--kernelrelease", KR]) == 0
+
+
+@pytest.mark.parametrize("release", [f"{KR}-planted", "7.2.8-lusoris1-realtime", "7.2.8"])
+def test_judge_log_refuses_a_release_the_console_does_not_show(tmp_path, capsys, release):
+    log = tmp_path / "boot.log"
+    log.write_text(BANNER + MARKER, encoding="utf-8")
+    assert boot_smoke.main(["--judge-log", str(log), "--kernelrelease", release]) == 1
+    err = capsys.readouterr().err
+    assert f"no 'Linux version {release} ' banner" in err
+    assert f"init never printed 'NUCLEUS-BOOT-SMOKE release={release}'" in err
+
+
+def test_judge_log_without_a_log_cannot_run(tmp_path):
+    missing = tmp_path / "absent.log"
+    assert boot_smoke.main(["--judge-log", str(missing), "--kernelrelease", KR]) == 2
