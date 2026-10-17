@@ -330,6 +330,8 @@ to a private staging directory and calls `ukify build` with `--config=/dev/null`
   `riscv64` to `riscv64`), so an arm64 or riscv64 build on a host without that stub fails with an
   error that names the missing stub instead of wrapping the kernel in an x64 stub. Building
   for those architectures needs the matching stub and kernel (issue #18).
+- For arm64, `vmlinuz` is a gzip-compressed Image; `ukify` inspects the kernel with `pefile` and,
+  recognizing the non-PE gzip format, decompresses it natively before embedding it into the `.linux` section.
 - The stub comes from `systemd-boot-efi`, which Ubuntu installs only as a recommendation of
   `systemd-ukify`. Install both on the runner.
 - Secure Boot signing (`--secureboot-private-key`, `--secureboot-certificate`) and PCR 11
@@ -380,6 +382,12 @@ How this is tested:
   no such section, prints `ukify inspect`, verifies the checksum, and runs the tests with a real
   kernel, failing if any test skips. Its name does not carry the container tag, so an Ubuntu
   bump does not rename the check.
+- `build-matrix.yml` synthesizes and validates a UKI from each leg's own built nucleus kernel on x86_64
+  and arm64 as a build check, using an initramfs written by `scripts/boot_smoke.py --write-initramfs`.
+  It tests both positive UKI synthesis and a planted negative case: given the initramfs as the kernel,
+  `ukify` stops on an unknown file format and `package-uki.sh` exits non-zero with no `.efi` left.
+  The riscv64 leg is skipped because the cross-compilation runner lacks a riscv64 EFI stub. The UKI is a
+  build check only and is never staged into the release artifact directory or SHA256SUMS.
 - To run the real-`ukify` test locally, install `ukify` and the stub, then run
   `NUCLEUS_UKI_TEST_VMLINUZ=<kernel image> pytest tests/test_package_uki.py`.
 

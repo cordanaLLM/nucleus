@@ -313,6 +313,43 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     assert "${{ matrix.stream }}-${{ matrix.arch }}" in save["with"]["key"]
 
 
+def test_build_matrix_builds_and_refuses_ukis_as_build_checks():
+    steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}
+    order = [step.get("name", "") for step in _build_matrix()["steps"]]
+
+    # Positive UKI synthesis step
+    assert "Build UKI from Nucleus Kernel" in steps
+    uki_step = steps["Build UKI from Nucleus Kernel"]
+    assert uki_step["if"] == "matrix.arch != 'riscv64' && env.DRY_RUN != 'true'"
+    uki_run = uki_step["run"]
+    assert "scripts/boot_smoke.py" in uki_run and "--write-initramfs=" in uki_run
+    assert "scripts/package-uki.sh" in uki_run
+    assert "--output-dir=output/" not in uki_run
+    assert '--output-dir="output/' not in uki_run
+    assert "${RUNNER_TEMP}" in uki_run
+
+    # Negative UKI step
+    assert "Refuse a UKI when vmlinuz is not a kernel" in steps
+    neg_step = steps["Refuse a UKI when vmlinuz is not a kernel"]
+    assert neg_step["if"] == "matrix.arch != 'riscv64' && env.DRY_RUN != 'true'"
+    neg_run = neg_step["run"]
+    assert "scripts/package-uki.sh" in neg_run
+    assert "--output-dir=" in neg_run
+    assert "--output-dir=output/" not in neg_run
+    assert "find " in neg_run and "*.efi" in neg_run.lower()
+
+    # Ordering: after boot, before staging artifacts
+    assert order.index("Boot the Kernel to Userspace") < order.index(
+        "Build UKI from Nucleus Kernel"
+    )
+    assert order.index("Build UKI from Nucleus Kernel") < order.index(
+        "Refuse a UKI when vmlinuz is not a kernel"
+    )
+    assert order.index("Refuse a UKI when vmlinuz is not a kernel") < order.index(
+        "Stage Artifacts and Checksums"
+    )
+
+
 def test_build_matrix_compiler_cache_is_restored_by_prefix_and_saved_under_a_new_key():
     """The save key must never equal an existing entry, or the cache is frozen at its first save."""
     steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}

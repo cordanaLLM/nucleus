@@ -479,3 +479,45 @@ def test_toolchain_installs_the_package_that_ships_the_arch_qemu(tmp_path, arch)
     assert result.returncode == 0, result.stderr
     installed = log.read_text().split("install", 1)[1].split()
     assert QEMU_BINARY_PACKAGE[boot_smoke.DEFAULT_QEMU[arch]] in installed
+
+
+def test_write_initramfs_writes_newc_cpio_archive(tmp_path):
+    out = tmp_path / "initramfs.cpio"
+    dummy_init = tmp_path / "init"
+    dummy_init.write_bytes(b"\x7fELF-dummy")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--arch=x86_64",
+            f"--init-binary={dummy_init}",
+            f"--write-initramfs={out}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert out.is_file()
+    data = out.read_bytes()
+    assert data.startswith(b"070701")
+    entries = _read_newc(data)
+    assert [name for name, _, _, _ in entries] == ["dev", "dev/console", "init"]
+
+
+def test_write_initramfs_refuses_existing_path(tmp_path):
+    existing = tmp_path / "initramfs.cpio"
+    existing.write_bytes(b"existing-content")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            f"--write-initramfs={existing}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "refus" in result.stderr.lower() or "exist" in result.stderr.lower()
+    assert existing.read_bytes() == b"existing-content"
