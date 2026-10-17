@@ -115,12 +115,22 @@ of every arm64 and riscv64 build does. Ubuntu keeps GNU `install` as `gnuinstall
 build's `PATH`; with neither, it refuses. Replacing uutils altogether is not an option there:
 `build-essential` depends on it, and `bindeb-pkg` checks the build dependencies.
 
-The packages are not yet shown to be bit-for-bit reproducible. One known cause is left, and one is
-handled:
+The packages are not yet shown to be bit-for-bit reproducible. Both known causes are handled:
 
-- The modules are signed at build time with a key generated for that build
-  (`CONFIG_MODULE_SIG_ALL`); the key stays in the build tree, which CI discards. Two builds of one
-  tag therefore differ in their module signatures.
+- The modules are signed after the build, not during it
+  ([ADR-0016](adr/0016-module-signing-after-the-build.md)). The build generates no key:
+  `kconfig/security-hardened.config` turns `CONFIG_MODULE_SIG_ALL` off, sets
+  `CONFIG_MODULE_SIG_KEY=""`, and makes the kernel trust `certs/nucleus-module-signing.pem` in the
+  build directory (`CONFIG_SYSTEM_TRUSTED_KEYS`). `build_kernel.sh` writes that certificate from
+  the key that `--module-key=<pem>` names, or from a key it generates for this build with the
+  kernel's `certs/default_x509.genkey` and deletes after signing. After `bindeb-pkg`,
+  `scripts/sign_kernel_modules.py` signs every module of the image package with the build's
+  `sign-file` (in the build directory's `scripts/`), verifies each signature against the certificate, rewrites
+  `DEBIAN/md5sums` and rebuilds the package; the unsigned package stays in
+  `<work-dir>/<stream>-<arch>/unsigned/` and `build.json` records the step under
+  `module_signing`. The artifact gate refuses a module without a signature. Two builds sign alike
+  only with one key: without `--module-key` each build has its own, so their image packages and
+  `vmlinuz` still differ by the key, and their unsigned packages are what compares.
 - The kernel's `scripts/package/mkdebian` dates `debian/changelog` with `$(date -R)`, which would
   ordinarily stamp the wall clock into `usr/share/doc/<package>/changelog.Debian.gz`. `build_kernel.sh`
   eliminates this variance by prepending a `date` wrapper (`scripts/lib/date-from-epoch.sh`) to `PATH`
@@ -130,8 +140,9 @@ handled:
   `nucleus <nucleus@forge>`: `build_kernel.sh` sets `KBUILD_BUILD_USER` and `KBUILD_BUILD_HOST` and
   unsets `DEBFULLNAME` and `DEBEMAIL`, which `mkdebian` would otherwise prefer.
 
-Issue #77 tracks the module signing key reproducibility, and a CI job that builds one tag twice and
-compares the two output directories with `scripts/verify-reproducibility.sh` (section 3).
+Issue #77 tracks a CI job that builds one tag twice with one key and compares the two output
+directories with `scripts/verify-reproducibility.sh` (section 3). A stable release signing key is
+the operator's to create and is not configured.
 
 ### 2.2 Localversion & Package Naming Contract
 
@@ -537,7 +548,7 @@ digest, and a stand-in digest would describe a build that did not happen.
 
 The downstream `repository_dispatch` payload (`kernel_release_published`) carries `stream`, `version` (`<version>-lusoris<N>`, the same string as the manifest's `version`), and `tag`; it is sent with the `KERNEL_FORGE_TOKEN` secret (section 5.5). Imago downloads the release named by `tag`, verifies the cosign bundle over `SHA256SUMS`, recomputes the `SHA256SUMS` digest and every artifact digest and size against the manifest, and only then pins `kernel.streams.<stream>` (version, `artifact_digest`, provenance) in its `versions.json`.
 
-Because kernel packages are not byte-for-byte reproducible (module signatures and the `debian/changelog` date differ across builds), re-running `publish-release.yml` (via `workflow_dispatch` or a job re-run) for an existing tag would upload differing digests under the same tag, breaking downstream consumers pinned to the initial digests. `publish-release.yml` checks for an existing release before building (`scripts/refuse_existing_release.sh`) and refuses execution if one exists. To release again after a fix or build configuration change, cut a new revision (`lusoris<N+1>`, e.g. `v7.2.8-mainstream-lusoris2`); deleting an existing release is an operator act.
+Because kernel packages are not byte-for-byte reproducible (each build signs its modules with a key of its own, section 2.1), re-running `publish-release.yml` (via `workflow_dispatch` or a job re-run) for an existing tag would upload differing digests under the same tag, breaking downstream consumers pinned to the initial digests. `publish-release.yml` checks for an existing release before building (`scripts/refuse_existing_release.sh`) and refuses execution if one exists. To release again after a fix or build configuration change, cut a new revision (`lusoris<N+1>`, e.g. `v7.2.8-mainstream-lusoris2`); deleting an existing release is an operator act.
 
 ### 5.4 Release Tags
 

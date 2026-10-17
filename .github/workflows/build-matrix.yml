@@ -18,6 +18,7 @@ on:
       - "scripts/install-build-toolchain.sh"
       - "scripts/probe-build-space.sh"
       - "scripts/check_kernel_artifacts.py"
+      - "scripts/sign_kernel_modules.py"
       - "scripts/boot_smoke.py"
       - "scripts/package-uki.sh"
       - "scripts/check_uki.py"
