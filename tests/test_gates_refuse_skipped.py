@@ -8,6 +8,7 @@ Gitleaks history scan, which run on every event and must never skip.
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -275,3 +276,61 @@ def test_the_allowed_skips_are_exactly_the_detector_gated_jobs_the_security_gate
     assert gated == DETECTOR_GATED
     names = {key: j["name"] for key, j in jobs.items()}
     assert {names[n] for n in jobs["security-gate"]["needs"]} >= DETECTOR_GATED
+
+
+# The aggregator of runs 39004397349 and 39004953382 waited on build legs the forge had not
+# started; the gate's timeout must be a wall-clock deadline that a slow or hung gh api cannot
+# stretch, and the failure must say what it waited for.
+PENDING = '{"id":1,"name":"Build Kernel (lts / arm64)","status":"queued","conclusion":null}\n'
+
+
+def _main_with_gh(tmp_path, body: str, *extra: str) -> tuple[subprocess.CompletedProcess, float]:
+    """Run the gate against a gh stub with the given shell body; return the result and seconds."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (tmp_path / "poll.jsonl").write_text(PENDING, encoding="utf-8")
+    stub = bin_dir / "gh"
+    stub.write_text(f"#!/usr/bin/env bash\n{body}\n", encoding="utf-8")
+    stub.chmod(0o755)
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    argv = [sys.executable, str(GATE_SCRIPT), "--repo", "o/r", "--ref", "abc",
+            "--self", "required-checks", *extra]  # fmt: skip
+    start = time.monotonic()
+    result = subprocess.run(argv, capture_output=True, text=True, env=env, check=False, timeout=60)
+    return result, time.monotonic() - start
+
+
+def test_a_check_that_never_finishes_fails_at_the_deadline_and_is_named(tmp_path):
+    result, seconds = _main_with_gh(
+        tmp_path, f'cat "{tmp_path}/poll.jsonl"', "--interval", "1", "--timeout", "3"
+    )
+    assert result.returncode == 1
+    assert "::error::deadline of 3s passed; still pending: Build Kernel (lts / arm64)" in (
+        result.stderr
+    )
+    assert seconds < 6, seconds
+
+
+def test_slow_polls_count_against_the_deadline(tmp_path):
+    """Four polls of two seconds each would take 12 s; the deadline stops the gate at 3 s."""
+    result, seconds = _main_with_gh(
+        tmp_path, f'sleep 2; cat "{tmp_path}/poll.jsonl"', "--interval", "1", "--timeout", "3"
+    )
+    assert result.returncode == 1 and "still pending" in result.stderr
+    assert seconds < 6, seconds
+
+
+def test_a_hung_gh_api_call_is_killed_and_the_gate_fails_closed(tmp_path):
+    result, seconds = _main_with_gh(tmp_path, "exec sleep 600", "--interval", "1", "--timeout", "3")
+    assert result.returncode == 1
+    assert "gh api did not answer within" in result.stderr
+    assert seconds < 8, seconds
+
+
+def test_a_failing_gh_api_call_is_retried_then_named(tmp_path):
+    result, _ = _main_with_gh(
+        tmp_path, 'echo "HTTP 502: Bad Gateway" >&2; exit 1', "--interval", "1", "--timeout", "2"
+    )
+    assert result.returncode == 1
+    assert "gh api failed (exit 1): HTTP 502: Bad Gateway" in result.stderr
+    assert result.stdout.count("poll failed") >= 2
