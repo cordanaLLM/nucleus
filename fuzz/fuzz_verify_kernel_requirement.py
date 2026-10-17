@@ -26,21 +26,20 @@ import verify_kernel_requirement as vkr  # noqa: E402
 
 def test_one_input(data: bytes) -> None:
     """Exercise requirement parsing, config parsing, and release version comparison."""
-    # (a) parse_requirement(data), catch RequirementError only
     try:
         vkr.parse_requirement(data)
     except vkr.RequirementError:
+        # The parser's documented refusal of a malformed document; any other exception is a crash.
         pass
 
-    # (b) decode data utf-8 errors="surrogateescape" -> text; parse_config_text(text, "fuzz"), catch KconfigError only
     text = data.decode("utf-8", errors="surrogateescape")
     try:
         vkr.parse_config_text(text, "fuzz")
     except vkr.KconfigError:
+        # The parser's documented refusal of a malformed configuration line.
         pass
 
-    # (c) release_components(text) must return tuple of ints, len <= vkr.MAX_RELEASE_COMPONENTS, every int >= 0;
-    # at_least(text, text) must be True (reflexive); assert these with explicit if ...: raise AssertionError(...)
+    # A release splits into at most MAX_RELEASE_COMPONENTS non-negative integers and is at least itself.
     components = vkr.release_components(text)
     if not isinstance(components, tuple):
         raise AssertionError(f"release_components returned {type(components)}, expected tuple")
