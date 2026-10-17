@@ -78,3 +78,24 @@ exceptions:
       step; resolve and verify-resolved need verify, which the check reports because it reads no always() and no
       required context. Closed by cordanaLLM/praetor#1368.
     expires: "2027-01-13"
+  - rule: HISS-18
+    path: .github/workflows/nvidia-open-module.yml
+    reason: >-
+      Category A, 90 days from 2026-10-18. Every job a pull request starts begins with the draft
+      step; build needs plan for its matrix, which the check reports because it reads no always() and no required context;
+      no job of this workflow is a required check. Closed by cordanaLLM/praetor#1368.
+    expires: "2027-01-16"
+  - rule: HISS-18
+    path: .github/workflows/openzfs-module.yml
+    reason: >-
+      Category A, 90 days from 2026-10-18. Every job a pull request starts begins with the draft
+      step; build needs plan for its matrix, which the check reports because it reads no always() and no required context;
+      no job of this workflow is a required check. Closed by cordanaLLM/praetor#1368.
+    expires: "2027-01-16"
+  - rule: HISS-18
+    path: .github/workflows/package-lifecycle.yml
+    reason: >-
+      Category A, 90 days from 2026-10-18. Every job a pull request starts begins with the draft
+      step; lifecycle needs plan for its matrix, which the check reports because it reads no always() and no required context;
+      no job of this workflow is a required check. Closed by cordanaLLM/praetor#1368.
+    expires: "2027-01-16"

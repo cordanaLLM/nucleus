@@ -225,10 +225,14 @@ A draft pull request runs no gate. Every job a pull request starts begins with t
 until the pull request is marked ready for review. The `ready_for_review` event then starts the
 gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
 `test_every_pull_request_job_stops_on_a_draft` in `tests/test_workflows.py` refuses a workflow
-without that step or without the event. Two workflows are declared as HISS-18 exceptions in
-`.standards.yaml`: `security-scans.yml` and `verify-requirements.yml`. Their jobs that need
-another job are skipped on a draft, and the audit reports them although nothing can merge
-through them. The exceptions expire on 2027-01-13 and close with cordanaLLM/praetor#1368.
+without that step or without the event. Five workflows are declared as HISS-18 exceptions in
+`.standards.yaml`: `security-scans.yml` and `verify-requirements.yml` (expiring on 2027-01-13),
+and `nvidia-open-module.yml`, `openzfs-module.yml` and `package-lifecycle.yml` (expiring on
+2027-01-16). Their jobs that need another job are skipped on a draft, and the audit reports them
+although nothing can merge through them. The last three build a matrix that a plan job computes,
+and no job of theirs is a required check; their exceptions say so, and
+`tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
+`.github/rulesets/main.json` requires. All five close with cordanaLLM/praetor#1368.
 
 ## 5. The praetor pin
 
