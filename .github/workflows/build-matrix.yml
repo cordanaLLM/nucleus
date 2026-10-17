@@ -43,9 +43,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-matrix-${{ github.ref }}
-  # A new push to a pull request supersedes its running build; a scheduled or dispatched run
-  # is never cancelled.
+  # One group per branch: a pull request run (head_ref) and a dispatch on its branch (ref_name)
+  # share it, so the two never compile the same twelve legs side by side; a second run waits.
+  # A new push to a pull request supersedes the running build of its branch, a dispatched one
+  # included; a scheduled run, or a dispatch on a branch with no pull request, is never cancelled.
+  group: build-matrix-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -74,6 +76,10 @@ jobs:
         - /mnt:/mnt
     strategy:
       fail-fast: false
+      # The organisation's hosted runners are one pool for every repository; twelve legs of up
+      # to 90 minutes each left other repositories' jobs queued (2026-10-17). Six at a time
+      # finish in two waves; required-aggregator.yml waits for both.
+      max-parallel: 6
       matrix:
         stream:
           - bleeding
