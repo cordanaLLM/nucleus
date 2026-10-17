@@ -140,9 +140,13 @@ The packages are not yet shown to be bit-for-bit reproducible. Both known causes
   `nucleus <nucleus@forge>`: `build_kernel.sh` sets `KBUILD_BUILD_USER` and `KBUILD_BUILD_HOST` and
   unsets `DEBFULLNAME` and `DEBEMAIL`, which `mkdebian` would otherwise prefer.
 
-Issue #77 tracks a CI job that builds one tag twice with one key and compares the two output
-directories with `scripts/verify-reproducibility.sh` (section 3). A stable release signing key is
-the operator's to create and is not configured.
+The `Reproducible Build (mainstream / x86_64)` job in `.github/workflows/build-matrix.yml` is the
+gate for issue #77: it builds `mainstream`/x86_64 twice in one job, each time from a fresh tree under
+the same work directory, without the compiler cache, and with one `--module-key` it generates and
+deletes afterwards, then fails unless `scripts/verify-reproducibility.sh` (section 3) finds the two
+output directories byte-identical. It runs on every pull request that touches the build path, on
+the weekly schedule and on dispatch. A stable release signing key is the operator's to create and
+is not configured.
 
 ### 2.2 Localversion & Package Naming Contract
 
@@ -438,7 +442,8 @@ make package-uki STREAM=mainstream ARCH=x86_64 DRY_RUN=false VMLINUZ=<path> [INI
 
 # Compare two build output directories byte for byte: every file by SHA-256, every link by
 # its target. Names each entry that differs and exits 1; refuses a missing, empty or identical
-# directory. The packages are not reproducible yet (section 2.1), so two builds differ today
+# directory. Two builds differ by their module signing key unless both are given one
+# --module-key (section 2.1)
 ./scripts/verify-reproducibility.sh --dir-a=<dir> --dir-b=<dir>
 make verify-reproducibility DRY_RUN=false DIR_A=<dir> DIR_B=<dir>
 # States the comparison and gives no verdict

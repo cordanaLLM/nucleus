@@ -18,6 +18,7 @@ on:
       - "scripts/install-build-toolchain.sh"
       - "scripts/probe-build-space.sh"
       - "scripts/check_kernel_artifacts.py"
+      - "scripts/verify-reproducibility.sh"
       - "scripts/sign_kernel_modules.py"
       - "scripts/boot_smoke.py"
       - "scripts/package-uki.sh"
@@ -289,6 +290,119 @@ jobs:
             records/
           if-no-files-found: error
           retention-days: 7
+
+  # Issue #77: two builds of one tag must write the same bytes. One leg is built twice in one
+  # job, from a fresh tree each time, under the same work directory, without the compiler cache
+  # (a cache hit would hide a compiler that writes different bytes), and with one module signing
+  # key that is generated here and deleted afterwards (docs/adr/0016-module-signing-after-the-build.md).
+  # verify-reproducibility.sh then compares the two output directories file by file. The
+  # mainstream/x86_64 leg of run 38991220451 compiled in 1276 s and took 23 minutes, so two
+  # builds fit inside the job's limit and required-checks' wait.
+  reproducibility:
+    name: Reproducible Build (mainstream / x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+      volumes:
+        - /mnt:/mnt
+    env:
+      STREAM: mainstream
+      ARCH: x86_64
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install the Build Toolchain
+        run: |
+          set -euo pipefail
+          bash ./scripts/install-build-toolchain.sh
+
+      - name: State the Comparison
+        if: env.DRY_RUN == 'true'
+        run: |
+          set -euo pipefail
+          ./scripts/build_kernel.sh --stream="${STREAM}" --arch="${ARCH}" --dry-run
+          ./scripts/verify-reproducibility.sh --dir-a=repro/a --dir-b=repro/b --dry-run
+
+      # One tree at a time (x86_64 needs 10 GiB above) and two output directories of about 60 MiB.
+      - name: Probe Free Disk Space
+        id: disk
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          base="$(./scripts/probe-build-space.sh --need-gib=12 "${GITHUB_WORKSPACE}" /mnt)"
+          echo "work_dir=${base}/nucleus-repro" >> "${GITHUB_OUTPUT}"
+          echo "key_dir=${base}/nucleus-repro-key" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate the Module Signing Key for Both Builds
+        if: env.DRY_RUN != 'true'
+        env:
+          KEY_DIR: ${{ steps.disk.outputs.key_dir }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "${KEY_DIR}"
+          openssl req -new -nodes -utf8 -sha512 -days 1 -batch -x509 -newkey rsa:4096 \
+            -subj "/CN=nucleus reproducibility check" \
+            -keyout "${KEY_DIR}/key.pem" -out "${KEY_DIR}/cert.pem"
+          cat "${KEY_DIR}/key.pem" "${KEY_DIR}/cert.pem" > "${KEY_DIR}/module-key.pem"
+          rm -f "${KEY_DIR}/key.pem" "${KEY_DIR}/cert.pem"
+
+      - name: Build Twice and Compare
+        if: env.DRY_RUN != 'true'
+        env:
+          WORK_DIR: ${{ steps.disk.outputs.work_dir }}
+          KEY: ${{ steps.disk.outputs.key_dir }}/module-key.pem
+        run: |
+          set -euo pipefail
+          for side in a b; do
+            rm -rf "${WORK_DIR}"
+            ./scripts/build_kernel.sh --stream="${STREAM}" --arch="${ARCH}" \
+              --work-dir="${WORK_DIR}" --output-dir="repro/${side}" --module-key="${KEY}"
+            mkdir -p repro/records
+            cp "${WORK_DIR}/${STREAM}-${ARCH}/build.json" "repro/records/build-${side}.json"
+          done
+          ./scripts/verify-reproducibility.sh --dir-a=repro/a --dir-b=repro/b
+
+      - name: Delete the Module Signing Key
+        if: always() && steps.disk.outputs.key_dir != ''
+        env:
+          KEY_DIR: ${{ steps.disk.outputs.key_dir }}
+        run: |
+          set -euo pipefail
+          rm -rf "${KEY_DIR}"
+
+      - name: Keep Both Builds for Inspection
+        if: failure() && steps.disk.outputs.work_dir != ''
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: reproducibility-${{ github.run_id }}
+          path: repro/
+          if-no-files-found: ignore
+          retention-days: 3
 
   # The local build container (docker/Dockerfile.builder) installs the toolchain with the same
   # script as the matrix above; this job builds it and checks the toolchain inside it
