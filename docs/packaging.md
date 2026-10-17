@@ -115,7 +115,9 @@ of every arm64 and riscv64 build does. Ubuntu keeps GNU `install` as `gnuinstall
 build's `PATH`; with neither, it refuses. Replacing uutils altogether is not an option there:
 `build-essential` depends on it, and `bindeb-pkg` checks the build dependencies.
 
-The packages are not yet shown to be bit-for-bit reproducible. Both known causes are handled:
+Two builds of one tag that sign with one module key are bit-for-bit identical; the CI job described
+below checks it on every pull request that touches the build path. Both known causes of difference
+are handled:
 
 - The modules are signed after the build, not during it
   ([ADR-0016](adr/0016-module-signing-after-the-build.md)). The build generates no key:
@@ -553,7 +555,7 @@ digest, and a stand-in digest would describe a build that did not happen.
 
 The downstream `repository_dispatch` payload (`kernel_release_published`) carries `stream`, `version` (`<version>-lusoris<N>`, the same string as the manifest's `version`), and `tag`; it is sent with the `KERNEL_FORGE_TOKEN` secret (section 5.5). Imago downloads the release named by `tag`, verifies the cosign bundle over `SHA256SUMS`, recomputes the `SHA256SUMS` digest and every artifact digest and size against the manifest, and only then pins `kernel.streams.<stream>` (version, `artifact_digest`, provenance) in its `versions.json`.
 
-Because kernel packages are not byte-for-byte reproducible (each build signs its modules with a key of its own, section 2.1), re-running `publish-release.yml` (via `workflow_dispatch` or a job re-run) for an existing tag would upload differing digests under the same tag, breaking downstream consumers pinned to the initial digests. `publish-release.yml` checks for an existing release before building (`scripts/refuse_existing_release.sh`) and refuses execution if one exists. To release again after a fix or build configuration change, cut a new revision (`lusoris<N+1>`, e.g. `v7.2.8-mainstream-lusoris2`); deleting an existing release is an operator act.
+Because a release cannot be rebuilt to its published bytes (each release signs its modules with a key generated for that build and deleted after it, section 2.1), re-running `publish-release.yml` (via `workflow_dispatch` or a job re-run) for an existing tag would upload differing digests under the same tag, breaking downstream consumers pinned to the initial digests. `publish-release.yml` checks for an existing release before building (`scripts/refuse_existing_release.sh`) and refuses execution if one exists. To release again after a fix or build configuration change, cut a new revision (`lusoris<N+1>`, e.g. `v7.2.8-mainstream-lusoris2`); deleting an existing release is an operator act.
 
 ### 5.4 Release Tags
 

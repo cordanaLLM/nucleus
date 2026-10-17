@@ -179,7 +179,7 @@ make boot-smoke KERNEL=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstre
 make package-uki STREAM=mainstream ARCH=x86_64
 
 # Compare two build output directories byte for byte (DRY_RUN=true, the default, only states it).
-# The packages are not reproducible yet; see docs/packaging.md, section 2.1
+# Two builds with one --module-key are byte-identical, a CI gate; see docs/packaging.md, section 2.1
 make verify-reproducibility DRY_RUN=false DIR_A=<dir> DIR_B=<dir>
 
 # Run the hermetic tests of the boot smoke test
