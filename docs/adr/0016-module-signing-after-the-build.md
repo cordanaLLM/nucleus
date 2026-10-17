@@ -119,6 +119,9 @@ this work for this forge:
   compressed module or with an unsigned module.
 - `tests/test_build_kernel.py`: the dry run states the key and the signing step; a `--module-key`
   that is not a file is refused before anything is written; `build.json` records `module_signing`.
+- `.github/workflows/build-matrix.yml`, job `reproducibility`: builds `mainstream`/x86_64 twice
+  with one generated `--module-key` and fails unless `scripts/verify-reproducibility.sh` finds the
+  two output directories byte-identical.
 - `scripts/kconfig_survival.py`, run for all twelve legs by `verify-requirements.yml` and
   `build-matrix.yml`, refuses a leg on which the signing values do not survive `olddefconfig`.
 
