@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "2.0.0",
   "source": "https://api.github.com/repos/cordanaLLM/nucleus/milestones?state=all",
-  "mirrored_at": "2026-10-17T14:04:41Z",
+  "mirrored_at": "2026-10-17T14:08:44Z",
   "milestones": [
     {
       "number": 1,
@@ -42,7 +42,7 @@
     {
       "number": 6,
       "title": "Repository nucleus: decisions, roadmap and backlog",
-      "state": "open",
+      "state": "closed",
       "due_on": null,
       "description": "Repository nucleus: decisions, roadmap and backlog\n\nhome node created 2026-10-12: this repository's ledger answers hang here by owner prefix; specific work nodes take them over when a link is verified | 2026-10-13 transitive reduction: dependency on NCM2 is implied through NCM3; direct edge dropped (order and reach unchanged)."
     },
