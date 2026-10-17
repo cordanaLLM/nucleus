@@ -24,9 +24,9 @@ EVERY_RUN_CONDITIONS = {"always()", "!cancelled()", "success()||failure()", "fai
 
 
 def test_workflows_count():
-    """Ensure all 17 production CI/CD workflows exist."""
+    """Ensure all 18 production CI/CD workflows exist."""
     workflows = list(WORKFLOWS_DIR.glob("*.yml"))
-    assert len(workflows) == 17, f"Expected exactly 17 workflows, found {len(workflows)}"
+    assert len(workflows) == 18, f"Expected exactly 18 workflows, found {len(workflows)}"
 
 
 def test_workflows_least_privilege_permissions():

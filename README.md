@@ -81,8 +81,8 @@ flowchart TD
 
 | Stream | Upstream Base | Target Workloads & Hardware Stack | Default In Flavors |
 | :--- | :--- | :--- | :--- |
-| **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200 (out-of-tree driver, not built here), CXL 3.0, sched-ext, BBR | `*-nvidia-bleeding` |
-| **`mainstream`** | **Linux 7.2.10** | AMD Radeon for ROCm (`amdgpu` with KFD), Podman 5.x; Intel Arc Battlemage Xe2 (`xe`) is built and claimed on all four streams on x86_64 (arm64 waits for a consumer requirement document); NVIDIA's driver is out of tree and not built here | `base-*`, `docker-*`, `ai-infer-*` |
+| **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200 (open kernel modules checked in CI, [packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)), CXL 3.0, sched-ext, BBR | `*-nvidia-bleeding` |
+| **`mainstream`** | **Linux 7.2.10** | AMD Radeon for ROCm (`amdgpu` with KFD), Podman 5.x; Intel Arc Battlemage Xe2 (`xe`) is built and claimed on all four streams on x86_64 (arm64 waits for a consumer requirement document); NVIDIA open kernel modules checked in CI ([packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)) | `base-*`, `docker-*`, `ai-infer-*` |
 | **`lts`** | **Linux 6.18.56** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
 | **`realtime`** | **Linux 7.2.10**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
 

@@ -14,6 +14,8 @@ so every value they place on a command line has been checked against its shape f
                                         one per line
     versions_query.py openzfs           the OpenZFS out-of-tree module source, pins, and
                                         supported kernel version range
+    versions_query.py nvidia-open       the NVIDIA Open GPU kernel module source, pins, and
+                                        supported streams
 
 A value outside its shape, an unknown stream, an unknown architecture or an unknown collection
 is refused with exit status 2 and nothing on standard output. versions.schema.json states the
@@ -181,6 +183,55 @@ def openzfs_fields(versions: Mapping[str, object]) -> list[tuple[str, str]]:
     ]
 
 
+def nvidia_open_fields(versions: Mapping[str, object]) -> list[tuple[str, str]]:
+    """The checked build fields of the NVIDIA Open GPU kernel module, in a fixed order."""
+    modules = versions.get("modules")
+    if not isinstance(modules, dict) or "nvidia_open" not in modules:
+        raise QueryError("modules.nvidia_open missing from manifest")
+    nv = modules["nvidia_open"]
+    if not isinstance(nv, dict):
+        raise QueryError("modules.nvidia_open: must be an object")
+    for k in ("version", "streams", "architectures"):
+        if k not in nv:
+            raise QueryError(f"modules.nvidia_open.{k} missing")
+    source = nv.get("source")
+    if not isinstance(source, dict):
+        raise QueryError("modules.nvidia_open.source missing")
+    for k in ("url", "sha256", "commit"):
+        if k not in source:
+            raise QueryError(f"modules.nvidia_open.source.{k} missing")
+    streams = nv.get("streams")
+    if not isinstance(streams, list) or not streams:
+        raise QueryError("modules.nvidia_open.streams: must be a non-empty list")
+    for s in streams:
+        _shaped(s, _NAME, "modules.nvidia_open.streams")
+    archs = nv.get("architectures")
+    if not isinstance(archs, list) or not archs:
+        raise QueryError("modules.nvidia_open.architectures: must be a non-empty list")
+    for a in archs:
+        _shaped(a, _NAME, "modules.nvidia_open.architectures")
+    return [
+        (
+            "version",
+            _shaped(nv.get("version"), _ZFS_VERSION, "modules.nvidia_open.version"),
+        ),
+        (
+            "url",
+            _shaped(source.get("url"), _SHAPES["url"], "modules.nvidia_open.source.url"),
+        ),
+        (
+            "sha256",
+            _shaped(source.get("sha256"), _SHAPES["sha256"], "modules.nvidia_open.source.sha256"),
+        ),
+        (
+            "commit",
+            _shaped(source.get("commit"), _SHAPES["commit"], "modules.nvidia_open.source.commit"),
+        ),
+        ("streams", " ".join(streams)),
+        ("architectures", " ".join(archs)),
+    ]
+
+
 def list_names(versions: Mapping[str, object], collection: str) -> list[str]:
     """The names declared under streams or architectures, in order."""
     if collection not in ("streams", "architectures"):
@@ -196,7 +247,7 @@ def list_names(versions: Mapping[str, object], collection: str) -> list[str]:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--versions", type=Path, default=Path("versions.json"))
-    parser.add_argument("query", choices=("source", "arch", "list", "openzfs"))
+    parser.add_argument("query", choices=("source", "arch", "list", "openzfs", "nvidia-open"))
     parser.add_argument(
         "name",
         nargs="?",
@@ -222,6 +273,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("\n".join(f"{key}={value}" for key, value in fields))
         elif args.query == "openzfs":
             fields = openzfs_fields(versions)
+            print("\n".join(f"{key}={value}" for key, value in fields))
+        elif args.query == "nvidia-open":
+            fields = nvidia_open_fields(versions)
             print("\n".join(f"{key}={value}" for key, value in fields))
         elif args.query == "list":
             names = list_names(versions, args.name)
