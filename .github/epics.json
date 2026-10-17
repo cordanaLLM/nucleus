@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "2.0.0",
   "source": "https://api.github.com/repos/cordanaLLM/nucleus/issues?state=all&labels=epic",
-  "mirrored_at": "2026-10-16T13:06:40Z",
+  "mirrored_at": "2026-10-17T14:04:41Z",
   "epics": [
     {
       "id": "EPIC-01",
       "issue": 1,
       "title": "Epic: Multi-Stream Kernel Release Matrix & Upstream Synchronization",
       "state": "closed",
-      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "milestone": "1.0.0-rc1 — Multi-Stream Kernel Compilation Forge",
       "labels": [
         "epic",
         "kind/feature",
@@ -25,7 +25,7 @@
       "issue": 2,
       "title": "Epic: Hardened KConfig Baselines & KSPP CIS L2 Compliance",
       "state": "closed",
-      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "milestone": "1.0.0-rc1 — Multi-Stream Kernel Compilation Forge",
       "labels": [
         "epic",
         "kind/security",
@@ -39,8 +39,8 @@
       "id": "EPIC-03",
       "issue": 3,
       "title": "Epic: Multi-Architecture Cross-Compilation Engine (x86_64, arm64, riscv64)",
-      "state": "open",
-      "milestone": "0.4 — Multi-arch cross-compilation and dual packaging",
+      "state": "closed",
+      "milestone": "0.4.0 — Multi-arch cross-compilation and dual packaging",
       "labels": [
         "epic",
         "kind/feature",
@@ -55,8 +55,8 @@
       "id": "EPIC-04",
       "issue": 4,
       "title": "Epic: Dual Packaging Pipeline (.deb & systemd-ukify UKI EFI)",
-      "state": "open",
-      "milestone": "0.4 — Multi-arch cross-compilation and dual packaging",
+      "state": "closed",
+      "milestone": "0.4.0 — Multi-arch cross-compilation and dual packaging",
       "labels": [
         "epic",
         "kind/feature",
@@ -71,7 +71,7 @@
       "issue": 5,
       "title": "Epic: Enterprise CI/CD, Supply Chain Attestation & Downstream Dispatch",
       "state": "closed",
-      "milestone": "v1.0.0-rc1 - Multi-Stream Kernel Compilation Forge",
+      "milestone": "1.0.0-rc1 — Multi-Stream Kernel Compilation Forge",
       "labels": [
         "epic",
         "kind/security",
@@ -86,7 +86,7 @@
       "issue": 6,
       "title": "Epic: Next-Gen Hardware Acceleration & Scheduler Engine (Blackwell, Xe2, BBRv3, sched-ext)",
       "state": "open",
-      "milestone": "0.5 — Next-gen hardware acceleration and sched-ext",
+      "milestone": "0.5.0 — Next-gen hardware acceleration and sched-ext",
       "labels": [
         "epic",
         "kind/feature",
