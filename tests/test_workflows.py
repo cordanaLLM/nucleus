@@ -164,7 +164,13 @@ def _build_matrix():
 
 SCRIPT_REF = re.compile(r"(?:\bscripts/|\$\{SCRIPT_DIR\}/)([A-Za-z0-9_.-]+)")
 PY_IMPORT = re.compile(r"^(?:from|import) ([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE)
-BUILD_INPUTS = {"kconfig/**", "keys/**", "versions.json", "docker/Dockerfile.builder"}
+BUILD_INPUTS = {
+    "kconfig/**",
+    "keys/**",
+    "patches/**",
+    "versions.json",
+    "docker/Dockerfile.builder",
+}
 
 
 def _build_path_scripts() -> set[str]:
@@ -789,13 +795,14 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
     assert restore["with"]["path"] == save["with"]["path"] == ".kernel-source-work"
     assert f"--work={restore['with']['path']}" in fetch["run"]
     assert '--dest="${RUNNER_TEMP}/linux-${STREAM}"' in fetch["run"]
-    check_patches = steps["Check the Carried Patches Apply"]
+    apply_patches = steps["Apply the Carried Patches"]
     assert (
-        "scripts/check_patches_apply.py" in check_patches["run"]
-        and "STREAM" in check_patches["env"]
+        "scripts/check_patches_apply.py" in apply_patches["run"]
+        and "--apply" in apply_patches["run"]
+        and "STREAM" in apply_patches["env"]
     )
     step_names = [s.get("name", "") for s in resolve["steps"]]
-    assert step_names.index("Check the Carried Patches Apply") < step_names.index(
+    assert step_names.index("Apply the Carried Patches") < step_names.index(
         "Resolve the Configuration"
     )
     resolve_step = steps["Resolve the Configuration"]

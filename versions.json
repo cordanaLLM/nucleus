@@ -3,7 +3,7 @@
   "metadata": {
     "repository": "nucleus",
     "upstream": "https://www.kernel.org",
-    "updated": "2026-10-14"
+    "updated": "2026-10-17"
   },
   "streams": {
     "bleeding": {
@@ -119,6 +119,36 @@
       "commit": "e3fe08a0eb622b438569198f0679f8ce935533c7",
       "sha256": "99ece6bacbb1bbd2534bbe9cf073027b2e364e8eb3d329ea68b675e2eca87019",
       "vendored": "tests/fixtures/kernel-requirement/aegis-kernel-requirement.schema.json"
+    }
+  },
+  "patches": {
+    "bbr3": {
+      "description": "BBRv3 TCP congestion control (tcp_bbr3, CONFIG_TCP_CONG_BBR3) and the TCP rate-sampling changes it needs, from Google's BBR repository. BBRv1 (tcp_bbr) stays the default; lts 6.18 is not a base the series applies to.",
+      "repository": "https://github.com/google/bbr",
+      "ref": "bbr-v3-2026-09-16-01",
+      "commit": "674859761ded9f32690c7bdaf22ef585531452ed",
+      "base": "c1c3d01e3a9038d3e8f497e773e1f7b5d6b8212a",
+      "licence": "GPL-2.0-only AND (GPL-2.0-only OR BSD-3-Clause)",
+      "streams": [
+        "bleeding",
+        "mainstream",
+        "realtime"
+      ],
+      "commits": [
+        "05406b11b89c1b92589fa21de514be9d88867f3f",
+        "00c93fecebf2dd8506e9a6dec1050a8029928320",
+        "3135ccb26f465ed9011caa9aec349cffc9bd9ff8",
+        "cdca16841b6bc3fa862c37530fd4d29e9b9698b3",
+        "1c76bd18cac505ce475637c5b22a6b41c03467b0",
+        "ae9ad8705d0d2be6ef5a6a599872b08b41f18340",
+        "89325a350fc662d2db79611561c98a257b479ba3",
+        "d77ce3b29e64b945f73bec0e06c9a053726c9f4d",
+        "0ff26e2badc556d63aabbd91e92a6e377b04b614",
+        "79da4234773785d13eac0d700c7b144852245ab6",
+        "217d0bbe41c1d0c82b23b8d734fd370d93de83cd",
+        "c552eebe76878d6a66fbac0c811f5f1d845ace7d",
+        "5dee74110da392fc3e32208fdae50fc29886fa25"
+      ]
     }
   },
   "modules": {

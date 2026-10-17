@@ -258,6 +258,7 @@ def _uutils_bin(tmp_path: Path, with_gnuinstall: bool) -> dict:
         "rsync",
         "tar",
         "openssl",
+        "patch",
         VERSIONS["architectures"]["x86_64"]["cross_compile"] + "gcc",
     ]
     if with_gnuinstall:

@@ -71,9 +71,11 @@ def test_the_list_covers_every_line_of_the_k8s_node_fragment():
     assert claims["k8s-node"].architectures == tuple(VERSIONS["architectures"])
     assert legacy.streams == ("bleeding", "mainstream", "lts")
     assert legacy.architectures == tuple(VERSIONS["architectures"])
+    bbr3 = claims["bbr3"]
     for stream in ("bleeding", "mainstream", "lts"):
         stream_cfg = vkr.read_config(KCONFIG / "streams" / f"{stream}.config")
-        assert set(stream_cfg) == set(legacy.symbols)
+        carried = set(bbr3.symbols) if stream in bbr3.streams else set()
+        assert set(stream_cfg) == set(legacy.symbols) | carried
     realtime = vkr.read_config(KCONFIG / "streams" / "realtime.config")
     for symbol in legacy.symbols:
         assert symbol not in realtime
@@ -98,12 +100,22 @@ def test_the_mainstream_gpu_claim_names_xe_and_amdgpu():
         ("realtime", "x86_64", "CONFIG_PREEMPT_RT"),
         ("bleeding", "riscv64", "CONFIG_SCHED_CLASS_EXT"),
         ("lts", "x86_64", "CONFIG_SCHED_CLASS_EXT"),
+        ("mainstream", "x86_64", "CONFIG_TCP_CONG_BBR3"),
+        ("realtime", "arm64", "CONFIG_TCP_CONG_BBR3"),
     ],
 )
 def test_a_claimed_option_that_is_off_is_refused(tmp_path, stream, arch, drop):
     result = _run(_declared(tmp_path, stream, arch, drop=drop), stream, arch)
     assert result.returncode == 1
     assert f"{drop} unrecorded" in result.stderr
+
+
+def test_the_bbr3_claim_covers_exactly_the_streams_the_series_is_carried_for():
+    doc = json.loads(REQUIRED.read_text(encoding="utf-8"))
+    claim = next(c for c in doc["claims"] if c["id"] == "bbr3")
+    versions = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
+    assert sorted(claim["streams"]) == sorted(versions["patches"]["bbr3"]["streams"])
+    assert claim["symbols"] == {"CONFIG_TCP_CONG_BBR3": "built"}
 
 
 def test_realtime_refuses_legacy_iptables_claim_if_planted(tmp_path):
