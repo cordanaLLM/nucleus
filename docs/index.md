@@ -41,7 +41,7 @@ All versions, upstream source tarball URLs, and release tags are managed exclusi
 
 | Stream | Linux Version | Status | Primary Target Workloads | Hardware Acceleration | Key Features |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090 (out-of-tree driver, not built here), CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
+| **`bleeding`** | `7.3-rc7` | Mainline | Next-gen AI clusters, high-frequency eBPF | NVIDIA Blackwell B200 / RTX 5090 (open kernel modules checked in CI, [packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)), CXL 3.0 | `sched-ext` dynamic scheduler, PCIe 6.0, cutting-edge DRMs |
 | **`mainstream`** | `7.2.10` | Stable | Production container hosts, virtualization | Intel Battlemage Xe2 (`xe`), AMD Radeon for ROCm (`amdgpu` with KFD) | BBR congestion control, `mq-deadline`, Level Zero |
 | **`lts`** | `6.18.56` | Longterm | Enterprise Kubernetes nodes, OpenZFS storage | Intel Arc Alchemist (`i915`, not on `realtime`); NVIDIA's driver is out of tree | Rock-solid stability, OpenZFS module build checked against each release ([packaging 5.6](packaging.md)), strict overcommit |
 | **`realtime`** | `7.2.10` | PREEMPT_RT | Low-jitter game servers, edge gateways | Low-latency audio & SDR hardware | Full preemptible kernel (`PREEMPT_RT`), 1000Hz timer, threaded IRQs |

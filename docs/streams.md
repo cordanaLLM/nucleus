@@ -30,14 +30,14 @@ authority, and section 3 says how each source is proven.
 ### 2.1 Bleeding Stream (`bleeding`)
 
 - **Upstream Release**: Linux 7.3-rc7 (Mainline release candidate, from the signed tag)
-- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, whose driver is out of tree and not built here; PCIe 6.0 / CXL 3.0 interconnects.
+- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, whose open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)); PCIe 6.0 / CXL 3.0 interconnects.
 - **Key Features**: sched-ext user-space eBPF scheduler support, cutting-edge DRMs, prototype memory tiering.
 - **Flavors**: `ai-infer-nvidia-bleeding`, `k8s-node-nvidia-bleeding`, `docker-nvidia-bleeding`.
 
 ### 2.2 Mainstream Stream (`mainstream`)
 
 - **Upstream Release**: Linux 7.2.10 (Stable)
-- **Target Hardware**: Intel Arc Battlemage Xe2 on `xe`, AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's driver is out of tree and not built here. Section 4.1 lists the symbols and the check that refuses a build without them.
+- **Target Hardware**: Intel Arc Battlemage Xe2 on `xe`, AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)). Section 4.1 lists the symbols and the check that refuses a build without them.
 - **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 

@@ -75,6 +75,43 @@ def test_openzfs_refuses_missing_module(tmp_path: Path):
     assert "modules.openzfs missing" in result.stderr
 
 
+def test_nvidia_open_happy_path():
+    result = _run_query("nvidia-open")
+    assert result.returncode == 0, result.stderr
+    fields = dict(line.split("=", 1) for line in result.stdout.strip().splitlines() if line)
+    nv = VERSIONS["modules"]["nvidia_open"]
+    source = nv["source"]
+    assert fields["version"] == nv["version"]
+    assert fields["url"] == source["url"]
+    assert fields["sha256"] == source["sha256"]
+    assert fields["commit"] == source["commit"]
+    assert fields["streams"] == " ".join(nv["streams"])
+    assert fields["architectures"] == " ".join(nv["architectures"])
+
+
+def test_nvidia_open_refuses_manifest_missing_sha256(tmp_path: Path):
+    manifest = json.loads(json.dumps(VERSIONS))
+    del manifest["modules"]["nvidia_open"]["source"]["sha256"]
+    bad_manifest = tmp_path / "versions.json"
+    bad_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _run_query("nvidia-open", versions=bad_manifest)
+    assert result.returncode == 2
+    assert "modules.nvidia_open" in result.stderr
+    assert "sha256" in result.stderr
+
+
+def test_nvidia_open_refuses_missing_module(tmp_path: Path):
+    manifest = json.loads(json.dumps(VERSIONS))
+    del manifest["modules"]["nvidia_open"]
+    bad_manifest = tmp_path / "versions.json"
+    bad_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _run_query("nvidia-open", versions=bad_manifest)
+    assert result.returncode == 2
+    assert "modules.nvidia_open missing" in result.stderr
+
+
 def test_list_unknown_collection_refused():
     result = _run_query("list", "unknown")
     assert result.returncode == 2

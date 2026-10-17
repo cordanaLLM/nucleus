@@ -1,0 +1,246 @@
+---
+name: nvidia-open-module
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 6 * * 1"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "versions.json"
+      - "versions.schema.json"
+      - "scripts/check-nvidia-open-module.sh"
+      - ".github/workflows/nvidia-open-module.yml"
+  push:
+    branches: [main]
+    paths:
+      - "versions.json"
+      - "versions.schema.json"
+      - "scripts/check-nvidia-open-module.sh"
+      - ".github/workflows/nvidia-open-module.yml"
+
+# A newer push to the same pull request supersedes this run. Every other event gets a group
+# of its own (run_id), so a run for main, a schedule or a dispatch is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan NVIDIA Open Module Build Matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Compute Matrix
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("versions.json", encoding="utf-8") as f:
+              data = json.load(f)
+
+          modules = data.get("modules", {})
+          nv = modules.get("nvidia_open")
+          if not nv:
+              raise SystemExit("modules.nvidia_open missing from versions.json")
+
+          streams = nv.get("streams", [])
+          if not streams:
+              raise SystemExit("modules.nvidia_open.streams missing or empty")
+
+          version = nv.get("version", "unknown")
+          commit = nv.get("source", {}).get("commit", "unknown")
+
+          summary_lines = [
+              f"### NVIDIA Open GPU Kernel Module {version} Stream Compatibility",
+              f"- NVIDIA Open version: `{version}`",
+              f"- Pinned commit: `{commit}`",
+              "",
+              "#### Target Streams (Matrix)",
+          ]
+          for s in streams:
+              stream_ver = data.get("streams", {}).get(s, {}).get("version", "unknown")
+              summary_lines.append(f"- `{s}` (`{stream_ver}`)")
+
+          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_file:
+              with open(summary_file, "a", encoding="utf-8") as sf:
+                  sf.write("\n".join(summary_lines) + "\n")
+
+          matrix = {"stream": streams}
+          output_file = os.environ.get("GITHUB_OUTPUT")
+          if output_file:
+              with open(output_file, "a", encoding="utf-8") as of:
+                  of.write(f"matrix={json.dumps(matrix)}\n")
+          PY
+
+  build:
+    name: Build NVIDIA Open Module (${{ matrix.stream }})
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install Toolchain
+        shell: bash
+        run: |
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential libssl-dev libelf-dev python3 ca-certificates \
+            curl kmod git
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+
+      - name: Download Release Assets and Build Module
+        shell: bash
+        env:
+          STREAM: ${{ matrix.stream }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ.get("GH_TOKEN", "")
+          stream = os.environ["STREAM"]
+
+          with open("versions.json", encoding="utf-8") as f:
+              v = json.load(f)
+          version = v["streams"][stream]["version"]
+          tag_ver = version.replace("~", "-")
+          prefix = f"v{tag_ver}-{stream}-lusoris"
+
+          req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases?per_page=100")
+          if token:
+              req.add_header("Authorization", f"Bearer {token}")
+          req.add_header("Accept", "application/vnd.github+json")
+          req.add_header("User-Agent", "nucleus-ci")
+
+          with urllib.request.urlopen(req, timeout=60) as resp:
+              releases = json.load(resp)
+
+          matching = []
+          for rel in releases:
+              tag = rel.get("tag_name", "")
+              m = re.match(rf"^v{re.escape(tag_ver)}-{re.escape(stream)}-lusoris(\d+)$", tag)
+              if m:
+                  matching.append((int(m.group(1)), tag, rel))
+
+          if not matching:
+              raise SystemExit(f"No release tag found matching prefix {prefix}<N>")
+
+          matching.sort(key=lambda x: x[0], reverse=True)
+          best_rev, best_tag, best_rel = matching[0]
+          print(f"Selected release tag: {best_tag}")
+
+          os.makedirs("release_assets", exist_ok=True)
+          with open("release_assets/release_tag.txt", "w", encoding="utf-8") as f:
+              f.write(best_tag)
+
+          assets = best_rel.get("assets", [])
+          needed = {}
+          for a in assets:
+              name = a["name"]
+              if name.startswith("linux-headers-") and name.endswith("_amd64.deb"):
+                  needed["headers"] = a["browser_download_url"], name
+              elif name == "SHA256SUMS":
+                  needed["sums"] = a["browser_download_url"], name
+              elif name == "SHA256SUMS.bundle":
+                  needed["bundle"] = a["browser_download_url"], name
+
+          for kind in ("headers", "sums", "bundle"):
+              if kind not in needed:
+                  raise SystemExit(f"Release {best_tag} missing asset for {kind}")
+              url, filename = needed[kind]
+              print(f"Downloading {filename}...")
+              down_req = urllib.request.Request(url)
+              if token:
+                  down_req.add_header("Authorization", f"Bearer {token}")
+              down_req.add_header("Accept", "application/octet-stream")
+              down_req.add_header("User-Agent", "nucleus-ci")
+              with urllib.request.urlopen(down_req, timeout=600) as resp, open(f"release_assets/{filename}", "wb") as out:
+                  out.write(resp.read())
+          PY
+
+          RELEASE_TAG="$(cat release_assets/release_tag.txt)"
+          SIGNER_IDENTITY="$(python3 scripts/release_signer_identity.py --repo "${GITHUB_REPOSITORY}" --tag "${RELEASE_TAG}" --server "${GITHUB_SERVER_URL}")"
+          cosign verify-blob \
+            --bundle release_assets/SHA256SUMS.bundle \
+            --certificate-identity "${SIGNER_IDENTITY}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            release_assets/SHA256SUMS
+
+          # The signed SHA256SUMS must list the headers package with the digest it has.
+          HEADERS_DEB="$(ls release_assets/linux-headers-*_amd64.deb)"
+          name="${HEADERS_DEB##*/}"
+          listed="$(awk -v n="${name}" '$2 == n || $2 == "*" n { print $1 }' release_assets/SHA256SUMS)"
+          actual="$(sha256sum "${HEADERS_DEB}" | cut -d' ' -f1)"
+          if [[ -z "${listed}" || "${listed}" != "${actual}" ]]; then
+            echo "Refused: ${name} is not in SHA256SUMS with digest ${actual}" >&2
+            exit 1
+          fi
+          ./scripts/check-nvidia-open-module.sh \
+            --headers-deb="${HEADERS_DEB}" \
+            --work="nvidia-work-${STREAM}" \
+            --jobs=4

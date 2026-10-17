@@ -642,3 +642,12 @@ weekly, on every push to `main` and on pull requests that touch `versions.json`,
 
 `scripts/check-openzfs-module.sh --headers-deb=<deb> --print-plan` states the tarball, its
 `sha256`, the kernel release and the range without downloading anything.
+
+### 5.7 NVIDIA Open GPU Kernel Modules Build (`.github/workflows/nvidia-open-module.yml`)
+
+NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream images builds on the open-source kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`). `nvidia-open-module.yml` checks that the pinned release of NVIDIA open-gpu-kernel-modules compiles cleanly against the published `linux-headers-<kernelrelease>` package for streams `bleeding` and `mainstream` on x86_64: it runs weekly, on every push to `main` and on pull requests touching `versions.json`, its schema, the build script or the workflow.
+
+- **What is pinned.** `modules.nvidia_open` in `versions.json` pins the driver version (`615.78.08`), source archive URL, `sha256` digest, and peeled git commit. NVIDIA upstream tags carry no GPG signature and no detached `.asc`, so the script proves the archive by its pinned SHA-256 digest and by the commit that `git get-tar-commit-id` reads from the archive header, which must equal the pinned commit.
+- **Which streams.** The plan job builds streams `bleeding` and `mainstream` on `x86_64`, matching `modules.nvidia_open.streams`.
+- **What each leg proves.** It selects the newest release of each stream, verifies its `SHA256SUMS` with Cosign against the release signer identity (`release-build.yml` or `publish-release.yml`), confirms the package digest, and invokes `scripts/check-nvidia-open-module.sh`. The script unpacks the headers package, runs `make modules SYSSRC=<headers-tree> SYSOUT=<headers-tree>` (the variables `kernel-open/Makefile` reads), and verifies that all four required kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`) exist and that the release in each `vermagic` equals the target kernel release.
+- **Plan mode.** `scripts/check-nvidia-open-module.sh --headers-deb=<deb> --print-plan` prints the pinned source URL, SHA-256 digest, kernel release, and target legs without downloading anything or modifying the worktree.

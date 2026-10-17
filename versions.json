@@ -165,6 +165,23 @@
       },
       "linux_minimum": "4.18",
       "linux_maximum": "7.2"
+    },
+    "nvidia_open": {
+      "$comment": "NVIDIA upstream tags carry no GPG signatures or detached asc files; verification is by sha256 digest and commit pin only.",
+      "version": "615.78.08",
+      "source": {
+        "kind": "tarball",
+        "url": "https://github.com/NVIDIA/open-gpu-kernel-modules/archive/refs/tags/615.78.08.tar.gz",
+        "sha256": "eac0ecd52facab28ad2963cf7e03ae8d2289d596ad590c703b5f72d65899e2bf",
+        "commit": "1a82fbfda8f321b056eb3568850f9316c5e465c5"
+      },
+      "streams": [
+        "bleeding",
+        "mainstream"
+      ],
+      "architectures": [
+        "x86_64"
+      ]
     }
   }
 }

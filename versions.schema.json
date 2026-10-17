@@ -233,6 +233,71 @@
               "pattern": "^[0-9]+[.][0-9]+$"
             }
           }
+        },
+        "nvidia_open": {
+          "type": "object",
+          "required": [
+            "version",
+            "source",
+            "streams",
+            "architectures"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+[.][0-9]+([.][0-9]+)?$"
+            },
+            "source": {
+              "type": "object",
+              "required": [
+                "kind",
+                "url",
+                "sha256",
+                "commit"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "$comment": {
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "tarball"
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://[^\\s]+/open-gpu-kernel-modules/archive/refs/tags/[0-9][0-9A-Za-z.-]*[.]tar[.]gz$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                }
+              }
+            },
+            "streams": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            },
+            "architectures": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }
