@@ -96,6 +96,8 @@ def test_the_mainstream_gpu_claim_names_xe_and_amdgpu():
         ("lts", "arm64", "CONFIG_OVERLAY_FS"),
         ("bleeding", "riscv64", "CONFIG_NF_TABLES"),
         ("realtime", "x86_64", "CONFIG_PREEMPT_RT"),
+        ("bleeding", "riscv64", "CONFIG_SCHED_CLASS_EXT"),
+        ("lts", "x86_64", "CONFIG_SCHED_CLASS_EXT"),
     ],
 )
 def test_a_claimed_option_that_is_off_is_refused(tmp_path, stream, arch, drop):

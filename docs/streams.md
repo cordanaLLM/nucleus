@@ -196,6 +196,11 @@ configuration, VMware sockets, Intel platform telemetry) and the GPU drivers `ma
 `HSA_AMD` for ROCm. The list was taken from the modules a running node loads that the
 `7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is there.
 
+sched-ext is mainline since Linux 6.12 (`kernel/sched/ext.c` first appears at `v6.12`), and
+every pinned stream is newer, so nucleus carries no patch for it: the architecture fragments set
+`CONFIG_SCHED_CLASS_EXT=y` with the BTF chain it depends on, and the `sched-ext` claim below holds
+it on every resolved leg (issue #191).
+
 `kconfig/required-config.json` lists every claim this documentation makes about what a stream
 builds, with the streams and architectures it covers and the symbols that back it:
 
