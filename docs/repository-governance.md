@@ -118,7 +118,7 @@ request edit. A skipped check passes only when its name is listed with `--allow-
 list holds just `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
 Gate judges, and `tests/test_gates_refuse_skipped.py` fails when that list differs from the
 detector-gated jobs in `security-scans.yml`. The gate also fails when it finds no other check
-run, or when the others are still running after 100 minutes. Before this, the aggregator
+run, or when the others are still running after 190 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
 Two forge behaviours shape the wait. A job that `needs` another one registers its check run
@@ -130,11 +130,11 @@ timeout); a run that carries a conclusion and a completion time counts as comple
 its status says, and its conclusion is judged like any other. Both are tested in
 `tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
 
-The 100 minutes are a wall-clock deadline measured from the gate's start, not a number of
+The 190 minutes are a wall-clock deadline measured from the gate's start, not a number of
 polls, so slow `gh api` calls count against it, and each call is killed after 60 seconds
 (`--fetch-timeout`). A failed or hung call is retried on the next poll. At the deadline the gate
 fails and names what it waited for: the check runs still pending, or the last `gh api` error
-when no poll succeeded. The job's own `timeout-minutes` of 110 is the second bound. A check
+when no poll succeeded. The job's own `timeout-minutes` of 200 is the second bound. A check
 that never finishes, a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
 
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
@@ -145,10 +145,17 @@ for them and requires their success like any other check run. `build-matrix.yml`
 same way: a pull request that touches a file the build runs or reads (the paths its
 `pull_request` trigger lists: the build scripts, `kconfig/`, `keys/`, `versions.json`, the
 builder image and the workflow itself) compiles, gates and boots all twelve legs, and
-`required-checks` waits for them. That is why the gate waits 100 minutes: the arm64 leg may run
-for 90, and the longest measured leg took 40 (run 36507112520). A new push to the pull request
-cancels the build still running for the previous one; a scheduled or dispatched run is never
-cancelled. `tests/test_workflows.py` fails when the trigger, its paths or the wait change.
+`required-checks` waits for them. The organisation's hosted runners are one pool for every
+repository, so the matrix runs at most six legs at once (`max-parallel`), and at most half of
+them, which `tests/test_workflows.py` checks; on 2026-10-17 two runs of all twelve legs left
+other repositories' jobs queued. Twelve legs six at a time take two waves, and the arm64 leg
+may run for 90 minutes (the longest measured leg took 40, run 36507112520): that is why the
+gate waits 190 minutes. One build runs per branch: a pull request run and a dispatch on its
+branch share a concurrency group, so a second run waits for the first. A new push to the pull
+request cancels the build still running for its branch, a dispatched one included; a scheduled
+run, or a dispatch on a branch without a pull request, is never cancelled.
+`tests/test_workflows.py` fails when the trigger, its paths, the cap, the group or the wait
+change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:
