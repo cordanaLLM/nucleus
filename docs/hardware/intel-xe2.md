@@ -6,7 +6,7 @@
 
 ## 1. Architectural Overview
 
-Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `cordanaLLM/nucleus`, the `mainstream` (7.2.8) and `bleeding` (7.3-rc5) streams incorporate native support for:
+Intel's graphics architecture has completed a generational transition from the legacy `i915` monolithic driver to the clean, modular **`xe`** Direct Rendering Manager (DRM) driver. In `cordanaLLM/nucleus`, all four streams (`bleeding`, `mainstream`, `lts`, and `realtime`) incorporate native support for Xe2 on x86_64 (arm64 is not claimed until a consumer requirement document asks for it):
 
 - **Intel Battlemage (Xe2-HPG)**: Discrete datacenter and workstation GPUs (BMG-G21, BMG-G31) featuring second-generation XMX (Xe Matrix eXtensions) for INT8/BF16/FP16 tensor math.
 - **Intel Lunar Lake & Arrow Lake (Xe2-LPG)**: Integrated low-power high-efficiency graphics engines.
@@ -113,7 +113,7 @@ This pins the Battlemage PCI device IDs (`e20b`, `e20c`, `e20d`) exclusively to 
 
 ## 4. oneAPI Level Zero Compute Integration
 
-The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline semaphores for high-throughput, low-jitter compute queue dispatch:
+The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline semaphores for high-throughput, low-jitter compute queue dispatch. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 
 ### User-Space Device Nodes
 

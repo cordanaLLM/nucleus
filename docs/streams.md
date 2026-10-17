@@ -37,8 +37,8 @@ authority, and section 3 says how each source is proven.
 ### 2.2 Mainstream Stream (`mainstream`)
 
 - **Upstream Release**: Linux 7.2.10 (Stable)
-- **Target Hardware**: Intel Arc Battlemage Xe2 on `xe`, AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)). Section 4.1 lists the symbols and the check that refuses a build without them.
-- **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
+- **Target Hardware**: Intel Arc Battlemage Xe2 on `xe` is built and claimed across all four streams on x86_64 (arm64 is not claimed until a consumer requirement document asks for it), AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)). Section 4.1 lists the symbols and the check that refuses a build without them.
+- **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built). Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
 ### 2.3 Long-Term Support Stream (`lts`)
@@ -191,10 +191,11 @@ table for kube-proxy and Cilium iptables mode comes from the stream fragments of
 because upstream forbids legacy xtables with `PREEMPT_RT` (kube-proxy nftables mode and Cilium
 eBPF mode do not need it). The x86_64 fragment adds the platform drivers a reference node loads
 (AES-NI and Camellia for dm-crypt, the AMD crypto coprocessor, VM generation ID, the QEMU firmware
-configuration, VMware sockets, Intel platform telemetry) and the GPU drivers `mainstream` claims:
-`xe` for Intel Arc Battlemage with the MEI GSC clients and the card's flash, and `amdgpu` with
-`HSA_AMD` for ROCm. The list was taken from the modules a running node loads that the
-`7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is there.
+configuration, VMware sockets, Intel platform telemetry), Intel Arc Battlemage (Xe2) on `xe` with the
+MEI GSC clients and the card flash (built and claimed across all four streams on x86_64; arm64 is not
+claimed until a consumer requirement document asks for it), and AMD Radeon for ROCm on `amdgpu` with
+`HSA_AMD` (claimed on `mainstream`). The list was taken from the modules a running node loads that
+the `7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is there.
 
 sched-ext is mainline since Linux 6.12 (`kernel/sched/ext.c` first appears at `v6.12`), and
 every pinned stream is newer, so nucleus carries no patch for it: the architecture fragments set
@@ -209,7 +210,8 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `k8s-node` | all | all | the common symbols of `kconfig/k8s-node.config` |
 | `k8s-node-iptables-legacy` | `bleeding`, `mainstream`, `lts` | all | `NETFILTER_XTABLES_LEGACY=y`, `IP_NF_IPTABLES_LEGACY`, `IP_NF_RAW` |
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
-| `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
+| `xe2` | all | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG` |
+| `amd-rocm` | `mainstream` | x86_64 | `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
 | `bbr3` | `bleeding`, `mainstream`, `realtime` | all | `TCP_CONG_BBR3` built, from the `bbr3` patch series ([patches.md](patches.md)) |
 | `btf` | all | all | `DEBUG_INFO_BTF=y` |

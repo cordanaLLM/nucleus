@@ -115,11 +115,9 @@
       }
     },
     {
-      "id": "mainstream-gpu",
-      "claim": "Intel Arc Battlemage (Xe2) on xe and AMD Radeon for ROCm on amdgpu with KFD (README.md, docs/streams.md)",
-      "streams": [
-        "mainstream"
-      ],
+      "id": "xe2",
+      "claim": "Intel Arc Battlemage (Xe2) on xe with the MEI GSC clients and the card flash (README.md, docs/streams.md)",
+      "streams": "all",
       "architectures": [
         "x86_64"
       ],
@@ -130,7 +128,19 @@
         "CONFIG_INTEL_MEI_GSC": "built",
         "CONFIG_INTEL_MEI_GSC_PROXY": "built",
         "CONFIG_INTEL_MEI_LB": "built",
-        "CONFIG_MTD_INTEL_DG": "built",
+        "CONFIG_MTD_INTEL_DG": "built"
+      }
+    },
+    {
+      "id": "amd-rocm",
+      "claim": "AMD Radeon for ROCm on amdgpu with KFD (README.md, docs/streams.md)",
+      "streams": [
+        "mainstream"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "symbols": {
         "CONFIG_DRM_AMDGPU": "built",
         "CONFIG_HSA_AMD": "y"
       }
