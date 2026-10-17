@@ -28,7 +28,7 @@ graph TD
         NET_CFG["Disable DCCP, SCTP, RDS, TIPC, ATM, FireWire"]
         AUDIT_CFG["CONFIG_AUDIT=y & CONFIG_AUDITSYSCALL=y"]
         MAC_CFG["CONFIG_SECURITY_APPARMOR=y & CONFIG_BPF_LSM=y"]
-        LOCK_CFG["CONFIG_SECURITY_LOCKDOWN_LSM=y & MODULE_SIG_ALL=y"]
+        LOCK_CFG["CONFIG_SECURITY_LOCKDOWN_LSM=y & MODULE_SIG=y"]
     end
 
     FS --> FS_CFG
@@ -51,7 +51,7 @@ graph TD
 | **1.1.1.5** | Disable unneeded hfsplus filesystem | `CONFIG_HFSPLUS_FS=n` | **Enforced (Compile-time)** |
 | **1.1.1.6** | Disable unneeded squashfs unprivileged mount | `CONFIG_SQUASHFS=m` (Restricted) | **Enforced (Module)** |
 | **1.1.1.7** | Disable unneeded udf filesystem | `CONFIG_UDF_FS=n` | **Enforced (Compile-time)** |
-| **1.4.1** | Ensure module signature validation | `CONFIG_MODULE_SIG=y`, `CONFIG_MODULE_SIG_ALL=y` | **Enforced (Compile-time)** |
+| **1.4.1** | Ensure module signature validation | `CONFIG_MODULE_SIG=y`; every module signed after the build by `scripts/sign_kernel_modules.py` and checked by the artifact gate ([ADR-0016](../adr/0016-module-signing-after-the-build.md)) | **Enforced (Compile-time and artifact gate)** |
 | **1.4.2** | Ensure kernel lockdown LSM enabled | `CONFIG_SECURITY_LOCKDOWN_LSM=y` | **Enforced (Compile-time)** |
 | **3.4.1** | Disable DCCP protocol | `CONFIG_IP_DCCP=n` | **Enforced (Compile-time)** |
 | **3.4.2** | Disable SCTP protocol | `CONFIG_IP_SCTP=n` | **Enforced (Compile-time)** |
@@ -77,7 +77,7 @@ CONFIG_UDF_FS=n
 
 # CIS Domain 1.4: Cryptographic Module Signatures & Lockdown
 CONFIG_MODULE_SIG=y
-CONFIG_MODULE_SIG_ALL=y
+# CONFIG_MODULE_SIG_ALL is not set (modules are signed after the build, ADR-0016)
 CONFIG_MODULE_SIG_SHA512=y
 CONFIG_MODULE_SIG_FORCE=n
 CONFIG_SECURITY_LOCKDOWN_LSM=y

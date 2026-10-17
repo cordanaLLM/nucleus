@@ -12,10 +12,13 @@
 #   3. make bindeb-pkg with LOCALVERSION=-lusoris<N>-<stream> and KDEB_PKGVERSION=
 #      <debian_version>-lusoris<N> (7.3-rc5 is 7.3~rc5, which dpkg orders before 7.3), without
 #      the debug-symbol package, in a fixed build environment;
-#   4. record `make -s kernelrelease`, spell `~` as `.` in the package file names (GitHub
+#   4. sign every module in the image package with scripts/sign_kernel_modules.py: the build
+#      compiled them unsigned and trusts the certificate of a key that --module-key names or that
+#      this script generated for the one build and deletes afterwards (issue #77);
+#   5. record `make -s kernelrelease`, spell `~` as `.` in the package file names (GitHub
 #      renames `~` in a release asset), and extract ./boot/vmlinuz-<kernelrelease> from the
 #      image package;
-#   5. pass what it produced through the artifact gate, scripts/check_kernel_artifacts.py.
+#   6. pass what it produced through the artifact gate, scripts/check_kernel_artifacts.py.
 # The output directory then holds exactly the packages, vmlinuz-<kernelrelease> and
 # kernel-<stream>-<arch>.config, and <work-dir>/<stream>-<arch>/build.json records the build.
 set -euo pipefail
@@ -36,6 +39,10 @@ KBUILD_DIR=""
 HOST_ARCH=""
 PROFILES=""
 KERNELRELEASE=""
+MODULE_KEY=""
+KEY_ORIGIN=""
+# Relative to the object tree; kconfig/security-hardened.config names it in CONFIG_SYSTEM_TRUSTED_KEYS.
+readonly TRUSTED_CERT="certs/nucleus-module-signing.pem"
 
 show_usage() {
   cat <<'EOF'
@@ -49,9 +56,11 @@ Usage: build_kernel.sh --stream=<stream> --arch=<arch> [options]
   --output-dir=<dir>    where the artifacts go; must not exist or be empty
                         [default: output/<stream>-<arch>]
   --jobs=<N>            parallel make jobs [default: nproc]
+  --module-key=<pem>    a PEM file with the private key and certificate that sign the modules;
+                        without it a key is generated for this build and deleted after signing
   --dry-run             state what a build would do; fetch, compile and write nothing
 Needs, besides what fetch-kernel-source.sh and merge-config.sh need: dpkg-dev, debhelper,
-kmod, cpio, rsync and the architecture's cross compiler from versions.json.
+kmod, cpio, rsync, openssl and the architecture's cross compiler from versions.json.
 EOF
 }
 
@@ -70,6 +79,7 @@ parse_args() {
       --work-dir=*) WORK_DIR="${1#*=}" ;;
       --output-dir=*) OUTPUT_DIR="${1#*=}" ;;
       --jobs=*) JOBS="${1#*=}" ;;
+      --module-key=*) MODULE_KEY="${1#*=}" ;;
       --dry-run) DRY_RUN=true ;;
       -h | --help)
         show_usage
@@ -138,6 +148,8 @@ state_plan() {
   echo "    wrapper: date wrapper (${LEG_DIR}/date-wrapper/date) prepended to PATH for bindeb-pkg (pins debian/changelog via SOURCE_DATE_EPOCH)"
   echo "    build:   DEB_BUILD_PROFILES='${PROFILES}' make O=${KBUILD_DIR} ARCH=${ARC[kernel_arch]} CROSS_COMPILE=${ARC[cross_compile]} -j${JOBS} bindeb-pkg LOCALVERSION=${LOCAL_VERSION} KDEB_PKGVERSION=${PACKAGE_VERSION}"
   echo "    env:     SOURCE_DATE_EPOCH and KBUILD_BUILD_TIMESTAMP from the source release, KBUILD_BUILD_USER=nucleus, KBUILD_BUILD_HOST=forge"
+  echo "    key:     ${MODULE_KEY:-a key generated for this build, deleted after signing}; its certificate at ${KBUILD_DIR}/${TRUSTED_CERT} (CONFIG_SYSTEM_TRUSTED_KEYS)"
+  echo "    sign:    scripts/sign_kernel_modules.py over the linux-image package (modules built unsigned), unsigned package kept in ${LEG_DIR}/unsigned"
   echo "    record:  make -s kernelrelease (expected ${SRC[kernelversion]}${LOCAL_VERSION}), ${LEG_DIR}/build.json"
   echo "    names:   <package>_${PACKAGE_VERSION//\~/.}_${ARC[debian_arch]}.deb (a '~' in the version is spelled '.')"
   echo "    gate:    scripts/check_kernel_artifacts.py over ${OUTPUT_DIR}: ${ARC[debian_arch]} packages at ${PACKAGE_VERSION}, ./boot/vmlinuz-<kernelrelease> a ${ARC[kernel_arch]} kernel of that release, /boot/config == the resolved config"
@@ -145,7 +157,7 @@ state_plan() {
 
 check_tools() {
   local tool
-  for tool in make python3 dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install date "${ARC[cross_compile]}gcc"; do
+  for tool in make python3 dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install date openssl "${ARC[cross_compile]}gcc"; do
     command -v "${tool}" >/dev/null 2>&1 || refuse "${tool} is required to build ${ARCH} packages and is not installed"
   done
   if ! gnu_install >/dev/null; then
@@ -187,6 +199,9 @@ check_request() {
   elif [[ -e "${WORK_DIR}/linux-${STREAM}" && -n "$(ls -A "${WORK_DIR}/linux-${STREAM}" 2>/dev/null)" ]]; then
     refuse "${WORK_DIR}/linux-${STREAM} already exists; pass --source-tree=${WORK_DIR}/linux-${STREAM} if fetch-kernel-source.sh wrote it, or remove it"
   fi
+  if [[ -n "${MODULE_KEY}" && ! -f "${MODULE_KEY}" ]]; then
+    refuse "--module-key ${MODULE_KEY} is not a file"
+  fi
   check_tools
 }
 
@@ -197,8 +212,12 @@ prepare_dirs() {
   KBUILD_DIR="${LEG_DIR}/kbuild"
   # Packages of an earlier build of this leg would otherwise be collected with this one, and its
   # record would still claim a gated kernel if this build fails.
-  rm -rf "${LEG_DIR}/date-wrapper"
-  rm -f "${LEG_DIR}"/*.deb "${LEG_DIR}"/*.buildinfo "${LEG_DIR}"/*.changes "${LEG_DIR}/build.json"
+  rm -rf "${LEG_DIR}/date-wrapper" "${LEG_DIR}/signing" "${LEG_DIR}/unsigned"
+  rm -f "${LEG_DIR}"/*.deb "${LEG_DIR}"/*.buildinfo "${LEG_DIR}"/*.changes "${LEG_DIR}/build.json" \
+    "${LEG_DIR}/signing.json"
+  if [[ -n "${MODULE_KEY}" ]]; then
+    MODULE_KEY="$(realpath "${MODULE_KEY}")"
+  fi
 }
 
 obtain_source() {
@@ -212,8 +231,9 @@ obtain_source() {
 # The kernel image carries no clock and no builder identity: its timestamp is the release
 # commit's, which git archive gives every file in the tree, the Makefile included.
 # scripts/package/mkdebian dates debian/changelog with `date -R`, which compile_packages
-# answers from SOURCE_DATE_EPOCH through a wrapper on the bindeb-pkg PATH; module signatures
-# still differ per build (issue #77). mkdebian names the maintainer from DEBFULLNAME and DEBEMAIL before
+# answers from SOURCE_DATE_EPOCH through a wrapper on the bindeb-pkg PATH. The build generates
+# no module signing key (issue #77): prepare_module_key gives it a certificate to trust and
+# sign_modules signs afterwards. mkdebian names the maintainer from DEBFULLNAME and DEBEMAIL before
 # KBUILD_BUILD_USER and KBUILD_BUILD_HOST, so a builder's own values are dropped.
 fixed_environment() {
   local epoch
@@ -230,6 +250,32 @@ fixed_environment() {
 resolve_config() {
   ./scripts/merge-config.sh --arch="${ARCH}" --stream="${STREAM}" --source-tree="${SOURCE_TREE}" \
     --build-dir="${KBUILD_DIR}" --output="${OUTPUT_DIR}/kernel-${STREAM}-${ARCH}.config"
+}
+
+# The upstream method of Documentation/kbuild/reproducible-builds.rst, "Module signing": the
+# build trusts a certificate given to it and signs nothing; the modules are signed afterwards.
+# A key the build generated itself made the kernel and every module differ per build.
+prepare_module_key() {
+  local dir="${LEG_DIR}/signing"
+  mkdir -p "${dir}"
+  chmod 700 "${dir}"
+  if [[ -n "${MODULE_KEY}" ]]; then
+    cp -- "${MODULE_KEY}" "${dir}/key.pem"
+    KEY_ORIGIN="supplied"
+  else
+    if ! (umask 077 && openssl req -new -nodes -utf8 -sha512 -days 36500 -batch -x509 \
+      -config "${SOURCE_TREE}/certs/default_x509.genkey" -outform PEM \
+      -out "${dir}/key.pem" -keyout "${dir}/key.pem" >"${dir}/openssl.log" 2>&1); then
+      cat "${dir}/openssl.log" >&2
+      refuse "openssl could not generate the module signing key"
+    fi
+    KEY_ORIGIN="ephemeral"
+  fi
+  chmod 600 "${dir}/key.pem"
+  mkdir -p "${KBUILD_DIR}/certs"
+  openssl x509 -in "${dir}/key.pem" -out "${KBUILD_DIR}/${TRUSTED_CERT}" \
+    || refuse "the module signing key holds no certificate"
+  echo "==> Module signing key: ${KEY_ORIGIN}, certificate ${KBUILD_DIR}/${TRUSTED_CERT}"
 }
 
 kernel_make() {
@@ -268,6 +314,24 @@ compile_packages() {
   echo "==> Compiled ${KERNELRELEASE} in ${BUILD_SECONDS}s"
 }
 
+sign_modules() {
+  local -a images=()
+  local hash key="${LEG_DIR}/signing/key.pem"
+  mapfile -t images < <(find "${LEG_DIR}" -maxdepth 1 -type f -name "linux-image-${KERNELRELEASE}_*.deb")
+  [[ "${#images[@]}" -eq 1 ]] || refuse "expected one linux-image-${KERNELRELEASE} package to sign, found ${#images[@]}"
+  hash="$(sed -n 's/^CONFIG_MODULE_SIG_HASH="\([a-z0-9]*\)"$/\1/p' "${KBUILD_DIR}/.config")"
+  [[ -n "${hash}" ]] || refuse "${KBUILD_DIR}/.config names no CONFIG_MODULE_SIG_HASH"
+  local rc=0
+  python3 scripts/sign_kernel_modules.py --deb="${images[0]}" --key="${key}" \
+    --sign-file="${KBUILD_DIR}/scripts/sign-file" --hash="${hash}" --vmlinux="${KBUILD_DIR}/vmlinux" \
+    --unsigned-dir="${LEG_DIR}/unsigned" --record="${LEG_DIR}/signing.json" || rc=$?
+  # A generated key signs this one build: it leaves the disk whether signing passed or not.
+  if [[ "${KEY_ORIGIN}" == "ephemeral" ]]; then
+    rm -f -- "${key}"
+  fi
+  [[ "${rc}" -eq 0 ]] || refuse "module signing failed for ${STREAM}/${ARCH}"
+}
+
 collect_artifacts() {
   local -a debs=() images=()
   mapfile -t debs < <(find "${LEG_DIR}" -maxdepth 1 -type f -name '*.deb' | sort)
@@ -298,7 +362,8 @@ readonly RECORD_PY='
 import hashlib, json, sys
 from pathlib import Path
 record_path, out, symvers_path = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-record = dict(arg.split("=", 1) for arg in sys.argv[4:])
+signing = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+record = dict(arg.split("=", 1) for arg in sys.argv[5:])
 for key in ("revision", "source_date_epoch", "build_seconds"):
     record[key] = int(record[key])
 record["profiles"] = record["profiles"].split()
@@ -307,13 +372,14 @@ record["config_sha256"] = hashlib.sha256(config.read_bytes()).hexdigest()
 symvers_bytes = symvers_path.read_bytes()
 record["module_symvers_sha256"] = hashlib.sha256(symvers_bytes).hexdigest()
 record["module_symbols"] = len(symvers_bytes.splitlines())
+record["module_signing"] = {"key": record.pop("module_key"), **signing}
 record["artifacts"] = sorted(path.name for path in out.iterdir())
 record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 '
 
 write_record() {
   python3 -c "${RECORD_PY}" "${LEG_DIR}/build.json" "${OUTPUT_DIR}" "${KBUILD_DIR}/Module.symvers" \
-    "stream=${STREAM}" "arch=${ARCH}" "version=${SRC[version]}" "kernelversion=${SRC[kernelversion]}" \
+    "${LEG_DIR}/signing.json" "module_key=${KEY_ORIGIN}" "stream=${STREAM}" "arch=${ARCH}" "version=${SRC[version]}" "kernelversion=${SRC[kernelversion]}" \
     "revision=${REVISION}" "localversion=${LOCAL_VERSION}" "kernelrelease=${KERNELRELEASE}" \
     "package_version=${PACKAGE_VERSION}" "kernel_arch=${ARC[kernel_arch]}" \
     "debian_arch=${ARC[debian_arch]}" "cross_compile=${ARC[cross_compile]}" "host_arch=${HOST_ARCH}" \
@@ -344,7 +410,9 @@ main() {
   obtain_source
   fixed_environment
   resolve_config
+  prepare_module_key
   compile_packages
+  sign_modules
   collect_artifacts
   check_module_symvers
   run_gate
