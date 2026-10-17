@@ -1,13 +1,5 @@
 {
   "mcpServers": {
-    "hindsight": {
-      "command": "python3",
-      "args": ["scripts/hindsight_mcp_server.py"],
-      "env": {
-        "HINDSIGHT_URL": "http://127.0.0.1:8888",
-        "HINDSIGHT_BANK": "nucleus"
-      }
-    },
     "cauda-kb": {
       "serverUrl": "http://127.0.0.1:38001/mcp"
     },
