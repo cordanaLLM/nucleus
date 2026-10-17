@@ -215,6 +215,25 @@ jobs:
             --kernelrelease="${KERNELRELEASE}" --timeout="${BOOT_TIMEOUT}" \
             --log="records/boot-${STREAM}-${ARCH}.log"
 
+      # The verdict is what ties the boot to this leg's release: judge the console the boot
+      # just wrote with that release (it must pass) and with one the leg did not build (it
+      # must be refused), so a verdict that ignored the release could not stay green.
+      - name: Refuse a console of another release
+        if: env.DRY_RUN != 'true'
+        env:
+          KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+        run: |
+          set -euo pipefail
+          log="records/boot-${STREAM}-${ARCH}.log"
+          python3 scripts/boot_smoke.py --judge-log="${log}" --kernelrelease="${KERNELRELEASE}"
+          rc=0
+          python3 scripts/boot_smoke.py --judge-log="${log}" \
+            --kernelrelease="${KERNELRELEASE}-planted" || rc=$?
+          if [[ "${rc}" -ne 1 ]]; then
+            echo "Expected exit status 1 for release ${KERNELRELEASE}-planted, got ${rc}" >&2
+            exit 1
+          fi
+
       - name: Refuse a boot whose console stays silent
         if: matrix.arch != 'x86_64' && env.DRY_RUN != 'true'
         env:
