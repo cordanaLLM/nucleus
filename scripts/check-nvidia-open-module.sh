@@ -29,6 +29,7 @@ NV_STREAMS=""
 NV_ARCHITECTURES=""
 KR=""
 HEADERS_TREE=""
+SOURCE_TAR=""
 
 show_usage() {
   cat <<'EOF'
@@ -207,8 +208,14 @@ obtain_and_verify_tarball() {
     refuse "tarball sha256 mismatch for ${tarball##*/}: expected ${NV_SHA256}, got ${actual_sha}"
   fi
   echo "    ✓ sha256 matches pin"
+  # Decompress to a file: git get-tar-commit-id stops reading after the first header, so a
+  # pipe from gzip would end in SIGPIPE, which pipefail reports as a failure.
+  SOURCE_TAR="${WORK}/source.tar"
+  if ! gzip -dc "${tarball}" >"${SOURCE_TAR}"; then
+    refuse "gzip: failed to decompress ${tarball##*/}"
+  fi
   local archive_commit
-  if ! archive_commit="$(gzip -dc "${tarball}" | git get-tar-commit-id)"; then
+  if ! archive_commit="$(git get-tar-commit-id <"${SOURCE_TAR}")"; then
     refuse "tarball ${tarball##*/} carries no git archive commit id"
   fi
   if [[ "${archive_commit}" != "${NV_COMMIT}" ]]; then
@@ -238,7 +245,7 @@ build_and_check_module() {
   local src_dir="${WORK}/src"
   mkdir -p "${src_dir}"
   echo "==> Extracting NVIDIA open module source"
-  if ! tar -xzf "${TARBALL}" -C "${src_dir}" --strip-components=1; then
+  if ! tar -xf "${SOURCE_TAR}" -C "${src_dir}" --strip-components=1; then
     refuse "tar: failed to extract ${TARBALL##*/}"
   fi
 

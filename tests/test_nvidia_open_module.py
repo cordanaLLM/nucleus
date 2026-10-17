@@ -94,11 +94,13 @@ def _make_tarball_with_hash(
     src_dir = out / "src_content"
     src_dir.mkdir(parents=True, exist_ok=True)
     (src_dir / "README.md").write_text("mock nvidia open\n", encoding="utf-8")
+    # Several MiB of incompressible data, so the archive outlasts a reader that stops early.
+    (src_dir / "blob.bin").write_bytes(os.urandom(8 * 1024 * 1024))
     git = ["git", "-C", str(src_dir), "-c", "user.name=t", "-c", "user.email=t@example.com"]
     git_env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
     for args in (
         ["init", "-q"],
-        ["add", "README.md"],
+        ["add", "README.md", "blob.bin"],
         ["commit", "-q", "--no-gpg-sign", "-m", "mock"],
     ):
         subprocess.run([*git, *args], check=True, capture_output=True, env=git_env, timeout=60)
