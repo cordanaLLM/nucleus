@@ -130,6 +130,13 @@ timeout); a run that carries a conclusion and a completion time counts as comple
 its status says, and its conclusion is judged like any other. Both are tested in
 `tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
 
+The 100 minutes are a wall-clock deadline measured from the gate's start, not a number of
+polls, so slow `gh api` calls count against it, and each call is killed after 60 seconds
+(`--fetch-timeout`). A failed or hung call is retried on the next poll. At the deadline the gate
+fails and names what it waited for: the check runs still pending, or the last `gh api` error
+when no poll succeeded. The job's own `timeout-minutes` of 110 is the second bound. A check
+that never finishes, a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
+
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
 Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Against the
