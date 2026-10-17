@@ -106,6 +106,18 @@ this work for this forge:
 
 - The hash stays SHA-512 and the key type RSA, the values every leg resolved before.
 
+### Release key and revisit trigger
+
+`publish-release.yml` passes no `--module-key`, so every release signs its modules with a key
+generated for that build and deleted after it. This stays so: a stable release key is a
+credential the operator would create and hold, and a leaked one would let anyone sign modules
+the released kernels trust. Nothing needs one today.
+
+Revisit when either holds, and bring the stable key to the operator as a decision:
+
+- a consumer (imago or another) needs out-of-tree or DKMS modules signed for a released kernel;
+- a byte-identical rebuild of a released tag has to be shown, not only of two builds with one key.
+
 ---
 
 ## Compliance
