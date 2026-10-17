@@ -73,7 +73,9 @@ class TestAgentsFleetIntegrity:
         with open(MCP_CONFIG_JSON, encoding="utf-8") as f:
             data = json.load(f)
         assert "mcpServers" in data
-        assert "hindsight" in data["mcpServers"]
+        # Memory comes from the upstream Hindsight client plugin, which redacts before retain;
+        # the repository-local bridge was removed under #15 and must not come back.
+        assert "hindsight" not in data["mcpServers"]
         assert "cauda-kb" in data["mcpServers"]
 
     def test_guard_privacy_hook_behavior(self) -> None:
