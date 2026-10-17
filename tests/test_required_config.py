@@ -81,19 +81,39 @@ def test_the_list_covers_every_line_of_the_k8s_node_fragment():
         assert symbol not in realtime
 
 
-def test_the_mainstream_gpu_claim_names_xe_and_amdgpu():
+def test_xe2_is_claimed_on_every_stream_and_rocm_on_mainstream():
     claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
-    gpu = claims["mainstream-gpu"]
-    assert gpu.streams == ("mainstream",) and gpu.architectures == ("x86_64",)
-    assert gpu.symbols["CONFIG_DRM_XE"] == "built"
-    assert gpu.symbols["CONFIG_DRM_AMDGPU"] == "built"
-    assert gpu.symbols["CONFIG_HSA_AMD"] == "y"
+    xe2 = claims["xe2"]
+    assert xe2.streams == tuple(VERSIONS["streams"]) and xe2.architectures == ("x86_64",)
+    assert xe2.symbols["CONFIG_DRM_XE"] == "built"
+    assert xe2.symbols["CONFIG_INTEL_MEI"] == "built"
+    assert xe2.symbols["CONFIG_INTEL_MEI_ME"] == "built"
+    assert xe2.symbols["CONFIG_INTEL_MEI_GSC"] == "built"
+    assert xe2.symbols["CONFIG_INTEL_MEI_GSC_PROXY"] == "built"
+    assert xe2.symbols["CONFIG_INTEL_MEI_LB"] == "built"
+    assert xe2.symbols["CONFIG_MTD_INTEL_DG"] == "built"
+    amd = claims["amd-rocm"]
+    assert amd.streams == ("mainstream",) and amd.architectures == ("x86_64",)
+    assert amd.symbols["CONFIG_DRM_AMDGPU"] == "built"
+    assert amd.symbols["CONFIG_HSA_AMD"] == "y"
+
+
+@pytest.mark.parametrize("stream", VERSIONS["streams"])
+def test_every_x86_64_leg_declares_the_xe2_claim(tmp_path, stream):
+    claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
+    xe2 = claims["xe2"]
+    assert stream in xe2.streams
+    assert "x86_64" in xe2.architectures
+    config = vkr.read_config(_declared(tmp_path, stream, "x86_64"))
+    assert not crc.misses([xe2], config, stream, "x86_64")
 
 
 @pytest.mark.parametrize(
     ("stream", "arch", "drop"),
     [
         ("mainstream", "x86_64", "CONFIG_DRM_XE"),
+        ("lts", "x86_64", "CONFIG_DRM_XE"),
+        ("realtime", "x86_64", "CONFIG_INTEL_MEI_GSC"),
         ("mainstream", "x86_64", "CONFIG_NETFILTER_XTABLES_LEGACY"),
         ("lts", "arm64", "CONFIG_OVERLAY_FS"),
         ("bleeding", "riscv64", "CONFIG_NF_TABLES"),
@@ -140,13 +160,20 @@ def test_a_module_where_built_in_is_claimed_is_refused(tmp_path):
     assert "CONFIG_PREEMPT_RT=m, needs =y" in result.stderr
 
 
-def test_an_unset_line_does_not_meet_a_claim(tmp_path):
-    path = _declared(tmp_path, "mainstream", "x86_64")
-    text = path.read_text(encoding="utf-8").replace("CONFIG_DRM_XE=m", "# CONFIG_DRM_XE is not set")
+@pytest.mark.parametrize(
+    ("stream", "arch", "symbol"),
+    [
+        ("mainstream", "x86_64", "CONFIG_DRM_XE"),
+        ("lts", "x86_64", "CONFIG_DRM_XE"),
+    ],
+)
+def test_an_unset_line_does_not_meet_a_claim(tmp_path, stream, arch, symbol):
+    path = _declared(tmp_path, stream, arch)
+    text = path.read_text(encoding="utf-8").replace(f"{symbol}=m", f"# {symbol} is not set")
     path.write_text(text, encoding="utf-8")
-    result = _run(path, "mainstream", "x86_64")
+    result = _run(path, stream, arch)
     assert result.returncode == 1
-    assert "CONFIG_DRM_XE is not set" in result.stderr
+    assert f"{symbol} is not set" in result.stderr
 
 
 def _edit_list(tmp_path: Path, edit) -> Path:

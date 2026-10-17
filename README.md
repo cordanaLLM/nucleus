@@ -59,7 +59,7 @@ flowchart TD
 
     subgraph Streams["Kernel Release Streams"]
         Bleeding["bleeding (7.3-rc7)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
-        Mainstream["mainstream (7.2.10)<br/><small>Battlemage Xe2 / ROCm</small>"]:::stream
+        Mainstream["mainstream (7.2.10)<br/><small>AMD ROCm / Podman 5.x</small>"]:::stream
         LTS["lts (6.18.56)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
         RT["realtime (7.2.10 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
     end
@@ -82,9 +82,11 @@ flowchart TD
 | Stream | Upstream Base | Target Workloads & Hardware Stack | Default In Flavors |
 | :--- | :--- | :--- | :--- |
 | **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200 (out-of-tree driver, not built here), CXL 3.0, sched-ext, BBR | `*-nvidia-bleeding` |
-| **`mainstream`** | **Linux 7.2.10** | Intel Arc Battlemage Xe2 (`xe`), AMD Radeon for ROCm (`amdgpu` with KFD), Podman 5.x; NVIDIA's driver is out of tree and not built here | `base-*`, `docker-*`, `ai-infer-*` |
+| **`mainstream`** | **Linux 7.2.10** | AMD Radeon for ROCm (`amdgpu` with KFD), Podman 5.x; Intel Arc Battlemage Xe2 (`xe`) is built and claimed on all four streams on x86_64 (arm64 waits for a consumer requirement document); NVIDIA's driver is out of tree and not built here | `base-*`, `docker-*`, `ai-infer-*` |
 | **`lts`** | **Linux 6.18.56** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
 | **`realtime`** | **Linux 7.2.10**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
+
+Intel Arc Battlemage (Xe2) on `xe` is built and claimed across all four streams on x86_64; arm64 is not claimed until a consumer requirement document asks for it. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 
 ### Downstream Kernel Requirements
 
