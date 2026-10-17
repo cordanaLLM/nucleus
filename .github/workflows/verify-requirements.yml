@@ -33,6 +33,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "kconfig/**"
+      - "patches/**"
+      - "scripts/check_patches_apply.py"
       - "keys/**"
       - "scripts/merge-config.sh"
       - "scripts/fetch-kernel-requirements.sh"
@@ -56,6 +58,8 @@ on:
     branches: [main]
     paths:
       - "kconfig/**"
+      - "patches/**"
+      - "scripts/check_patches_apply.py"
       - "keys/**"
       - "scripts/merge-config.sh"
       - "scripts/fetch-kernel-requirements.sh"
@@ -331,14 +335,42 @@ jobs:
           path: .kernel-source-work
           key: ${{ steps.source.outputs.key }}
 
-      - name: Check the Carried Patches Apply
+      # The planted defect: lts 6.18 is not a base of the bbr3 series (patch 0002 does not apply),
+      # so a manifest that binds every series to lts must be refused for that reason and no other.
+      - name: Refuse a Patch of Another Base
+        if: matrix.stream == 'lts'
+        shell: bash
+        env:
+          STREAM: ${{ matrix.stream }}
+        run: |
+          set -euo pipefail
+          planted="${RUNNER_TEMP}/versions-planted.json"
+          python3 - "${planted}" <<'PY'
+          import json, sys
+          data = json.load(open("versions.json", encoding="utf-8"))
+          assert data.get("patches"), "versions.json declares no patch series to plant"
+          for series in data["patches"].values():
+              series["streams"] = sorted(set(series["streams"]) | {"lts"})
+          json.dump(data, open(sys.argv[1], "w", encoding="utf-8"))
+          PY
+          status=0
+          python3 scripts/check_patches_apply.py --stream="${STREAM}" \
+            --source-tree="${RUNNER_TEMP}/linux-${STREAM}" --versions="${planted}" \
+            2> "${RUNNER_TEMP}/planted.err" || status=$?
+          cat "${RUNNER_TEMP}/planted.err"
+          [[ "${status}" -eq 1 ]]
+          grep -q ': does not apply to ' "${RUNNER_TEMP}/planted.err"
+          [[ ! -e "${RUNNER_TEMP}/linux-${STREAM}/.nucleus-patches.json" ]]
+
+      # The resolved configuration needs the Kconfig symbols the patches add.
+      - name: Apply the Carried Patches
         shell: bash
         env:
           STREAM: ${{ matrix.stream }}
         run: |
           set -euo pipefail
           python3 scripts/check_patches_apply.py --stream="${STREAM}" \
-            --source-tree="${RUNNER_TEMP}/linux-${STREAM}"
+            --source-tree="${RUNNER_TEMP}/linux-${STREAM}" --apply
 
       - name: Resolve the Configuration
         shell: bash

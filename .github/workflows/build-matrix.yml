@@ -26,6 +26,8 @@ on:
       - "scripts/publish_release.sh"
       - "docker/Dockerfile.builder"
       - "kconfig/**"
+      - "patches/**"
+      - "scripts/check_patches_apply.py"
       - "keys/**"
       - "versions.json"
       - ".github/workflows/build-matrix.yml"

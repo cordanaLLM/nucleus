@@ -42,7 +42,7 @@ private scratch-link policy.
 
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
-3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBRv3 congestion control, eBPF sched-ext scheduling, and NVMe-oF TCP optimizations. Every release in OpenZFS's supported Linux range is checked by building the OpenZFS module against its published headers (section 5.6 of [`docs/packaging.md`](docs/packaging.md)).
+3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBR congestion control (BBRv1 the default; BBRv3 as a module on `bleeding`, `mainstream` and `realtime`, from Google's patch series in [`docs/patches.md`](docs/patches.md)), eBPF sched-ext scheduling, and NVMe-oF TCP optimizations. Every release in OpenZFS's supported Linux range is checked by building the OpenZFS module against its published headers (section 5.6 of [`docs/packaging.md`](docs/packaging.md)).
 4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `imago` via GitHub `repository_dispatch`. A kernel release is tagged `v<version>-<stream>-lusoris<N>`; the repository's own releases are tagged `nucleus-v<X.Y.Z>` and never start one (section 5.4 of [`docs/packaging.md`](docs/packaging.md)).
 
 ```mermaid

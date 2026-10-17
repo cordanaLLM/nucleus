@@ -8,17 +8,19 @@
 # The production path runs these steps in order and stops, exit status 1, at the first failure:
 #   1. fetch and verify the stream's signed source with scripts/fetch-kernel-source.sh, unless
 #      --source-tree names a tree that script already wrote;
-#   2. resolve the kconfig fragments against it with scripts/merge-config.sh --source-tree;
-#   3. make bindeb-pkg with LOCALVERSION=-lusoris<N>-<stream> and KDEB_PKGVERSION=
+#   2. apply the patches carried for the stream with scripts/check_patches_apply.py --apply, which
+#      refuses a patch that does not apply without fuzz and a tree it already patched;
+#   3. resolve the kconfig fragments against it with scripts/merge-config.sh --source-tree;
+#   4. make bindeb-pkg with LOCALVERSION=-lusoris<N>-<stream> and KDEB_PKGVERSION=
 #      <debian_version>-lusoris<N> (7.3-rc5 is 7.3~rc5, which dpkg orders before 7.3), without
 #      the debug-symbol package, in a fixed build environment;
-#   4. sign every module in the image package with scripts/sign_kernel_modules.py: the build
+#   5. sign every module in the image package with scripts/sign_kernel_modules.py: the build
 #      compiled them unsigned and trusts the certificate of a key that --module-key names or that
 #      this script generated for the one build and deletes afterwards (issue #77);
-#   5. record `make -s kernelrelease`, spell `~` as `.` in the package file names (GitHub
+#   6. record `make -s kernelrelease`, spell `~` as `.` in the package file names (GitHub
 #      renames `~` in a release asset), and extract ./boot/vmlinuz-<kernelrelease> from the
 #      image package;
-#   6. pass what it produced through the artifact gate, scripts/check_kernel_artifacts.py.
+#   7. pass what it produced through the artifact gate, scripts/check_kernel_artifacts.py.
 # The output directory then holds exactly the packages, vmlinuz-<kernelrelease> and
 # kernel-<stream>-<arch>.config, and <work-dir>/<stream>-<arch>/build.json records the build.
 set -euo pipefail
@@ -144,6 +146,7 @@ state_plan() {
   else
     echo "    source:  ${source} (verified by scripts/fetch-kernel-source.sh)"
   fi
+  echo "    patches: scripts/check_patches_apply.py --stream=${STREAM} --source-tree=${source} --apply (patches/, versions.json patches)"
   echo "    resolve: scripts/merge-config.sh --arch=${ARCH} --stream=${STREAM} --source-tree=${source} --build-dir=${KBUILD_DIR} --output=${OUTPUT_DIR}/kernel-${STREAM}-${ARCH}.config"
   echo "    wrapper: date wrapper (${LEG_DIR}/date-wrapper/date) prepended to PATH for bindeb-pkg (pins debian/changelog via SOURCE_DATE_EPOCH)"
   echo "    build:   DEB_BUILD_PROFILES='${PROFILES}' make O=${KBUILD_DIR} ARCH=${ARC[kernel_arch]} CROSS_COMPILE=${ARC[cross_compile]} -j${JOBS} bindeb-pkg LOCALVERSION=${LOCAL_VERSION} KDEB_PKGVERSION=${PACKAGE_VERSION}"
@@ -157,7 +160,7 @@ state_plan() {
 
 check_tools() {
   local tool
-  for tool in make python3 dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install date openssl "${ARC[cross_compile]}gcc"; do
+  for tool in make python3 patch dpkg-buildpackage dpkg-deb dh_testdir depmod cpio rsync tar install date openssl "${ARC[cross_compile]}gcc"; do
     command -v "${tool}" >/dev/null 2>&1 || refuse "${tool} is required to build ${ARCH} packages and is not installed"
   done
   if ! gnu_install >/dev/null; then
@@ -226,6 +229,13 @@ obtain_source() {
     ./scripts/fetch-kernel-source.sh --stream="${STREAM}" --dest="${SOURCE_TREE}"
   fi
   SOURCE_TREE="$(realpath "${SOURCE_TREE}")"
+}
+
+# The patches change the tree before anything reads it: the resolved .config needs the Kconfig
+# symbols they add. The script pins the files it changed to the Makefile's mtime, so
+# fixed_environment still reads the release time.
+apply_patches() {
+  python3 scripts/check_patches_apply.py --stream="${STREAM}" --source-tree="${SOURCE_TREE}" --apply
 }
 
 # The kernel image carries no clock and no builder identity: its timestamp is the release
@@ -408,6 +418,7 @@ main() {
   prepare_dirs
   use_gnu_install
   obtain_source
+  apply_patches
   fixed_environment
   resolve_config
   prepare_module_key

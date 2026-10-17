@@ -153,6 +153,28 @@
         }
       }
     },
+    "patches": {
+      "description": "Patch series carried from an upstream repository, each pinned by commit. scripts/check_patches_apply.py requires patches/<series>/ to hold one file per commit, in order, each starting with 'From <commit> '.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "type": "object",
+          "required": ["description", "repository", "ref", "commit", "base", "licence", "streams", "commits"],
+          "additionalProperties": false,
+          "properties": {
+            "description": {"type": "string", "minLength": 1},
+            "repository": {"description": "The upstream git repository.", "type": "string", "pattern": "^https://[^\\s]+$"},
+            "ref": {"description": "The upstream branch or tag the series was taken from; informational, the commits are the pin.", "type": "string", "minLength": 1},
+            "commit": {"description": "The commit ref pointed at when the series was taken.", "type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "base": {"description": "The upstream parent of the first commit of the series.", "type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "licence": {"description": "SPDX expression of the code the series adds.", "type": "string", "minLength": 1},
+            "streams": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}},
+            "commits": {"description": "The commits of the series, in the order they apply.", "type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}
+          }
+        }
+      }
+    },
     "modules": {
       "type": "object",
       "additionalProperties": false,
