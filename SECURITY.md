@@ -78,7 +78,7 @@ A published release carries a keyless Cosign signature over its checksum file an
    - **Upstream Source Verification (`scripts/fetch-kernel-source.sh`)**: Verifies kernel tarball checksums and OpenPGP signatures against keys in `keys/`, or verifies git tags and commit hashes using `git verify-tag`.
    - **Fixed Build Environment (`scripts/build_kernel.sh`)**: Sets `SOURCE_DATE_EPOCH` and `KBUILD_BUILD_TIMESTAMP` from the release commit timestamp of the kernel `Makefile`, sets `KBUILD_BUILD_USER=nucleus` and `KBUILD_BUILD_HOST=forge`, and sets `LC_ALL=C` and `TZ=UTC`.
    - **Artifact Gate (`scripts/check_kernel_artifacts.py`)**: Opens every package with `dpkg-deb` and refuses an empty or unexpected file, a wrong package name, version or Debian architecture, a missing image, headers or `linux-libc-dev` package, a `vmlinuz` or configuration that differs from the one inside the image package, and a `vmlinuz` whose bzImage setup header does not name the stream's kernel release.
-   - **Boot Smoke Test (`scripts/boot_smoke.py`)**: Boots the x86_64 kernel with a static-init initramfs under QEMU (TCG) and requires the `Linux version <kernelrelease>` banner and the init's line before anything is checksummed.
+   - **Boot Smoke Test (`scripts/boot_smoke.py`)**: Boots the kernel of every x86_64, arm64 and riscv64 leg with a static-init initramfs under QEMU (TCG) and requires the `Linux version <kernelrelease>` banner and the init's line before anything is checksummed; the same console judged with a release the leg did not build must be refused.
 
 4. **Software Bill of Materials (SBOM)**:
    - Every release generates CycloneDX (`kernel-<stream>.cdx.json`) and SPDX (`kernel-<stream>.spdx.json`) files via Syft (`syft dir:output/`).
@@ -88,7 +88,7 @@ A published release carries a keyless Cosign signature over its checksum file an
    - **No GPG-Signed APT Archive**: Debian packages are published as GitHub Release assets; no APT repository or signed `InRelease` metadata is maintained.
    - **Releases Not Rebuildable Byte for Byte**: Two builds of one tag differ by their module signing key. The build signs nothing; `scripts/sign_kernel_modules.py` signs every module after packaging with a key that `--module-key` supplies or that is generated for that build and deleted after it ([ADR-0016](https://github.com/cordanaLLM/nucleus/blob/main/docs/adr/0016-module-signing-after-the-build.md)). No stable release key exists, so released packages carry a per-build key. The `Reproducible Build (mainstream / x86_64)` job in `.github/workflows/build-matrix.yml` builds twice with one key and fails unless the outputs are byte-identical, but a release's key is deleted after the build, so a released package cannot be rebuilt to its published digest.
    - **No UKI Signing**: Unified Kernel Images (`.efi`) are not signed with Secure Boot keys, and no release workflow publishes UKI binaries.
-   - **x86_64 Releases Only**: arm64 and riscv64 kernels are compiled and pass the artifact gate in `.github/workflows/build-matrix.yml`, but they are not booted and not released; `imago.nucleus.kernel-artifact.v1` has no architecture field.
+   - **x86_64 Releases Only**: arm64 and riscv64 kernels are compiled and pass the artifact gate in `.github/workflows/build-matrix.yml`, and booted under QEMU, but not released; `imago.nucleus.kernel-artifact.v1` has no architecture field.
 
 ---
 

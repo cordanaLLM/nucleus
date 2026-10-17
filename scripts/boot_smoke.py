@@ -25,6 +25,10 @@ timeout. TCG is used unless ``--accel=kvm`` asks for KVM, so no special device i
 
 Exit status 0 when the kernel booted, 1 when it did not, 2 when the smoke test cannot run
 (no kernel image, no QEMU, no C compiler).
+
+``--judge-log=<log> --kernelrelease=<r>`` judges a console an earlier boot wrote, without
+booting; the build matrix runs it on each leg's log with the leg's release, which must pass,
+and with a release the leg did not build, which must be refused.
 """
 
 from __future__ import annotations
@@ -494,6 +498,23 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
     return missing, console
 
 
+def judge_log(log: Path, kernelrelease: str) -> int:
+    """Judge a console a boot already wrote; the matrix plants a wrong release with it."""
+    try:
+        console = log.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"boot_smoke: {exc}", file=sys.stderr)
+        return 2
+    missing = verdict(console, kernelrelease)
+    if missing:
+        print(f"Refused: {log} does not show {kernelrelease} reaching userspace:", file=sys.stderr)
+        for line in missing:
+            print(f"  - {line}", file=sys.stderr)
+        return 1
+    print(f"==> {log} shows {kernelrelease} reaching userspace")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument(
@@ -515,6 +536,11 @@ def _parser() -> argparse.ArgumentParser:
         "--write-initramfs",
         type=Path,
         help="write the static-init initramfs for --arch to this path and exit 0 without booting",
+    )
+    parser.add_argument(
+        "--judge-log",
+        type=Path,
+        help="judge this console log against --kernelrelease without booting",
     )
     return parser
 
@@ -540,6 +566,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"==> Wrote {args.arch} initramfs to {target}")
         return 0
 
+    if args.judge_log is not None and args.kernelrelease is not None:
+        return judge_log(args.judge_log, args.kernelrelease)
     if args.kernel is None or args.kernelrelease is None:
         print(
             "boot_smoke: error: the following arguments are required: --kernel, --kernelrelease",

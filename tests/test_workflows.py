@@ -292,6 +292,15 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     assert boot["if"] == "env.DRY_RUN != 'true'"
     assert "scripts/boot_smoke.py" in boot["run"]
     assert '--arch="${ARCH}"' in boot["run"]
+    other_release = steps["Refuse a console of another release"]
+    assert other_release["if"] == "env.DRY_RUN != 'true'"
+    assert '--judge-log="${log}" --kernelrelease="${KERNELRELEASE}"' in other_release["run"]
+    assert '--kernelrelease="${KERNELRELEASE}-planted"' in other_release["run"]
+    assert 'log="records/boot-${STREAM}-${ARCH}.log"' in other_release["run"]
+    assert "records/boot-${STREAM}-${ARCH}.log" in boot["run"]
+    assert order.index("Boot the Kernel to Userspace") < order.index(
+        "Refuse a console of another release"
+    )
     refuse_silent = steps["Refuse a boot whose console stays silent"]
     assert refuse_silent["if"] == "matrix.arch != 'x86_64' && env.DRY_RUN != 'true'"
     assert "--console=" in refuse_silent["run"]
