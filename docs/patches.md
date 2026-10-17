@@ -17,15 +17,19 @@ Every patch introduced into `cordanaLLM/nucleus` must meet all of the following 
 
 ## 2. Directory Layout
 
-The directory layout currently holds only one common patch:
+The repository carries no patches. The layout:
 
 ```text
 patches/
-└── common/
-    └── 0001-sched-ext-tuning.patch
+├── common/             # Patches applied across all streams
+└── <stream>/           # Patches scoped to a specific stream
 ```
 
-The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. The single patch present (`patches/common/0001-sched-ext-tuning.patch`) changes a license identifier and does not apply cleanly to the current kernel source.
+`patches/common/` applies to every stream, `patches/<stream>/` only to the stream of that name, which must be declared in `versions.json`.
+
+`scripts/check_patches_apply.py` refuses a directory that is neither, a file that is not a `.patch`, and a patch that does not apply with `patch -p1 --dry-run` to the stream's verified source tree. It runs per stream in the `resolve` job of `.github/workflows/verify-requirements.yml`. Each patch is checked against the pristine tree, not on top of the patches before it. The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`.
+
+Patches carry the kernel's licence, `GPL-2.0-only`, through the `patches/**` annotation in `REUSE.toml`. With no patch carried, `LICENSES/GPL-2.0-only.txt` was removed, because `reuse lint` refuses an unused licence; the first new patch brings it back with `reuse download GPL-2.0-only`, which `reuse lint` then requires.
 
 ---
 

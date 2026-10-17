@@ -124,7 +124,7 @@ jobs:
 
       - name: Install the Build Toolchain
         env:
-          WITH_QEMU: ${{ matrix.arch == 'x86_64' && github.event.inputs.dry_run != 'true' }}
+          WITH_QEMU: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
           set -euo pipefail
           if [[ "${WITH_QEMU}" == "true" ]]; then
@@ -200,13 +200,33 @@ jobs:
 
       # TCG, not KVM: the container has no /dev/kvm, and a boot to userspace takes seconds.
       - name: Boot the Kernel to Userspace
-        if: matrix.arch == 'x86_64' && env.DRY_RUN != 'true'
+        if: env.DRY_RUN != 'true'
         env:
           KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+          BOOT_TIMEOUT: ${{ matrix.arch == 'x86_64' && '300' || '600' }}
         run: |
           set -euo pipefail
-          python3 scripts/boot_smoke.py --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
-            --kernelrelease="${KERNELRELEASE}" --timeout=300 --log="records/boot-${STREAM}-${ARCH}.log"
+          python3 scripts/boot_smoke.py --arch="${ARCH}" \
+            --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
+            --kernelrelease="${KERNELRELEASE}" --timeout="${BOOT_TIMEOUT}" \
+            --log="records/boot-${STREAM}-${ARCH}.log"
+
+      - name: Refuse a boot whose console stays silent
+        if: matrix.arch != 'x86_64' && env.DRY_RUN != 'true'
+        env:
+          KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+          SILENT_CONSOLE: ${{ matrix.arch == 'arm64' && 'ttyS9' || 'ttyAMA9' }}
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 scripts/boot_smoke.py --arch="${ARCH}" \
+            --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
+            --kernelrelease="${KERNELRELEASE}" --console="${SILENT_CONSOLE}" \
+            --timeout=600 || rc=$?
+          if [[ "${rc}" -ne 1 ]]; then
+            echo "Expected exit status 1 for silent console ${SILENT_CONSOLE}, got ${rc}" >&2
+            exit 1
+          fi
 
       - name: Stage Artifacts and Checksums
         if: env.DRY_RUN != 'true'

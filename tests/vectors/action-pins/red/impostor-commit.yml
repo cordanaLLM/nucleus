@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+# Red: a commit that actions/checkout does not contain (impostor-commit).
+name: fixture
+on: push
+permissions: {}
+jobs:
+  fixture:
+    name: fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v5.0.0
+        with: {persist-credentials: false}

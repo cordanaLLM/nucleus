@@ -247,14 +247,25 @@ Exit status 0 passes, 1 refuses and lists every finding, 2 means the request can
 
 ### 2.5 Boot Smoke Test
 
-Every x86_64 kernel is booted to userspace before it is kept: each x86_64 leg of the matrix
+Every built kernel is booted to userspace before it is kept: each leg of the matrix
 after its build, and the release kernel in `publish-release.yml`'s build container, before
 anything is checksummed or signed.
 `scripts/boot_smoke.py` compiles a static `init` that prints the running kernel's release and
-powers the machine off, packs it with a `/dev/console` node into a newc initramfs, and boots:
+powers the machine off, packs it with a `/dev/console` node into a newc initramfs, and boots
+under QEMU (TCG). For `x86_64` it compiles a libc-based init; for `arm64` and `riscv64` it compiles
+a freestanding C init with raw syscalls and decompresses the gzip `vmlinuz` Image before boot:
 
 ```bash
+# x86_64
 qemu-system-x86_64 -accel tcg -m 512M -smp 1 -kernel vmlinuz-<kernelrelease> \
+  -initrd <initramfs> -append 'console=ttyS0 panic=-1 rdinit=/init' -nographic -no-reboot
+
+# arm64
+qemu-system-aarch64 -M virt -cpu max -accel tcg -m 512M -smp 1 -kernel <Image> \
+  -initrd <initramfs> -append 'console=ttyAMA0 panic=-1 rdinit=/init' -nographic -no-reboot
+
+# riscv64
+qemu-system-riscv64 -M virt -bios default -accel tcg -m 512M -smp 1 -kernel <Image> \
   -initrd <initramfs> -append 'console=ttyS0 panic=-1 rdinit=/init' -nographic -no-reboot
 ```
 
@@ -264,7 +275,8 @@ QEMU at once (`panic=-1` with `-no-reboot`); a hang is killed at the timeout. Lo
 x86_64 kernels booted under TCG in 4 to 21 s.
 
 ```bash
-python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
+python3 scripts/boot_smoke.py --arch=x86_64 \
+  --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
   --kernelrelease=7.2.10-lusoris1-mainstream --log=boot.log
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```
@@ -565,7 +577,7 @@ The manual counterpart is `scripts/notify_downstream.sh`. It requires `RELEASE_T
 RELEASE_TAG=v7.2.4-mainstream-lusoris1 ./scripts/notify_downstream.sh mainstream 7.2.4-lusoris1 true
 ``` ADR-0005 names this credential `DISPATCH_ACCESS_TOKEN`; the workflows use `KERNEL_FORGE_TOKEN`.
 
-Every third-party action in `.github/workflows/` is pinned to a commit SHA with its release tag as a comment. `make lint-pins` (`scripts/check-action-pins.sh`, also run by `ci.yml`) verifies that each tag points to the pinned commit, since a SHA that no upstream commit carries fails only when a job using it starts. A container image a step runs (`uses: docker://...`) has to be named by a full `sha256` digest; the script lists it and fails one named by tag, and it does not query a registry. When the API refuses a query with HTTP 403, as an organization IP allow list does for the Actions token even on public repositories (`aquasecurity` is one), the script resolves that tag over anonymous `git ls-remote` instead and says so on the pin's line.
+Every third-party action in `.github/workflows/` is pinned to a commit SHA with its release tag as a comment. `make lint-pins` (`scripts/lint-pins.sh`, also run by `ci.yml`) runs [zizmor](https://docs.zizmor.sh/) 1.31.1, pinned with hashes in `requirements-test.txt`, with the pedantic persona and keeps four of its audits: `ref-version-mismatch` (the comment is missing or names a tag that does not point to the pinned commit), `impostor-commit` (the named repository does not contain the commit; a SHA that no upstream commit carries fails only when a job using it starts), `unpinned-uses` (a tag or branch instead of a SHA) and `unpinned-images` (a container image a step runs, `uses: docker://...`, named by tag instead of a full `sha256` digest; the digest itself is not looked up in a registry). Each finding prints as `file:line: audit: description`; a zizmor failure (exit code 1 to 3) fails the gate and is never read as a pass. zizmor's other audits are not this gate's subject. The CI step also runs `tests/test_lint_pins.py` against `tests/vectors/action-pins/`: each file under `red/` must fail with the audit its comment names and each file under `green/` must pass, so a zizmor update that stops seeing a case turns the step red. Locally those fixture tests skip without `zizmor`, `jq` or `GH_TOKEN`; CI sets `NUCLEUS_REQUIRE_PIN_FIXTURES=1`, which turns that skip into a failure.
 
 ### 5.6 OpenZFS Module Build (`.github/workflows/openzfs-module.yml`)
 

@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+# Red: the comment names v5.0.0, the SHA is v4.2.2 (ref-version-mismatch).
+name: fixture
+on: push
+permissions: {}
+jobs:
+  fixture:
+    name: fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v5.0.0
+        with: {persist-credentials: false}

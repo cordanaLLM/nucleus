@@ -235,7 +235,7 @@ make governance-check PRAETOR_SRC=<praetor checkout at the pin>
 │   ├── streams/lts.config      # LTS stream layer (legacy xtables raw table)
 │   ├── streams/realtime.config # PREEMPT_RT stream layer
 │   └── security-hardened.config# Kernel Self-Protection Project (KSPP) baseline
-├── patches/                    # Curated patch queues partitioned by stream
+├── patches/                    # Curated patch queues partitioned by stream (none carried)
 ├── scripts/                    # Verified build and notification automation
 ├── tests/                      # Automated pytest and static analysis suite
 └── versions.json               # Declarative Single Source of Truth
@@ -264,7 +264,7 @@ released under the Apache License 2.0 and keep that licence.
 | Code, workflows, configuration, tests | `EUPL-1.2` |
 | Documentation text (`README.md`, the root policy files, `docs/`) | `CC-BY-SA-4.0` |
 | The Code of Conduct (`CODE_OF_CONDUCT.md`, `docs/community/code-of-conduct.md`), adapted from the Contributor Covenant 2.1 | `CC-BY-4.0` |
-| Kernel patches under `patches/` | `GPL-2.0-only`, the licence of the kernel they change |
+| Kernel patches under `patches/` (none carried) | `GPL-2.0-only`, the licence of the kernel they change |
 | kernel.org signing keys under `keys/` | `CC0-1.0`; a public key is not a work under copyright |
 | Test fixtures copied from other repositories | the licence of their source, named in `REUSE.toml` |
 
