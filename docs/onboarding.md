@@ -118,7 +118,7 @@ python3 scripts/boot_smoke.py --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-l
 
 ### Recipe B: Adding a Curated Kernel Patch
 
-The build pipeline (`scripts/build_kernel.sh`) currently applies no patches from `patches/`. When preparing a patch candidate:
+`scripts/build_kernel.sh` applies every patch carried for the stream before it resolves the configuration ([`docs/patches.md`](patches.md)). A series taken from an upstream repository goes under `patches/<series>/` with its pin in `versions.json`, as `patches/bbr3/` does. When preparing a single patch:
 
 1. Create a descriptive patch file under `patches/common/<patch-name>.patch` or `patches/<stream>/<patch-name>.patch`:
 

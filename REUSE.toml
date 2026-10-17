@@ -48,6 +48,15 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 The Lusoris Authors"
 SPDX-License-Identifier = "GPL-2.0-only"
 
+# The bbr3 series, exported unchanged from https://github.com/google/bbr at the commits
+# versions.json pins (patches.bbr3). It changes GPL-2.0-only kernel files and adds
+# net/ipv4/tcp_bbr3.c, which its authors license "GPL-2.0 OR BSD-3-Clause".
+[[annotations]]
+path = ["patches/bbr3/**"]
+precedence = "override"
+SPDX-FileCopyrightText = ["Google LLC", "The Linux kernel authors"]
+SPDX-License-Identifier = "GPL-2.0-only AND (GPL-2.0-only OR BSD-3-Clause)"
+
 # Public keys of the kernel.org release signers, exported unchanged. A public
 # key is not a work under copyright; the REUSE answer for such a file is no
 # holder and CC0-1.0.

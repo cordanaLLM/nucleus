@@ -147,6 +147,19 @@
       }
     },
     {
+      "id": "bbr3",
+      "claim": "BBRv3 congestion control from the bbr3 patch series (docs/patches.md, issue #192)",
+      "streams": [
+        "bleeding",
+        "mainstream",
+        "realtime"
+      ],
+      "architectures": "all",
+      "symbols": {
+        "CONFIG_TCP_CONG_BBR3": "built"
+      }
+    },
+    {
       "id": "btf",
       "claim": "BTF in vmlinux for CO-RE eBPF (docs/streams.md, issue #112)",
       "streams": "all",

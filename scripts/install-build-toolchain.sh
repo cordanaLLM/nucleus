@@ -17,7 +17,7 @@ set -euo pipefail
 
 readonly PACKAGES=(
   build-essential gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu bc bison flex dwarves
-  libelf-dev libdw-dev libssl-dev dpkg-dev debhelper kmod cpio zstd rsync ccache
+  libelf-dev libdw-dev libssl-dev dpkg-dev debhelper kmod cpio zstd rsync ccache patch
   python3 git ca-certificates curl gpg gpgv xz-utils gnu-coreutils openssl
 )
 

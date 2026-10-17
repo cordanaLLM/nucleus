@@ -38,7 +38,7 @@ authority, and section 3 says how each source is proven.
 
 - **Upstream Release**: Linux 7.2.10 (Stable)
 - **Target Hardware**: Intel Arc Battlemage Xe2 on `xe`, AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's driver is out of tree and not built here. Section 4.1 lists the symbols and the check that refuses a build without them.
-- **Key Features**: BBR congestion control, `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
+- **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built), Intel Level Zero compute.
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
 ### 2.3 Long-Term Support Stream (`lts`)
@@ -211,6 +211,7 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
 | `mainstream-gpu` | `mainstream` | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG`, `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
+| `bbr3` | `bleeding`, `mainstream`, `realtime` | all | `TCP_CONG_BBR3` built, from the `bbr3` patch series ([patches.md](patches.md)) |
 | `btf` | all | all | `DEBUG_INFO_BTF=y` |
 | `sched-ext` | all | all | `SCHED_CLASS_EXT=y` |
 | `realtime` | `realtime` | all | `PREEMPT_RT=y` |

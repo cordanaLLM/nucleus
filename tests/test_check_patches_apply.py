@@ -163,7 +163,7 @@ def test_refuses_patch_in_unknown_subdir(
     )
     out, err = capsys.readouterr()
     assert rc == 1
-    assert "subdirectory is neither 'common' nor a declared stream" in err
+    assert "subdirectory is neither 'common', a declared series nor a declared stream" in err
 
 
 def test_refuses_non_patch_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -285,30 +285,65 @@ def test_per_stream_patch_only_checked_for_its_stream(
     assert "0001-lts.patch: does not apply to" in err_l
 
 
-def test_workflow_runs_check_patches_apply_before_resolve() -> None:
+def test_workflow_applies_patches_before_resolve() -> None:
     workflow_path = REPO_ROOT / ".github" / "workflows" / "verify-requirements.yml"
-    assert workflow_path.is_file()
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-
-    resolve_job = workflow.get("jobs", {}).get("resolve", {})
-    steps = resolve_job.get("steps", [])
+    steps = workflow["jobs"]["resolve"]["steps"]
     step_names = [s.get("name", "") for s in steps]
 
-    assert "Check the Carried Patches Apply" in step_names
-    assert "Save the Source Download" in step_names
-    assert "Resolve the Configuration" in step_names
-
-    check_idx = step_names.index("Check the Carried Patches Apply")
     save_idx = step_names.index("Save the Source Download")
+    planted_idx = step_names.index("Refuse a Patch of Another Base")
+    apply_idx = step_names.index("Apply the Carried Patches")
     resolve_idx = step_names.index("Resolve the Configuration")
+    assert save_idx < planted_idx < apply_idx < resolve_idx
 
-    assert save_idx < check_idx < resolve_idx
-
-    check_step = next(s for s in steps if s.get("name") == "Check the Carried Patches Apply")
-    assert check_step.get("shell") == "bash"
-    assert check_step.get("env", {}).get("STREAM") == "${{ matrix.stream }}"
-    run_cmd = check_step.get("run", "")
+    apply_step = steps[apply_idx]
+    assert apply_step.get("shell") == "bash"
+    assert apply_step.get("env", {}).get("STREAM") == "${{ matrix.stream }}"
+    run_cmd = apply_step.get("run", "")
     assert "set -euo pipefail" in run_cmd
     assert "scripts/check_patches_apply.py" in run_cmd
     assert '--stream="${STREAM}"' in run_cmd
     assert '--source-tree="${RUNNER_TEMP}/linux-${STREAM}"' in run_cmd
+    assert "--apply" in run_cmd
+
+
+def test_workflow_plants_a_series_on_lts_and_requires_its_refusal() -> None:
+    workflow_path = REPO_ROOT / ".github" / "workflows" / "verify-requirements.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    step = next(
+        s
+        for s in workflow["jobs"]["resolve"]["steps"]
+        if s.get("name") == "Refuse a Patch of Another Base"
+    )
+    assert step.get("if") == "matrix.stream == 'lts'"
+    run_cmd = step["run"]
+    assert '--versions="${planted}"' in run_cmd
+    assert "--apply" not in run_cmd
+    assert '[[ "${status}" -eq 1 ]]' in run_cmd
+    assert "grep -q ': does not apply to '" in run_cmd
+    # The planted manifest only works while lts is not already bound to a series.
+    versions = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
+    assert versions["patches"]
+    assert all("lts" not in series["streams"] for series in versions["patches"].values())
+
+
+def test_build_applies_patches_after_fetch_and_before_resolve() -> None:
+    script = (REPO_ROOT / "scripts" / "build_kernel.sh").read_text(encoding="utf-8")
+    body = script[script.index("\nmain() {") :]
+    order = [
+        body.index(f"  {step}\n")
+        for step in ("obtain_source", "apply_patches", "fixed_environment", "resolve_config")
+    ]
+    assert order == sorted(order)
+    assert '--source-tree="${SOURCE_TREE}" --apply' in script
+
+
+def test_build_matrix_runs_on_patch_changes() -> None:
+    for name in ("build-matrix.yml", "verify-requirements.yml"):
+        workflow = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        )
+        paths = workflow[True]["pull_request"]["paths"]
+        assert "patches/**" in paths, name
+        assert "scripts/check_patches_apply.py" in paths, name
