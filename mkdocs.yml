@@ -88,6 +88,7 @@ nav:
       - ADR-0013 BTF on Every Architecture: adr/0013-btf-on-every-architecture.md
       - ADR-0014 GitHub Release Assets as the Debian Channel: adr/0014-github-release-assets-as-the-debian-channel.md
       - ADR-0015 Module ABI from the Build Record: adr/0015-module-abi-from-the-build-record.md
+      - ADR-0016 Module Signing After the Build: adr/0016-module-signing-after-the-build.md
   - Community:
       - Code of Conduct: community/code-of-conduct.md
       - Contributing: community/contributing.md

@@ -76,6 +76,35 @@ def test_dry_run_states_the_exact_build_and_writes_nothing(tmp_path, stream, arc
     assert list(tmp_path.iterdir()) == []
 
 
+def test_dry_run_states_the_signing_step_after_an_unsigned_build(tmp_path):
+    """Issue #77: the build trusts a certificate, signs nothing, and a recorded step signs after."""
+    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", "--dry-run", *_dirs(tmp_path))
+    assert result.returncode == 0, result.stderr
+    assert "key:     a key generated for this build, deleted after signing" in result.stdout
+    assert "certs/nucleus-module-signing.pem (CONFIG_SYSTEM_TRUSTED_KEYS)" in result.stdout
+    assert "sign:    scripts/sign_kernel_modules.py over the linux-image package" in result.stdout
+    key = tmp_path / "key.pem"
+    key.write_text("stand-in\n", encoding="utf-8")
+    result = _run(BUILD, "--stream=mainstream", "--arch=x86_64", "--dry-run", f"--module-key={key}")
+    assert result.returncode == 0, result.stderr
+    assert f"key:     {key};" in result.stdout
+
+
+def test_a_module_key_that_is_not_a_file_is_refused(tmp_path):
+    """Refused with the request, before anything is fetched or written (a dry run checks nothing)."""
+    missing = tmp_path / "missing.pem"
+    result = _run(
+        BUILD,
+        "--stream=mainstream",
+        "--arch=x86_64",
+        f"--module-key={missing}",
+        *_dirs(tmp_path / "dirs"),
+    )
+    assert result.returncode == 1
+    assert f"--module-key {missing} is not a file" in result.stderr
+    assert not (tmp_path / "dirs").exists()
+
+
 def test_a_release_candidate_package_version_sorts_before_the_release(tmp_path):
     """bleeding 7.3-rcN packages as 7.3~rcN: dpkg orders it before 7.3, where 7.3-rcN sorts after."""
     version = VERSIONS["streams"]["bleeding"]["version"]
@@ -228,6 +257,7 @@ def _uutils_bin(tmp_path: Path, with_gnuinstall: bool) -> dict:
         "cpio",
         "rsync",
         "tar",
+        "openssl",
         VERSIONS["architectures"]["x86_64"]["cross_compile"] + "gcc",
     ]
     if with_gnuinstall:
@@ -322,6 +352,8 @@ def test_record_py_records_module_symvers_sha256_and_symbols(tmp_path):
         "0x12345678\tfoo\tvmlinux\tEXPORT_SYMBOL\n0x87654321\tbar\tvmlinux\tEXPORT_SYMBOL_GPL\n"
     )
     symvers.write_text(symvers_content, encoding="utf-8")
+    signing = tmp_path / "signing.json"
+    signing.write_text('{"hash": "sha512", "modules": 280}\n', encoding="utf-8")
 
     res = subprocess.run(
         [
@@ -331,6 +363,8 @@ def test_record_py_records_module_symvers_sha256_and_symbols(tmp_path):
             str(record_file),
             str(out_dir),
             str(symvers),
+            str(signing),
+            "module_key=ephemeral",
             "stream=mainstream",
             "arch=x86_64",
             "version=7.2.10",
@@ -358,6 +392,7 @@ def test_record_py_records_module_symvers_sha256_and_symbols(tmp_path):
     data = json.loads(record_file.read_text(encoding="utf-8"))
     assert data["module_symvers_sha256"] == hashlib.sha256(symvers.read_bytes()).hexdigest()
     assert data["module_symbols"] == 2
+    assert data["module_signing"] == {"key": "ephemeral", "hash": "sha512", "modules": 280}
     assert data["kernelrelease"] == "7.2.10-lusoris1-mainstream"
 
 

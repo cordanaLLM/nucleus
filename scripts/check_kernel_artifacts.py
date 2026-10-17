@@ -27,7 +27,11 @@ directory unless all of these hold:
   setup header (``HdrS`` at 0x202) points at a version string that starts with
   ``<kernelrelease> ``; on arm64 and riscv a gzip-compressed ``Image`` with the architecture's
   header magic at 0x38 and the banner ``Linux version <kernelrelease> `` inside. Any other
-  kernel architecture is refused, since no check is known for it.
+  kernel architecture is refused, since no check is known for it;
+- the image package carries at least one kernel module, every module is an uncompressed
+  ``.ko``, and every one ends in an appended PKCS#7 module signature (the step
+  scripts/sign_kernel_modules.py, which verifies each signature against the key's certificate,
+  ran after packaging). An unsigned module loads only by tainting the kernel.
 
 Exit status 0 when the directory passes, 1 when it is refused (every finding is listed), and 2
 when the request itself cannot be evaluated (unknown stream or architecture, no dpkg-deb).
@@ -50,6 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import versions_query  # noqa: E402
+from sign_kernel_modules import COMPRESSED_SUFFIXES, split_signature  # noqa: E402
 
 PACKAGE_FIELDS = ("Package", "Version", "Architecture")
 _KERNELRELEASE = re.compile(r"[0-9][0-9A-Za-z.+_-]{0,63}")
@@ -62,6 +67,8 @@ MAX_IMAGE_BYTES = 256 * 1024 * 1024
 # Downstream bound: imago pkg/kernel/artifact.go@557319a line 38 defines
 # `const MaxArtifactBytes int64 = 512 << 20` and line 198 refuses `a.Size > MaxArtifactBytes`.
 MAX_ARTIFACT_BYTES = 512 * 1024 * 1024
+# A module's appended signature (an RSA-4096 PKCS#7 is under 1 KiB) lies in its last bytes.
+MODULE_TAIL_BYTES = 64 * 1024
 
 
 class GateError(RuntimeError):
@@ -231,9 +238,13 @@ def check_packages(debs: Sequence[Path], exp: Expectation) -> tuple[list[str], P
     return problems, seen.get(exp.packages[0])
 
 
-def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes] | None:
+def image_members(
+    image: Path, wanted: Sequence[str], modules: dict[str, bytes] | None = None
+) -> dict[str, bytes] | None:
     """Read the wanted regular files out of a package's data archive, streaming it once.
 
+    When ``modules`` is given, it receives the last MODULE_TAIL_BYTES of every kernel module
+    (``.ko`` or a compressed module), which hold an appended signature.
     None when dpkg-deb or the archive fails, even after the wanted members streamed through.
     """
     found: dict[str, bytes] = {}
@@ -249,6 +260,9 @@ def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes] | None
                     if member.name in wanted and member.isfile():
                         handle = archive.extractfile(member)
                         found[member.name] = handle.read() if handle else b""
+                    elif modules is not None and member.isfile() and _is_module(member.name):
+                        handle = archive.extractfile(member)
+                        modules[member.name] = handle.read()[-MODULE_TAIL_BYTES:] if handle else b""
         except tarfile.TarError:
             readable = False
         finally:
@@ -257,6 +271,23 @@ def image_members(image: Path, wanted: Sequence[str]) -> dict[str, bytes] | None
         if proc.wait() != 0:
             readable = False
     return found if readable else None
+
+
+def _is_module(name: str) -> bool:
+    return name.endswith(".ko") or name.endswith(COMPRESSED_SUFFIXES)
+
+
+def check_modules(image: Path, modules: dict[str, bytes]) -> list[str]:
+    """Every module must be an uncompressed .ko that ends in an appended PKCS#7 signature."""
+    if not modules:
+        return [f"{image.name}: carries no kernel module"]
+    problems = []
+    for name, tail in sorted(modules.items()):
+        if not name.endswith(".ko"):
+            problems.append(f"{image.name}: {name} is compressed; modules ship uncompressed")
+        elif split_signature(tail) is None:
+            problems.append(f"{image.name}: {name} carries no module signature")
+    return problems
 
 
 def _bzimage_version(data: bytes) -> str | None:
@@ -320,7 +351,8 @@ def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
     """The image package must carry the kernel beside it and the configuration it was built from."""
     vmlinuz = f"./boot/vmlinuz-{exp.kernelrelease}"
     config = f"./boot/config-{exp.kernelrelease}"
-    members = image_members(image, (vmlinuz, config))
+    modules: dict[str, bytes] = {}
+    members = image_members(image, (vmlinuz, config), modules)
     if members is None:
         return [f"{image.name}: dpkg-deb cannot read its data archive"]
     problems = []
@@ -336,6 +368,7 @@ def check_image(image: Path, directory: Path, exp: Expectation) -> list[str]:
         problems.extend(check_kernel_image(members[vmlinuz], exp))
     if members.get(config):
         problems.extend(check_kernel_config(members[config], exp))
+    problems.extend(check_modules(image, modules))
     return problems
 
 

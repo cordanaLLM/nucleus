@@ -1321,3 +1321,35 @@ def test_pull_request_workflows_cancel_superseded_runs():
     assert missing == [], (
         f"pull_request workflows that keep superseded runs or cancel runs for main: {missing}"
     )
+
+
+def _reproducibility_job() -> dict:
+    return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"][
+        "reproducibility"
+    ]
+
+
+def test_reproducibility_builds_one_leg_twice_with_one_key_and_compares():
+    """Issue #77: two builds of one tag, compared byte for byte, are the reproducibility gate."""
+    job = _reproducibility_job()
+    assert job["permissions"] == {"contents": "read"}
+    assert BUILD_IMAGE.fullmatch(job["container"]["image"])
+    assert job["steps"][0]["name"] == DRAFT_STEP
+    steps = {step.get("name", ""): step for step in job["steps"]}
+    build = steps["Build Twice and Compare"]["run"]
+    assert "for side in a b; do" in build and 'rm -rf "${WORK_DIR}"' in build
+    assert '--module-key="${KEY}"' in build and '--output-dir="repro/${side}"' in build
+    assert "./scripts/verify-reproducibility.sh --dir-a=repro/a --dir-b=repro/b\n" in build
+    assert "ccache" not in build and "--dry-run" not in build and "|| true" not in build
+    delete = steps["Delete the Module Signing Key"]
+    assert delete["if"].startswith("always()") and 'rm -rf "${KEY_DIR}"' in delete["run"]
+    names = [step.get("name", "") for step in job["steps"]]
+    assert names.index("Build Twice and Compare") < names.index("Delete the Module Signing Key")
+
+
+def test_required_checks_waits_longer_than_the_reproducibility_job():
+    run = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]["required-checks"]["steps"][-1]["run"]
+    wait = int(re.search(r"--timeout (\d+)", run)[1])
+    assert wait > _reproducibility_job()["timeout-minutes"] * 60

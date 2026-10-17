@@ -86,7 +86,7 @@ A published release carries a keyless Cosign signature over its checksum file an
 
 5. **Not Provided Today**:
    - **No GPG-Signed APT Archive**: Debian packages are published as GitHub Release assets; no APT repository or signed `InRelease` metadata is maintained.
-   - **Packages Not Bit-for-Bit Reproducible**: As documented in [ADR-0009](https://github.com/cordanaLLM/nucleus/blob/main/docs/adr/0009-kernel-compilation-and-artifact-gate.md), two builds of one tag differ for two known reasons: `CONFIG_MODULE_SIG_ALL` signs the modules with a key generated for each build and discarded with it, and `mkdebian` dates `debian/changelog` with the wall clock of the build. No workflow compares two builds.
+   - **Packages Not Bit-for-Bit Reproducible**: Two builds of one tag differ by their module signing key. The build signs nothing; `scripts/sign_kernel_modules.py` signs every module after packaging with a key that `--module-key` supplies or that is generated for that build and deleted after it ([ADR-0016](https://github.com/cordanaLLM/nucleus/blob/main/docs/adr/0016-module-signing-after-the-build.md)). No stable release key exists, so released packages carry a per-build key. No workflow compares two builds yet (issue #77).
    - **No UKI Signing**: Unified Kernel Images (`.efi`) are not signed with Secure Boot keys, and no release workflow publishes UKI binaries.
    - **x86_64 Releases Only**: arm64 and riscv64 kernels are compiled and pass the artifact gate in `.github/workflows/build-matrix.yml`, but they are not booted and not released; `imago.nucleus.kernel-artifact.v1` has no architecture field.
 

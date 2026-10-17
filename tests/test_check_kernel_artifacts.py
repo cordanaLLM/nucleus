@@ -48,6 +48,17 @@ def arm_image(banner_release: str, magic: bytes = b"ARM\x64") -> bytes:
 
 
 KERNEL = bzimage(KR)
+MODULE = f"lib/modules/{KR}/kernel/fs/fake.ko"
+UNSIGNED_MODULE = b"\x7fELF fake module" * 16
+
+
+def signed(module: bytes, signature: bytes = b"0\x82fake-pkcs7" * 8) -> bytes:
+    """A module with an appended signature: struct module_signature with id_type 2 (PKCS#7)."""
+    info = bytes([0, 0, 2, 0, 0, 0, 0, 0]) + len(signature).to_bytes(4, "big")
+    return module + signature + info + b"~Module signature appended~\n"
+
+
+SIGNED_MODULE = signed(UNSIGNED_MODULE)
 
 needs_dpkg = pytest.mark.skipif(shutil.which("dpkg-deb") is None, reason="dpkg-deb not installed")
 
@@ -93,14 +104,24 @@ def _deb(
     return deb
 
 
-def _image_files(config: bytes = CONFIG, kernel: bytes = KERNEL) -> dict[str, bytes]:
-    return {f"boot/vmlinuz-{KR}": kernel, f"boot/config-{KR}": config}
+def _image_files(
+    config: bytes = CONFIG, kernel: bytes = KERNEL, modules: dict[str, bytes] | None = None
+) -> dict[str, bytes]:
+    files = {f"boot/vmlinuz-{KR}": kernel, f"boot/config-{KR}": config}
+    files.update({MODULE: SIGNED_MODULE} if modules is None else modules)
+    return files
 
 
-def _release(tmp_path: Path, kernel: bytes = KERNEL, config: bytes = CONFIG) -> Path:
+def _release(
+    tmp_path: Path,
+    kernel: bytes = KERNEL,
+    config: bytes = CONFIG,
+    modules: dict[str, bytes] | None = None,
+) -> Path:
     out = tmp_path / "out"
     out.mkdir()
-    _deb(out, f"linux-image-{KR}", files=_image_files(config=config, kernel=kernel))
+    files = _image_files(config=config, kernel=kernel, modules=modules)
+    _deb(out, f"linux-image-{KR}", files=files)
     _deb(out, f"linux-headers-{KR}")
     _deb(out, "linux-libc-dev")
     (out / f"vmlinuz-{KR}").write_bytes(kernel)
@@ -267,7 +288,7 @@ def test_check_image_refuses_config_without_btf(monkeypatch, tmp_path):
         f"./boot/vmlinuz-{KR}": KERNEL,
         f"./boot/config-{KR}": config_no_btf,
     }
-    monkeypatch.setattr(gate, "image_members", lambda img, wanted: fake_members)
+    monkeypatch.setattr(gate, "image_members", lambda img, wanted, modules: fake_members)
     fake_deb = out / f"linux-image-{KR}_{PKGVER}_amd64.deb"
     fake_deb.write_bytes(b"fake-deb")
     problems = gate.check_image(fake_deb, out, exp)
@@ -402,7 +423,11 @@ def test_a_release_candidate_named_with_a_tilde_is_refused(tmp_path):
     kr = "7.3.0-rc7-lusoris1-bleeding"
     out = tmp_path / "out"
     out.mkdir()
-    image = {f"boot/vmlinuz-{kr}": bzimage(kr), f"boot/config-{kr}": CONFIG}
+    image = {
+        f"boot/vmlinuz-{kr}": bzimage(kr),
+        f"boot/config-{kr}": CONFIG,
+        f"lib/modules/{kr}/kernel/fs/fake.ko": SIGNED_MODULE,
+    }
     _deb(
         out,
         f"linux-image-{kr}",
@@ -532,3 +557,39 @@ def test_a_release_whose_config_lacks_btf_is_refused(tmp_path):
     result = _cli(out)
     assert result.returncode == 1
     assert f"./boot/config-{KR}: {ARCH} kernel {KR} lacks CONFIG_DEBUG_INFO_BTF=y" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("modules", "finding"),
+    [
+        ({}, "carries no kernel module"),
+        ({"./a.ko": UNSIGNED_MODULE}, "./a.ko carries no module signature"),
+        ({"./a.ko.zst": SIGNED_MODULE}, "./a.ko.zst is compressed"),
+        # A marker without a PKCS#7 signature block before it (id_type 0) is no signature.
+        ({"./a.ko": UNSIGNED_MODULE + bytes(12) + b"~Module signature appended~\n"}, "no module"),
+        # A signature length past the module's start is no signature either.
+        ({"./a.ko": signed(b"", b"x")[1:]}, "carries no module signature"),
+    ],
+)
+def test_modules_must_be_uncompressed_and_signed(modules, finding):
+    problems = gate.check_modules(Path("image.deb"), modules)
+    assert len(problems) == 1 and finding in problems[0], problems
+
+
+def test_signed_modules_pass():
+    assert gate.check_modules(Path("image.deb"), {"./a.ko": SIGNED_MODULE}) == []
+
+
+@needs_dpkg
+@pytest.mark.parametrize(
+    ("modules", "finding"),
+    [
+        ({}, f"linux-image-{KR}_{PKGVER}_amd64.deb: carries no kernel module"),
+        ({MODULE: SIGNED_MODULE, MODULE + "2.ko": UNSIGNED_MODULE}, "2.ko carries no module"),
+    ],
+)
+def test_an_image_with_unsigned_modules_is_refused(tmp_path, modules, finding):
+    out = _release(tmp_path, modules=modules)
+    result = _cli(out)
+    assert result.returncode == 1
+    assert finding in result.stderr, result.stderr
