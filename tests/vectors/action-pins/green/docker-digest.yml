@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+# Green: a container image named by a sha256 digest.
+name: fixture
+on: push
+permissions: {}
+jobs:
+  fixture:
+    name: fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d

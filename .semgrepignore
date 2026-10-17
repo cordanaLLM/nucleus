@@ -12,3 +12,7 @@ build/
 coverage.out
 coverage
 htmlcov/
+
+# Planted defects: workflows that pin actions wrongly on purpose, so that make lint-pins
+# is seen failing on them (tests/test_lint_pins.py). They are never run as workflows.
+tests/vectors/action-pins/red/

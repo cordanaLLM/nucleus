@@ -6,3 +6,4 @@ mkdocs-material>=9.5.0
 pymdown-extensions>=10.7.0
 ruff>=0.17.0
 shfmt-py>=4.2.0
+zizmor>=1.31.1

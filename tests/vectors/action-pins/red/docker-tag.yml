@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 The Lusoris Authors
+# SPDX-License-Identifier: EUPL-1.2
+# Red: a container image named by tag, not by digest (unpinned-images).
+name: fixture
+on: push
+permissions: {}
+jobs:
+  fixture:
+    name: fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://alpine:3.20

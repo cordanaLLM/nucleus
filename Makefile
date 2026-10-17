@@ -83,8 +83,8 @@ lint-manifest: ## Validate versions.json against versions.schema.json
 	@python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('versions.json')), json.load(open('versions.schema.json')))"
 	@echo "==> versions.json is valid."
 
-lint-pins: ## Verify every SHA-pinned action against its upstream tag (network; needs an authenticated gh)
-	@./scripts/check-action-pins.sh
+lint-pins: ## Verify every action and image pin with zizmor (network; needs GH_TOKEN)
+	@./scripts/lint-pins.sh
 
 test: ## Run pytest automated test suite
 	@echo "==> Running pytest test suite..."
