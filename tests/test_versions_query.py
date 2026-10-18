@@ -119,7 +119,7 @@ def test_list_unknown_collection_refused():
 
 
 def test_missing_name_for_subcommands_refused():
-    for cmd in ("source", "arch", "list"):
+    for cmd in ("source", "arch", "list", "series-streams"):
         result = _run_query(cmd)
         assert result.returncode == 2
         assert f"query '{cmd}' requires a name argument" in result.stderr
@@ -180,3 +180,26 @@ def test_the_sweep_refuses_each_inline_read_it_replaced():
     }
     for name, text in planted.items():
         assert violations_in(name, text), name
+
+
+def test_series_streams_lists_the_bound_streams():
+    result = _run_query("series-streams", "bbr3")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == VERSIONS["patches"]["bbr3"]["streams"]
+    assert "lts" not in result.stdout.split()
+
+
+def test_series_streams_refuses_an_unknown_series():
+    result = _run_query("series-streams", "nope")
+    assert result.returncode == 2
+    assert "patches.nope: missing" in result.stderr
+
+
+def test_series_streams_refuses_streams_that_are_not_a_list(tmp_path):
+    bad = dict(VERSIONS)
+    bad["patches"] = {"bbr3": {"streams": "bleeding"}}
+    manifest = tmp_path / "versions.json"
+    manifest.write_text(json.dumps(bad), encoding="utf-8")
+    result = _run_query("series-streams", "bbr3", versions=manifest)
+    assert result.returncode == 2
+    assert "patches.bbr3.streams: missing or not a list" in result.stderr

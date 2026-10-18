@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 GATE_SCRIPT = REPO_ROOT / "scripts" / "required_checks_gate.py"
 DETECTOR_GATED = {"Semgrep SAST", "Trivy Filesystem CVE Scan"}
+# release-please.yml jobs that run only when a release was created (or a tag was dispatched).
+RELEASE_GATED = {"verify-tool-release"}
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import required_checks_gate as gate  # noqa: E402
@@ -259,7 +261,7 @@ def test_a_check_that_registers_after_the_others_finished_is_waited_for(tmp_path
     assert "Security Scan Gate" in result.stdout
 
 
-def test_the_aggregator_runs_the_gate_and_allows_only_detector_gated_skips():
+def test_the_aggregator_runs_the_gate_and_allows_only_detector_and_release_gated_skips():
     job = _workflow("required-aggregator.yml")["jobs"]["required-checks"]
     text = yaml.safe_dump(job)
     assert "allowed-conclusions" not in text, "no blanket list of accepted conclusions"
@@ -267,7 +269,29 @@ def test_the_aggregator_runs_the_gate_and_allows_only_detector_gated_skips():
         step["run"] for step in job["steps"] if "required_checks_gate.py" in step.get("run", "")
     )
     allowed = {part.split('"')[1] for part in run.split("--allow-skip")[1:]}
-    assert allowed == DETECTOR_GATED
+    assert allowed == DETECTOR_GATED | RELEASE_GATED
+
+
+def test_the_allowed_release_skips_are_exactly_the_jobs_gated_on_a_created_release():
+    jobs = _workflow("release-please.yml")["jobs"]
+    gated = {
+        j.get("name", key)
+        for key, j in jobs.items()
+        if "needs.release-please.outputs.release_created" in str(j.get("if", ""))
+    }
+    assert gated == RELEASE_GATED
+
+
+@pytest.mark.parametrize(("conclusion", "code"), [("skipped", 0), ("failure", 1), ("cancelled", 1)])
+def test_an_allowed_release_skip_still_fails_on_any_other_conclusion(tmp_path, conclusion, code):
+    lines = (
+        LINT_OK
+        + f'{{"id":2,"name":"verify-tool-release","status":"completed","conclusion":"{conclusion}"}}\n'
+    )
+    result = _main_with_stub(tmp_path, lines, "--allow-skip", "verify-tool-release")
+    assert result.returncode == code, result.stdout + result.stderr
+    if code:
+        assert f"::error::verify-tool-release: {conclusion}" in result.stderr
 
 
 def test_the_allowed_skips_are_exactly_the_detector_gated_jobs_the_security_gate_judges():

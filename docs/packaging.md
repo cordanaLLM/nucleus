@@ -291,6 +291,28 @@ It passes only when the console shows `Linux version <kernelrelease>` (followed 
 QEMU at once (`panic=-1` with `-no-reboot`); a hang is killed at the timeout. Locally all four
 x86_64 kernels booted under TCG in 4 to 21 s.
 
+On `x86_64` the init then mounts `proc` and `sysfs`, loads every module the initramfs carries
+under `/modules` with `finit_module(2)`, and prints three more kinds of line:
+
+- `NUCLEUS-BOOT-SMOKE module=<file> rc=<0 or errno>`: one per module loaded.
+- `NUCLEUS-BOOT-SMOKE congestion=<list>` (or `congestion=unreadable errno=<n>`): the content of
+  `/proc/sys/net/ipv4/tcp_available_congestion_control`.
+- `NUCLEUS-BOOT-SMOKE sched_ext=<state>` (or `sched_ext=unreadable errno=<n>`): the content of
+  `/sys/kernel/sched_ext/state`.
+
+Three flags turn those lines into requirements, on `x86_64` only (the freestanding `arm64` and
+`riscv64` inits do not print them yet, and the flags exit with status 2 there):
+
+- `--module=<path>` (repeatable, at most 16) packs an uncompressed `.ko` into `/modules`. A
+  compressed, empty or missing module is refused before boot. Each module must then report
+  `rc=0`; one that reports another code, or no line at all, fails the boot.
+- `--require-congestion=<name>` (repeatable) requires `<name>` as an exact entry of the
+  congestion list: `bbr` is not met by `bbr3`.
+- `--require-sched-ext` requires a `sched_ext=` line with one of `disabled`, `enabled`,
+  `prepping`, `enabling`, `disabling`.
+
+The same flags apply with `--judge-log`.
+
 ```bash
 python3 scripts/boot_smoke.py --arch=x86_64 \
   --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
@@ -304,6 +326,14 @@ again. The step `Refuse a console of another release` runs it with the leg's rel
 pass, and with `<release>-planted`, which must be refused with exit status 1, so a verdict that
 stopped comparing the release would turn the leg red. On arm64 and riscv64 a boot on a console
 device that does not exist must be refused as well (`Refuse a boot whose console stays silent`).
+
+On `x86_64` every boot also passes `--require-sched-ext`. A stream that
+`python3 scripts/versions_query.py series-streams bbr3` lists (the streams `versions.json` binds
+the BBRv3 series to under `patches.bbr3.streams`) also has `tcp_bbr3.ko` taken from its
+`linux-image` package, loaded with `--module`, and checked with `--require-congestion=bbr
+--require-congestion=bbr3`, because `CONFIG_TCP_CONG_BBR3=m` registers `bbr3` only once the
+module is loaded. The judge step repeats those flags on the leg's console, and must refuse it
+with `--require-congestion=planted-cc`.
 
 Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`).
 

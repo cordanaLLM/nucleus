@@ -1447,3 +1447,21 @@ def test_required_checks_waits_longer_than_the_reproducibility_job():
     ]["required-checks"]["steps"][-1]["run"]
     wait = int(re.search(r"--timeout (\d+)", run)[1])
     assert wait > _reproducibility_job()["timeout-minutes"] * 60
+
+
+def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
+    steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}
+    boot = steps["Boot the Kernel to Userspace"]
+    judge = steps["Refuse a console of another release"]
+    assert boot["id"] == "boot" and boot["shell"] == judge["shell"] == "bash"
+    run = boot["run"]
+    # The binding is read from versions.json; a failed read must fail the step, never read as
+    # "not bound" (an `|| echo no` turned an IndentationError into a silently skipped check).
+    assert 'bound="$(python3 scripts/versions_query.py series-streams bbr3)"' in run
+    assert "|| echo" not in run and "python3 -c" not in run
+    assert "kernel/net/ipv4/tcp_bbr3.ko" in run
+    assert "--require-congestion=bbr --require-congestion=bbr3" in run
+    assert "--require-sched-ext" in run
+    assert 'echo "bbr3=${bbr3}" >> "${GITHUB_OUTPUT}"' in run
+    assert judge["env"]["BBR3"] == "${{ steps.boot.outputs.bbr3 }}"
+    assert "--require-congestion=planted-cc" in judge["run"]

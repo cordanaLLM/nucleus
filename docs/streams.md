@@ -30,7 +30,7 @@ authority, and section 3 says how each source is proven.
 ### 2.1 Bleeding Stream (`bleeding`)
 
 - **Upstream Release**: Linux 7.3-rc7 (Mainline release candidate, from the signed tag)
-- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, whose open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)); PCIe 6.0 / CXL 3.0 interconnects.
+- **Target Hardware**: NVIDIA Blackwell RTX 5090 and B200 accelerators, whose open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)); PCIe 6.0 / CXL 3.0 interconnects; AMD Radeon for ROCm on `amdgpu` with `HSA_AMD` on x86_64.
 - **Key Features**: sched-ext user-space eBPF scheduler support, cutting-edge DRMs, prototype memory tiering.
 - **Flavors**: `ai-infer-nvidia-bleeding`, `k8s-node-nvidia-bleeding`, `docker-nvidia-bleeding`.
 
@@ -194,8 +194,11 @@ eBPF mode do not need it). The x86_64 fragment adds the platform drivers a refer
 configuration, VMware sockets, Intel platform telemetry), Intel Arc Battlemage (Xe2) on `xe` with the
 MEI GSC clients and the card flash (built and claimed across all four streams on x86_64; arm64 is not
 claimed until a consumer requirement document asks for it), and AMD Radeon for ROCm on `amdgpu` with
-`HSA_AMD` (claimed on `mainstream`). The list was taken from the modules a running node loads that
-the `7.2.10-lusoris1-mainstream` release did not build; each fragment line says why it is there.
+`HSA_AMD` (built and claimed across all four streams on x86_64; arm64 is not claimed until a consumer
+requirement document asks for it; upstream `HSA_AMD` depends only on `DRM_AMDGPU` and the
+architecture, not on `PREEMPT_RT`, in 6.18.56, 7.2.10 and 7.3-rc7). The list was taken from the
+modules a running node loads that the `7.2.10-lusoris1-mainstream` release did not build; each
+fragment line says why it is there.
 
 sched-ext is mainline since Linux 6.12 (`kernel/sched/ext.c` first appears at `v6.12`), and
 every pinned stream is newer, so nucleus carries no patch for it: the architecture fragments set
@@ -211,7 +214,7 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `k8s-node-iptables-legacy` | `bleeding`, `mainstream`, `lts` | all | `NETFILTER_XTABLES_LEGACY=y`, `IP_NF_IPTABLES_LEGACY`, `IP_NF_RAW` |
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
 | `xe2` | all | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG` |
-| `amd-rocm` | `mainstream` | x86_64 | `DRM_AMDGPU`, `HSA_AMD=y` |
+| `amd-rocm` | all | x86_64 | `DRM_AMDGPU`, `HSA_AMD=y` |
 | `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
 | `bbr3` | `bleeding`, `mainstream`, `realtime` | all | `TCP_CONG_BBR3` built, from the `bbr3` patch series ([patches.md](patches.md)) |
 | `btf` | all | all | `DEBUG_INFO_BTF=y` |

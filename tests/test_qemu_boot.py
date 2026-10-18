@@ -56,6 +56,9 @@ def test_initramfs_holds_the_init_and_a_console_node():
         ("dev", "0o40755"),
         ("dev/console", "0o20600"),
         ("init", "0o100755"),
+        ("proc", "0o40755"),
+        ("sys", "0o40755"),
+        ("modules", "0o40755"),
     ]
     assert entries[1][3] == (5, 1)
     assert entries[2][2] == b"\x7fELF-init"
@@ -502,7 +505,14 @@ def test_write_initramfs_writes_newc_cpio_archive(tmp_path):
     data = out.read_bytes()
     assert data.startswith(b"070701")
     entries = _read_newc(data)
-    assert [name for name, _, _, _ in entries] == ["dev", "dev/console", "init"]
+    assert [name for name, _, _, _ in entries] == [
+        "dev",
+        "dev/console",
+        "init",
+        "proc",
+        "sys",
+        "modules",
+    ]
 
 
 def test_write_initramfs_refuses_existing_path(tmp_path):
@@ -542,3 +552,164 @@ def test_judge_log_refuses_a_release_the_console_does_not_show(tmp_path, capsys,
 def test_judge_log_without_a_log_cannot_run(tmp_path):
     missing = tmp_path / "absent.log"
     assert boot_smoke.main(["--judge-log", str(missing), "--kernelrelease", KR]) == 2
+
+
+def test_verdict_congestion_positive():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE congestion=reno cubic bbr bbr3\n"
+    assert boot_smoke.verdict(console, KR, congestion=["bbr", "bbr3"]) == []
+
+
+def test_verdict_congestion_tolerates_printk_tail():
+    console = (
+        BANNER
+        + MARKER
+        + "NUCLEUS-BOOT-SMOKE congestion=reno cubic bbr bbr3[    2.866941] input: ImExPS/2 Mouse\n"
+    )
+    assert boot_smoke.verdict(console, KR, congestion=["bbr", "bbr3"]) == []
+
+
+def test_verdict_congestion_refuses_when_bbr3_absent():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE congestion=reno cubic bbr\n"
+    missing = boot_smoke.verdict(console, KR, congestion=["bbr", "bbr3"])
+    assert len(missing) == 1
+    assert (
+        "congestion control bbr3 not registered (observed: ['reno', 'cubic', 'bbr'])" in missing[0]
+    )
+
+
+def test_verdict_congestion_token_not_substring():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE congestion=cubic bbr3\n"
+    missing = boot_smoke.verdict(console, KR, congestion=["bbr"])
+    assert len(missing) == 1
+    assert "congestion control bbr not registered (observed: ['cubic', 'bbr3'])" in missing[0]
+
+
+def test_verdict_congestion_missing_line():
+    console = BANNER + MARKER
+    missing = boot_smoke.verdict(console, KR, congestion=["bbr"])
+    assert len(missing) == 1
+    assert "congestion control bbr not registered (observed: no congestion line)" in missing[0]
+
+
+def test_verdict_sched_ext_passes_disabled():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE sched_ext=disabled\n"
+    assert boot_smoke.verdict(console, KR, sched_ext=True) == []
+
+
+def test_verdict_sched_ext_refuses_missing_line():
+    console = BANNER + MARKER
+    missing = boot_smoke.verdict(console, KR, sched_ext=True)
+    assert len(missing) == 1
+    assert "no sched_ext state on the console (observed: no sched_ext line)" in missing[0]
+
+
+def test_verdict_sched_ext_refuses_unreadable():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE sched_ext=unreadable errno=2\n"
+    missing = boot_smoke.verdict(console, KR, sched_ext=True)
+    assert len(missing) == 1
+    assert "no sched_ext state on the console (observed: unreadable errno=2)" in missing[0]
+
+
+def test_verdict_module_rc_nonzero_refused():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE module=tcp_bbr3.ko rc=2\n"
+    missing = boot_smoke.verdict(console, KR, modules=["tcp_bbr3.ko"])
+    assert len(missing) == 1
+    assert "module tcp_bbr3.ko failed to load: rc 2" in missing[0]
+
+
+def test_verdict_module_that_never_reported_is_refused():
+    missing = boot_smoke.verdict(BANNER + MARKER, KR, modules=["tcp_bbr3.ko"])
+    assert missing == ["module tcp_bbr3.ko never reported a load"]
+
+
+def test_verdict_module_that_loaded_passes():
+    console = BANNER + MARKER + "NUCLEUS-BOOT-SMOKE module=tcp_bbr3.ko rc=0\n"
+    assert boot_smoke.verdict(console, KR, modules=[Path("/x/tcp_bbr3.ko")]) == []
+
+
+def test_initramfs_with_module_holds_module_and_dirs(tmp_path):
+    mod = tmp_path / "test.ko"
+    mod.write_bytes(b"\x7fELF-module")
+    entries = _read_newc(boot_smoke.initramfs(b"\x7fELF-init", modules=[mod]))
+    names = [name for name, _, _, _ in entries]
+    assert "proc" in names
+    assert "sys" in names
+    assert "modules" in names
+    assert "modules/test.ko" in names
+    mod_entry = next(e for e in entries if e[0] == "modules/test.ko")
+    assert oct(mod_entry[1]) == "0o100644"
+    assert mod_entry[2] == b"\x7fELF-module"
+
+
+@pytest.mark.parametrize(
+    ("bad_name", "match"),
+    [
+        ("test.ko.zst", "compressed modules are not supported"),
+        ("test.ko.xz", "compressed modules are not supported"),
+        ("test.ko.gz", "compressed modules are not supported"),
+    ],
+)
+def test_initramfs_refuses_compressed_modules(tmp_path, bad_name, match):
+    mod = tmp_path / bad_name
+    mod.write_bytes(b"content")
+    with pytest.raises(boot_smoke.SmokeError, match=match):
+        boot_smoke.initramfs(b"\x7fELF", modules=[mod])
+
+
+def test_initramfs_refuses_empty_module(tmp_path):
+    mod = tmp_path / "empty.ko"
+    mod.write_bytes(b"")
+    with pytest.raises(boot_smoke.SmokeError, match="module is empty"):
+        boot_smoke.initramfs(b"\x7fELF", modules=[mod])
+
+
+def test_initramfs_refuses_missing_module(tmp_path):
+    mod = tmp_path / "missing.ko"
+    with pytest.raises(boot_smoke.SmokeError, match="does not exist"):
+        boot_smoke.initramfs(b"\x7fELF", modules=[mod])
+
+
+def test_initramfs_refuses_more_than_16_modules(tmp_path):
+    mods = []
+    for i in range(17):
+        m = tmp_path / f"mod{i}.ko"
+        m.write_bytes(b"mod")
+        mods.append(m)
+    with pytest.raises(boot_smoke.SmokeError, match="at most 16 modules"):
+        boot_smoke.initramfs(b"\x7fELF", modules=mods)
+
+
+def test_cli_module_on_arm64_exits_2():
+    res = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--arch=arm64",
+            "--module=/tmp/test.ko",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 2
+    assert "only supported on --arch=x86_64" in res.stderr
+
+
+def test_judge_log_require_congestion_planted_refuses_rc_1(tmp_path):
+    log = tmp_path / "boot.log"
+    log.write_text(
+        BANNER + MARKER + "NUCLEUS-BOOT-SMOKE congestion=reno cubic bbr\n", encoding="utf-8"
+    )
+    assert (
+        boot_smoke.main(
+            ["--judge-log", str(log), "--kernelrelease", KR, "--require-congestion", "planted"]
+        )
+        == 1
+    )
+
+
+def test_x86_init_source_contains_required_symbols():
+    src = boot_smoke.init_source("x86_64")
+    assert "finit_module" in src
+    assert "tcp_available_congestion_control" in src
+    assert "/sys/kernel/sched_ext/state" in src
