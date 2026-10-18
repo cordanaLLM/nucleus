@@ -257,11 +257,6 @@ ALLOW_LIST_ABSENT_PATHS = [
         "directory layout declared in documentation while no carried patches exist",
     ),
     (
-        "docs/hardware/amd-rocm.md",
-        "kconfig/drivers",
-        "document explicitly states no kconfig/drivers directory exists",
-    ),
-    (
         "docs/hardware/nvidia-blackwell.md",
         "kconfig/drivers",
         "document explicitly states no kconfig/drivers directory exists",

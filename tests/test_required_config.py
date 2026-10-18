@@ -81,7 +81,7 @@ def test_the_list_covers_every_line_of_the_k8s_node_fragment():
         assert symbol not in realtime
 
 
-def test_xe2_is_claimed_on_every_stream_and_rocm_on_mainstream():
+def test_xe2_and_rocm_are_claimed_on_every_stream():
     claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
     xe2 = claims["xe2"]
     assert xe2.streams == tuple(VERSIONS["streams"]) and xe2.architectures == ("x86_64",)
@@ -93,7 +93,7 @@ def test_xe2_is_claimed_on_every_stream_and_rocm_on_mainstream():
     assert xe2.symbols["CONFIG_INTEL_MEI_LB"] == "built"
     assert xe2.symbols["CONFIG_MTD_INTEL_DG"] == "built"
     amd = claims["amd-rocm"]
-    assert amd.streams == ("mainstream",) and amd.architectures == ("x86_64",)
+    assert amd.streams == tuple(VERSIONS["streams"]) and amd.architectures == ("x86_64",)
     assert amd.symbols["CONFIG_DRM_AMDGPU"] == "built"
     assert amd.symbols["CONFIG_HSA_AMD"] == "y"
 
@@ -106,6 +106,33 @@ def test_every_x86_64_leg_declares_the_xe2_claim(tmp_path, stream):
     assert "x86_64" in xe2.architectures
     config = vkr.read_config(_declared(tmp_path, stream, "x86_64"))
     assert not crc.misses([xe2], config, stream, "x86_64")
+
+
+@pytest.mark.parametrize("stream", VERSIONS["streams"])
+def test_every_x86_64_leg_declares_the_amd_rocm_claim(tmp_path, stream):
+    claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
+    amd = claims["amd-rocm"]
+    assert stream in amd.streams
+    assert "x86_64" in amd.architectures
+    config = vkr.read_config(_declared(tmp_path, stream, "x86_64"))
+    assert not crc.misses([amd], config, stream, "x86_64")
+
+
+@pytest.mark.parametrize("stream", ["bleeding", "lts", "realtime"])
+def test_unset_hsa_amd_is_refused_on_non_mainstream_streams(tmp_path, stream):
+    path = _declared(tmp_path, stream, "x86_64")
+    text = path.read_text(encoding="utf-8").replace(
+        "CONFIG_HSA_AMD=y", "# CONFIG_HSA_AMD is not set"
+    )
+    path.write_text(text, encoding="utf-8")
+    config = vkr.read_config(path)
+    claims = crc.load_claims(REQUIRED)
+    misses = crc.misses(claims, config, stream, "x86_64")
+    assert misses
+    assert any(m.symbol == "CONFIG_HSA_AMD" for m in misses)
+    result = _run(path, stream, "x86_64")
+    assert result.returncode == 1
+    assert "CONFIG_HSA_AMD is not set" in result.stderr
 
 
 @pytest.mark.parametrize(

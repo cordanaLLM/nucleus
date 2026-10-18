@@ -53,7 +53,14 @@ graph TD
 
 ## 2. Essential Kernel Configuration Parameters
 
-Not implemented: no `kconfig/drivers` directory exists and no AMD ROCm fragment is merged into any build ([#6](https://github.com/cordanaLLM/nucleus/issues/6) tracks the work). The block below is the intended content:
+`kconfig/x86_64.config` sets the core AMDGPU driver and HSA compute interface for every stream:
+
+```ini
+CONFIG_DRM_AMDGPU=m
+CONFIG_HSA_AMD=y
+```
+
+This configuration is claimed via `kconfig/required-config.json` under claim id `amd-rocm` across all four streams on x86_64 (arm64 is not claimed until a consumer requirement document asks for it). The block below is the intended fuller set of ROCm configuration parameters:
 
 ```ini
 # Core AMDGPU DRM Driver & KFD Compute
@@ -85,7 +92,26 @@ CONFIG_AMD_IOMMU=y
 CONFIG_AMD_IOMMU_V2=y
 ```
 
-Of this block, `kconfig/x86_64.config` sets `CONFIG_IOMMU_SUPPORT` and `CONFIG_AMD_IOMMU` today. No fragment requests the other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
+Of this block, `kconfig/x86_64.config` currently sets `CONFIG_DRM_AMDGPU=m`, `CONFIG_HSA_AMD=y`, `CONFIG_IOMMU_SUPPORT=y`, and `CONFIG_AMD_IOMMU=y`. The following lines from the block are not in `kconfig/x86_64.config`:
+
+- `CONFIG_DRM_AMDGPU_CIK=n`
+- `CONFIG_DRM_AMDGPU_SI=n`
+- `CONFIG_DRM_AMDGPU_USERPTR=y`
+- `CONFIG_HSA_AMD_SVM=y`
+- `CONFIG_DRM_SCHED=m`
+- `CONFIG_ZONE_DEVICE=y`
+- `CONFIG_DEVICE_PRIVATE=y`
+- `CONFIG_HMM_MIRROR=y`
+- `CONFIG_MIGRATION=y`
+- `CONFIG_TRANSPARENT_HUGEPAGE=y`
+- `CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=y`
+- `CONFIG_PCI_P2PDMA=y`
+- `CONFIG_DMABUF_MOVE_NOTIFY=y`
+- `CONFIG_SYNC_FILE=y`
+- `CONFIG_DRM_ACCEL=y`
+- `CONFIG_AMD_IOMMU_V2=y`
+
+No fragment requests these other symbols, so the architecture's defconfig decides them; the `kernel-<stream>-x86_64.config` asset of a release shows the resolved values.
 
 ### Key Technical Rationale
 

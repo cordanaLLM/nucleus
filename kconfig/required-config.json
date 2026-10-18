@@ -135,7 +135,10 @@
       "id": "amd-rocm",
       "claim": "AMD Radeon for ROCm on amdgpu with KFD (README.md, docs/streams.md)",
       "streams": [
-        "mainstream"
+        "bleeding",
+        "mainstream",
+        "lts",
+        "realtime"
       ],
       "architectures": [
         "x86_64"
