@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.3.0...nucleus-v0.4.0) (2026-10-18)
+
+
+### Features
+
+* **boot:** boot arm64 and riscv64 kernels under QEMU in the matrix ([#170](https://github.com/cordanaLLM/nucleus/issues/170)) ([3e88a16](https://github.com/cordanaLLM/nucleus/commit/3e88a1645356a23a9895a7ae830622cdbb15277b))
+* **boot:** refuse each leg's console when judged with another release ([#188](https://github.com/cordanaLLM/nucleus/issues/188)) ([11ad0ee](https://github.com/cordanaLLM/nucleus/commit/11ad0ee77096bf5626078ea96a3aaf983b00dc37))
+* **build:** sign kernel modules after the build with a recorded step ([#183](https://github.com/cordanaLLM/nucleus/issues/183)) ([8582d5f](https://github.com/cordanaLLM/nucleus/commit/8582d5f0c14467e8db61549bacd33d9eee957e41))
+* **kconfig:** build a Kubernetes node on every stream, and refuse a build without a claimed option ([#138](https://github.com/cordanaLLM/nucleus/issues/138)) ([b7f1342](https://github.com/cordanaLLM/nucleus/commit/b7f134257ab75a33521f0bd05dd905b506394599))
+* **kconfig:** build the eight options the reference node sets that lusoris2 left off ([#145](https://github.com/cordanaLLM/nucleus/issues/145)) ([0949e1d](https://github.com/cordanaLLM/nucleus/commit/0949e1dddd7f959b4bee3c87cf87cbaa7a16634d)), closes [#144](https://github.com/cordanaLLM/nucleus/issues/144)
+* **kconfig:** claim Xe2 on xe for every stream on x86_64 ([#200](https://github.com/cordanaLLM/nucleus/issues/200)) ([4b6b977](https://github.com/cordanaLLM/nucleus/commit/4b6b97764e1202498cef9a8a5c3fee4cdbc83efb)), closes [#193](https://github.com/cordanaLLM/nucleus/issues/193)
+* **packaging:** build the pinned NVIDIA open kernel modules in CI ([#201](https://github.com/cordanaLLM/nucleus/issues/201)) ([67753ad](https://github.com/cordanaLLM/nucleus/commit/67753ad92bd79395533326712287d8922e066cc4)), closes [#194](https://github.com/cordanaLLM/nucleus/issues/194)
+* **patches:** carry BBRv3 from google/bbr pinned by commit ([#196](https://github.com/cordanaLLM/nucleus/issues/196)) ([41fe429](https://github.com/cordanaLLM/nucleus/commit/41fe429116a21abda9d3a0ec3b174c9c64a2f4ec)), closes [#192](https://github.com/cordanaLLM/nucleus/issues/192)
+* **release:** publish the x86_64 UKI with each release ([#210](https://github.com/cordanaLLM/nucleus/issues/210)) ([658c5a3](https://github.com/cordanaLLM/nucleus/commit/658c5a3d84d9067823f5af3749837a87b8c721c1))
+* **requirements:** check one kernel configuration against a requirement ([#176](https://github.com/cordanaLLM/nucleus/issues/176)) ([677dd40](https://github.com/cordanaLLM/nucleus/commit/677dd401b68363b9ac3a1f2e891e6c1a1e9a0d9a))
+* **requirements:** verify module-abi against the build record (ADR-0015) ([#165](https://github.com/cordanaLLM/nucleus/issues/165)) ([6e642de](https://github.com/cordanaLLM/nucleus/commit/6e642def003fe7f4a5b409319f271dc8bf0b279f))
+* **uki:** build a UKI from each leg's own kernel in the build matrix ([#174](https://github.com/cordanaLLM/nucleus/issues/174)) ([1bf4330](https://github.com/cordanaLLM/nucleus/commit/1bf433093936ae47e50be70e5df093d05af16617))
+
+
+### Bug Fixes
+
+* **boot-smoke:** accept a printk timestamp after the release on the init's line ([#127](https://github.com/cordanaLLM/nucleus/issues/127)) ([d57e889](https://github.com/cordanaLLM/nucleus/commit/d57e889f0eca6a1afc8a8b07277ffc8ac60bfdb7)), closes [#126](https://github.com/cordanaLLM/nucleus/issues/126)
+* **ci:** bound the required-checks wait by a wall-clock deadline ([#185](https://github.com/cordanaLLM/nucleus/issues/185)) ([ee7e4dd](https://github.com/cordanaLLM/nucleus/commit/ee7e4dd72842aa3270341f48a36c166d2cf622f9))
+* **ci:** clear the eleven HISS findings in existing files ([#108](https://github.com/cordanaLLM/nucleus/issues/108)) ([b431d3e](https://github.com/cordanaLLM/nucleus/commit/b431d3e31fd81ace4ba159e31f709d2fae6928c5))
+* **ci:** close the two open CodeQL notes ([#149](https://github.com/cordanaLLM/nucleus/issues/149)) ([78511c0](https://github.com/cordanaLLM/nucleus/commit/78511c025101bcd932a42e9924da86a4c01e94ba)), closes [#148](https://github.com/cordanaLLM/nucleus/issues/148)
+* **ci:** judge stale check statuses and wait for late checks in required-checks ([#82](https://github.com/cordanaLLM/nucleus/issues/82)) ([47c9fdd](https://github.com/cordanaLLM/nucleus/commit/47c9fdd06417c3a0686bc878844732df75d3390a))
+* **ci:** pass a skipped job only when the change detector excluded it ([#71](https://github.com/cordanaLLM/nucleus/issues/71)) ([dd825dc](https://github.com/cordanaLLM/nucleus/commit/dd825dc233b74a754d88597574f5a32705dc0fc1))
+* **ci:** refuse to attest when supply-chain has no package ([#68](https://github.com/cordanaLLM/nucleus/issues/68)) ([074432c](https://github.com/cordanaLLM/nucleus/commit/074432c7f9dbcf270ff3900b3a8084cfcf7a350b))
+* **docker:** build the builder container from the CI image and toolchain ([#80](https://github.com/cordanaLLM/nucleus/issues/80)) ([84dd57c](https://github.com/cordanaLLM/nucleus/commit/84dd57cd38bc7ae65a9f7081fd7a3ee9332d7c0f))
+* **gate:** refuse an artifact above imago's 512 MiB per-artifact bound ([#96](https://github.com/cordanaLLM/nucleus/issues/96)) ([f6e56a6](https://github.com/cordanaLLM/nucleus/commit/f6e56a684b41956fee894f7c1dbc9fe631a51ec5)), closes [#95](https://github.com/cordanaLLM/nucleus/issues/95)
+* **governance:** name the praetor pin PRAETOR_REF so git hooks use it ([#167](https://github.com/cordanaLLM/nucleus/issues/167)) ([125edb8](https://github.com/cordanaLLM/nucleus/commit/125edb844be6dc5083435d62912c2a4a622e8ef9))
+* **hindsight-mcp:** flush only the bank's own buffered facts, refuse https instead of sending it in clear ([#88](https://github.com/cordanaLLM/nucleus/issues/88)) ([328dcdf](https://github.com/cordanaLLM/nucleus/commit/328dcdf9bee611d0cbc15fb635d12bac19e2801d))
+* **kconfig:** build BTF into riscv64 kernels and gate BTF on every arch ([#159](https://github.com/cordanaLLM/nucleus/issues/159)) ([5b25755](https://github.com/cordanaLLM/nucleus/commit/5b25755cb93662f3e52603fa59e21065a8fa3416))
+* **kconfig:** carry zlib deflate on every leg, and move all streams to current upstream ([#106](https://github.com/cordanaLLM/nucleus/issues/106)) ([987043f](https://github.com/cordanaLLM/nucleus/commit/987043fe397f76e6c4138dfe6090f2dfba207191)), closes [#105](https://github.com/cordanaLLM/nucleus/issues/105)
+* **kconfig:** enable sched-ext on riscv64 ([#162](https://github.com/cordanaLLM/nucleus/issues/162)) ([d1ab20e](https://github.com/cordanaLLM/nucleus/commit/d1ab20ec600be8c9075e824b9a91b74acb3f5a45))
+* **lint:** make fmt-check, audit and the function-length check fail on findings ([#75](https://github.com/cordanaLLM/nucleus/issues/75)) ([a83e1bc](https://github.com/cordanaLLM/nucleus/commit/a83e1bc59ac943f62096f634c7ec8b0bd3c9cfd0))
+* **package:** date debian/changelog from SOURCE_DATE_EPOCH ([#171](https://github.com/cordanaLLM/nucleus/issues/171)) ([8ad187a](https://github.com/cordanaLLM/nucleus/commit/8ad187aa0b804fd181e8a8a7153f76fb7d8b87b5))
+* **patches:** drop the carried patch that applied to no stream, and check the rest apply ([#173](https://github.com/cordanaLLM/nucleus/issues/173)) ([331ab42](https://github.com/cordanaLLM/nucleus/commit/331ab42e61ca842289a8fe440d9c907cb487b72e))
+* **release:** generate the artifact manifest in a tested script that proves every digest ([#90](https://github.com/cordanaLLM/nucleus/issues/90)) ([3d10057](https://github.com/cordanaLLM/nucleus/commit/3d1005710f236cae11f01a6d85e4383a6a4b6c16))
+* **release:** refuse to publish a tag whose release already exists ([#100](https://github.com/cordanaLLM/nucleus/issues/100)) ([ed537d0](https://github.com/cordanaLLM/nucleus/commit/ed537d0ca69de2e26b4ef63f80c2155171dee000)), closes [#99](https://github.com/cordanaLLM/nucleus/issues/99)
+* **repro:** compare two real build directories, and give no verdict on a dry run ([#78](https://github.com/cordanaLLM/nucleus/issues/78)) ([a7b416a](https://github.com/cordanaLLM/nucleus/commit/a7b416ac0223e5dd31fb8541deb439a0eeda5efb))
+* **supply-chain:** verify each published release instead of re-signing nothing ([#134](https://github.com/cordanaLLM/nucleus/issues/134)) ([89a192c](https://github.com/cordanaLLM/nucleus/commit/89a192c4e20de098e0f4267a0fae4f2e2967a1c9)), closes [#133](https://github.com/cordanaLLM/nucleus/issues/133)
+
+
+### Miscellaneous Chores
+
+* **release:** release features as the next minor version ([#212](https://github.com/cordanaLLM/nucleus/issues/212)) ([bfe5210](https://github.com/cordanaLLM/nucleus/commit/bfe5210acd645da01b35463a51cf2791647985ff))
+
 ## [0.3.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.2.0...nucleus-v0.3.0) (2026-10-11)
 
 
