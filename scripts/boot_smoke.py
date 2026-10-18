@@ -68,11 +68,97 @@ ARCH_MACHINE_ARGS: dict[str, list[str]] = {
 }
 
 INIT_SOURCE = r"""
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/mount.h>
 #include <sys/reboot.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <termios.h>
 #include <unistd.h>
+
+static void load_modules(void)
+{
+    DIR *dir = opendir("/modules");
+    if (!dir)
+        return;
+    int loaded = 0;
+    for (int i = 0; i < 32 && loaded < 16; i++) {
+        struct dirent *ent = readdir(dir);
+        if (!ent)
+            break;
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+            continue;
+        char path[512];
+        snprintf(path, sizeof(path), "/modules/%s", ent->d_name);
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+            loaded++;
+            int fd = open(path, O_RDONLY | O_CLOEXEC);
+            int rc = 0;
+            if (fd >= 0) {
+                if (syscall(SYS_finit_module, fd, "", 0) != 0)
+                    rc = errno;
+                close(fd);
+            } else {
+                rc = errno;
+            }
+            printf("NUCLEUS-BOOT-SMOKE module=%s rc=%d\n", ent->d_name, rc);
+            fflush(stdout);
+        }
+    }
+    closedir(dir);
+}
+
+static void report_congestion(void)
+{
+    int fd = open("/proc/sys/net/ipv4/tcp_available_congestion_control", O_RDONLY);
+    if (fd >= 0) {
+        char buf[512];
+        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+        if (n >= 0) {
+            buf[n] = '\0';
+            if (n > 0 && buf[n - 1] == '\n')
+                buf[n - 1] = '\0';
+            printf("NUCLEUS-BOOT-SMOKE congestion=%s\n", buf);
+        } else {
+            printf("NUCLEUS-BOOT-SMOKE congestion=unreadable errno=%d\n", errno);
+        }
+        close(fd);
+    } else {
+        printf("NUCLEUS-BOOT-SMOKE congestion=unreadable errno=%d\n", errno);
+    }
+    fflush(stdout);
+}
+
+static void report_sched_ext(void)
+{
+    int fd = open("/sys/kernel/sched_ext/state", O_RDONLY);
+    if (fd >= 0) {
+        char buf[256];
+        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+        if (n >= 0) {
+            buf[n] = '\0';
+            int start = 0;
+            for (int i = 0; i < n && isspace((unsigned char)buf[i]); i++)
+                start++;
+            for (int i = (int)n - 1; i >= start && isspace((unsigned char)buf[i]); i--)
+                buf[i] = '\0';
+            printf("NUCLEUS-BOOT-SMOKE sched_ext=%s\n", buf + start);
+        } else {
+            printf("NUCLEUS-BOOT-SMOKE sched_ext=unreadable errno=%d\n", errno);
+        }
+        close(fd);
+    } else {
+        printf("NUCLEUS-BOOT-SMOKE sched_ext=unreadable errno=%d\n", errno);
+    }
+    fflush(stdout);
+}
 
 int main(void)
 {
@@ -81,6 +167,14 @@ int main(void)
     if (uname(&name) == 0)
         printf("NUCLEUS-BOOT-SMOKE release=%s\n", name.release);
     fflush(stdout);
+
+    mount("proc", "/proc", "proc", 0, 0);
+    mount("sysfs", "/sys", "sysfs", 0, 0);
+
+    load_modules();
+    report_congestion();
+    report_sched_ext();
+
     tcdrain(STDOUT_FILENO);
     sync();
     reboot(RB_POWER_OFF);
@@ -390,23 +484,51 @@ def build_init(cc: str, workdir: Path, arch: str = "x86_64") -> bytes:
     return binary.read_bytes()
 
 
-def build_initramfs(cc: str, arch: str = "x86_64", init_binary: Path | None = None) -> bytes:
+def build_initramfs(
+    cc: str,
+    arch: str = "x86_64",
+    init_binary: Path | None = None,
+    modules: Sequence[Path | str] = (),
+) -> bytes:
     """Compile the static init (or read init_binary) and pack into a newc initramfs."""
     if init_binary is not None:
         init = init_binary.read_bytes()
     else:
         with tempfile.TemporaryDirectory(prefix="boot-smoke-init-") as tmp:
             init = build_init(cc, Path(tmp), arch)
-    return initramfs(init)
+    return initramfs(init, modules)
 
 
-def initramfs(init: bytes) -> bytes:
+def initramfs(init: bytes, modules: Sequence[Path | str] = ()) -> bytes:
     """The smallest root that boots: /init and the console it writes to."""
+    if len(modules) > 16:
+        raise SmokeError(f"at most 16 modules supported, got {len(modules)}")
+
+    module_entries = []
+    for m in modules:
+        if not m or not str(m).strip():
+            raise SmokeError("empty module path")
+        p = Path(m)
+        name = p.name
+        if any(name.endswith(ext) for ext in (".ko.zst", ".ko.xz", ".ko.gz")):
+            raise SmokeError(f"{p}: compressed modules are not supported in initramfs")
+        if not name.endswith(".ko"):
+            raise SmokeError(f"{p}: module must end in .ko")
+        if not p.is_file():
+            raise SmokeError(f"{p}: module does not exist")
+        if p.stat().st_size == 0:
+            raise SmokeError(f"{p}: module is empty")
+        module_entries.append(CpioEntry(f"modules/{name}", 0o100644, p.read_bytes()))
+
     return newc_archive(
         [
             CpioEntry("dev", 0o040755),
             CpioEntry("dev/console", 0o020600, rdev=(5, 1)),
             CpioEntry("init", 0o100755, init),
+            CpioEntry("proc", 0o040755),
+            CpioEntry("sys", 0o040755),
+            CpioEntry("modules", 0o040755),
+            *module_entries,
         ]
     )
 
@@ -443,7 +565,66 @@ def qemu_command(args: argparse.Namespace, initrd: Path, kernel: Path | None = N
     return cmd
 
 
-def verdict(console: str, kernelrelease: str) -> list[str]:
+def _check_congestion(console: str, required: Sequence[str], missing: list[str]) -> None:
+    found_tokens: list[str] | None = None
+    prefix = "NUCLEUS-BOOT-SMOKE congestion="
+    for line in console.splitlines():
+        line = line.strip()
+        if line.startswith(prefix):
+            val = line[len(prefix) :]
+            cleaned = re.sub(r"\[\s*\d+\.\d+\].*$", "", val).strip()
+            found_tokens = cleaned.split()
+            break
+    if found_tokens is None:
+        for name in required:
+            missing.append(
+                f"congestion control {name} not registered (observed: no congestion line)"
+            )
+        return
+    for name in required:
+        if name not in found_tokens:
+            missing.append(f"congestion control {name} not registered (observed: {found_tokens})")
+
+
+def _check_sched_ext(console: str, missing: list[str]) -> None:
+    prefix = "NUCLEUS-BOOT-SMOKE sched_ext="
+    valid_states = {"disabled", "enabled", "prepping", "enabling", "disabling"}
+    found_state: str | None = None
+    for line in console.splitlines():
+        line = line.strip()
+        if line.startswith(prefix):
+            val = line[len(prefix) :]
+            found_state = re.sub(r"\[\s*\d+\.\d+\].*$", "", val).strip()
+            break
+    if found_state is None:
+        missing.append("no sched_ext state on the console (observed: no sched_ext line)")
+    elif found_state not in valid_states:
+        missing.append(f"no sched_ext state on the console (observed: {found_state})")
+
+
+def _check_modules(console: str, modules: Sequence[Path | str], missing: list[str]) -> None:
+    """Every module the initramfs carried must report rc=0; a silent init proves nothing."""
+    loaded: dict[str, str] = {}
+    for line in console.splitlines():
+        m = re.match(r"^NUCLEUS-BOOT-SMOKE module=(\S+)\s+rc=(-?\d+)", line.strip())
+        if m:
+            loaded.setdefault(m.group(1), m.group(2))
+    for module in modules:
+        name = Path(module).name
+        rc = loaded.get(name)
+        if rc is None:
+            missing.append(f"module {name} never reported a load")
+        elif int(rc) != 0:
+            missing.append(f"module {name} failed to load: rc {rc}")
+
+
+def verdict(
+    console: str,
+    kernelrelease: str,
+    congestion: Sequence[str] = (),
+    sched_ext: bool = False,
+    modules: Sequence[Path | str] = (),
+) -> list[str]:
     """Every missing proof of a boot; an empty list means the kernel reached userspace."""
     missing = []
     if f"Linux version {kernelrelease} " not in console:
@@ -454,6 +635,14 @@ def verdict(console: str, kernelrelease: str) -> list[str]:
     init_line = re.compile(rf"{re.escape(MARKER + kernelrelease)}(\[\s*\d+\.\d+\].*)?")
     if not any(init_line.fullmatch(line.strip()) for line in console.splitlines()):
         missing.append(f"init never printed '{MARKER}{kernelrelease}'")
+
+    if congestion:
+        _check_congestion(console, congestion, missing)
+    if sched_ext:
+        _check_sched_ext(console, missing)
+    if modules:
+        _check_modules(console, modules, missing)
+
     return missing
 
 
@@ -490,22 +679,47 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
         workdir = Path(tmp)
         kernel = decompress_kernel(args.kernel, arch, workdir)
         initrd = workdir / "initramfs.cpio"
-        initrd.write_bytes(build_initramfs(cc, arch, getattr(args, "init_binary", None)))
+        initrd.write_bytes(
+            build_initramfs(
+                cc,
+                arch,
+                getattr(args, "init_binary", None),
+                modules=args.module,
+            )
+        )
         console, timed_out = boot(args, initrd, kernel)
-    missing = verdict(console, args.kernelrelease)
+    missing = verdict(
+        console,
+        args.kernelrelease,
+        congestion=args.require_congestion,
+        sched_ext=args.require_sched_ext,
+        modules=args.module,
+    )
     if timed_out and missing:
         missing.append(f"QEMU was killed after {args.timeout}s")
     return missing, console
 
 
-def judge_log(log: Path, kernelrelease: str) -> int:
+def judge_log(
+    log: Path,
+    kernelrelease: str,
+    congestion: Sequence[str] = (),
+    sched_ext: bool = False,
+    modules: Sequence[Path | str] = (),
+) -> int:
     """Judge a console a boot already wrote; the matrix plants a wrong release with it."""
     try:
         console = log.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         print(f"boot_smoke: {exc}", file=sys.stderr)
         return 2
-    missing = verdict(console, kernelrelease)
+    missing = verdict(
+        console,
+        kernelrelease,
+        congestion=congestion,
+        sched_ext=sched_ext,
+        modules=modules,
+    )
     if missing:
         print(f"Refused: {log} does not show {kernelrelease} reaching userspace:", file=sys.stderr)
         for line in missing:
@@ -542,32 +756,70 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="judge this console log against --kernelrelease without booting",
     )
+    parser.add_argument(
+        "--module",
+        action="append",
+        type=Path,
+        default=[],
+        help="kernel module (.ko) to include in initramfs and load at boot (x86_64 only)",
+    )
+    parser.add_argument(
+        "--require-congestion",
+        action="append",
+        default=[],
+        help="require congestion control algorithm registered in tcp_available_congestion_control (x86_64 only)",
+    )
+    parser.add_argument(
+        "--require-sched-ext",
+        action="store_true",
+        default=False,
+        help="require sched_ext state readable in /sys/kernel/sched_ext/state (x86_64 only)",
+    )
     return parser
+
+
+def _handle_write_initramfs(args: argparse.Namespace) -> int:
+    target = args.write_initramfs
+    if target.exists():
+        print(f"boot_smoke: refusing to overwrite existing initramfs: {target}", file=sys.stderr)
+        return 2
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = build_initramfs(
+            args.cc,
+            args.arch,
+            getattr(args, "init_binary", None),
+            modules=args.module,
+        )
+        target.write_bytes(data)
+    except (SmokeError, OSError) as exc:
+        print(f"boot_smoke: {exc}", file=sys.stderr)
+        return 2
+    print(f"==> Wrote {args.arch} initramfs to {target}")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.arch != "x86_64" and (args.module or args.require_congestion or args.require_sched_ext):
+        print(
+            "boot_smoke: error: --module, --require-congestion, and --require-sched-ext are only supported on --arch=x86_64",
+            file=sys.stderr,
+        )
+        return 2
     if args.cc is None:
         args.cc = default_cc(args.arch)
     if args.write_initramfs is not None:
-        target = args.write_initramfs
-        if target.exists():
-            print(
-                f"boot_smoke: refusing to overwrite existing initramfs: {target}", file=sys.stderr
-            )
-            return 2
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            data = build_initramfs(args.cc, args.arch, getattr(args, "init_binary", None))
-            target.write_bytes(data)
-        except (SmokeError, OSError) as exc:
-            print(f"boot_smoke: {exc}", file=sys.stderr)
-            return 2
-        print(f"==> Wrote {args.arch} initramfs to {target}")
-        return 0
+        return _handle_write_initramfs(args)
 
     if args.judge_log is not None and args.kernelrelease is not None:
-        return judge_log(args.judge_log, args.kernelrelease)
+        return judge_log(
+            args.judge_log,
+            args.kernelrelease,
+            congestion=args.require_congestion,
+            sched_ext=args.require_sched_ext,
+            modules=args.module,
+        )
     if args.kernel is None or args.kernelrelease is None:
         print(
             "boot_smoke: error: the following arguments are required: --kernel, --kernelrelease",

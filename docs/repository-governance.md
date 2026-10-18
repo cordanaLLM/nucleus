@@ -116,9 +116,13 @@ every event and must succeed.
 on the head commit has completed, then requires each to have concluded `success`. The newest
 run of a check name stands for it, since `Validate PR Milestone & Metadata` runs once per pull
 request edit. A skipped check passes only when its name is listed with `--allow-skip`. The
-list holds just `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
-Gate judges, and `tests/test_gates_refuse_skipped.py` fails when that list differs from the
-detector-gated jobs in `security-scans.yml`. The gate also fails when it finds no other check
+list holds `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
+Gate judges, and `verify-tool-release`, which `release-please.yml` runs only on the push to
+`main` that creates a release, or on a dispatch that names a tag. Every other push to `main`
+skips it, and main commit 3392531 went red on that skip. `tests/test_gates_refuse_skipped.py`
+fails when the list differs from the detector-gated jobs in `security-scans.yml` plus the
+release-gated jobs in `release-please.yml`, and when a listed check that failed or was
+cancelled passes. The gate also fails when it finds no other check
 run, or when the others are still running after 190 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 

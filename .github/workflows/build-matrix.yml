@@ -212,34 +212,77 @@ jobs:
 
       # TCG, not KVM: the container has no /dev/kvm, and a boot to userspace takes seconds.
       - name: Boot the Kernel to Userspace
+        id: boot
         if: env.DRY_RUN != 'true'
+        shell: bash
         env:
           KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
           BOOT_TIMEOUT: ${{ matrix.arch == 'x86_64' && '300' || '600' }}
         run: |
           set -euo pipefail
-          python3 scripts/boot_smoke.py --arch="${ARCH}" \
-            --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}" \
-            --kernelrelease="${KERNELRELEASE}" --timeout="${BOOT_TIMEOUT}" \
+          boot_args=(
+            --arch="${ARCH}"
+            --kernel="output/${STREAM}-${ARCH}/vmlinuz-${KERNELRELEASE}"
+            --kernelrelease="${KERNELRELEASE}"
+            --timeout="${BOOT_TIMEOUT}"
             --log="records/boot-${STREAM}-${ARCH}.log"
+          )
+          # The bbr3 series registers "bbr3" from a module (CONFIG_TCP_CONG_BBR3=m), so a
+          # bound stream's boot loads tcp_bbr3.ko from its own image package before it reads
+          # tcp_available_congestion_control. The binding comes from versions.json.
+          bbr3=no
+          if [[ "${ARCH}" == "x86_64" ]]; then
+            boot_args+=(--require-sched-ext)
+            bound="$(python3 scripts/versions_query.py series-streams bbr3)"
+            if grep -qxF -- "${STREAM}" <<<"${bound}"; then bbr3=yes; fi
+            if [[ "${bbr3}" == "yes" ]]; then
+              deb_pkg=$(find "output/${STREAM}-${ARCH}" -maxdepth 1 -name "linux-image-*.deb" ! -name "*-dbg*" | head -n 1)
+              mod_tmp=$(mktemp -d)
+              dpkg-deb --fsys-tarfile "${deb_pkg}" | \
+                tar -x -C "${mod_tmp}" --wildcards "*lib/modules/${KERNELRELEASE}/kernel/net/ipv4/tcp_bbr3.ko"
+              mod_path="${mod_tmp}/lib/modules/${KERNELRELEASE}/kernel/net/ipv4/tcp_bbr3.ko"
+              boot_args+=(--module="${mod_path}" --require-congestion=bbr --require-congestion=bbr3)
+            fi
+          fi
+          echo "bbr3=${bbr3}" >> "${GITHUB_OUTPUT}"
+          python3 scripts/boot_smoke.py "${boot_args[@]}"
 
       # The verdict is what ties the boot to this leg's release: judge the console the boot
       # just wrote with that release (it must pass) and with one the leg did not build (it
       # must be refused), so a verdict that ignored the release could not stay green.
       - name: Refuse a console of another release
         if: env.DRY_RUN != 'true'
+        shell: bash
         env:
           KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
+          BBR3: ${{ steps.boot.outputs.bbr3 }}
         run: |
           set -euo pipefail
           log="records/boot-${STREAM}-${ARCH}.log"
-          python3 scripts/boot_smoke.py --judge-log="${log}" --kernelrelease="${KERNELRELEASE}"
+          judge_args=()
+          if [[ "${ARCH}" == "x86_64" ]]; then
+            judge_args+=(--require-sched-ext)
+            if [[ "${BBR3}" == "yes" ]]; then
+              judge_args+=(--require-congestion=bbr --require-congestion=bbr3)
+            fi
+          fi
+          python3 scripts/boot_smoke.py --judge-log="${log}" --kernelrelease="${KERNELRELEASE}" "${judge_args[@]}"
           rc=0
           python3 scripts/boot_smoke.py --judge-log="${log}" \
-            --kernelrelease="${KERNELRELEASE}-planted" || rc=$?
+            --kernelrelease="${KERNELRELEASE}-planted" "${judge_args[@]}" || rc=$?
           if [[ "${rc}" -ne 1 ]]; then
             echo "Expected exit status 1 for release ${KERNELRELEASE}-planted, got ${rc}" >&2
             exit 1
+          fi
+          if [[ "${ARCH}" == "x86_64" ]]; then
+            rc=0
+            python3 scripts/boot_smoke.py --judge-log="${log}" \
+              --kernelrelease="${KERNELRELEASE}" \
+              --require-congestion=planted-cc || rc=$?
+            if [[ "${rc}" -ne 1 ]]; then
+              echo "Expected exit status 1 for congestion planted-cc, got ${rc}" >&2
+              exit 1
+            fi
           fi
 
       - name: Refuse a boot whose console stays silent
