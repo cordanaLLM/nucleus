@@ -228,7 +228,7 @@ gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
 without that step or without the event. Five workflows are declared as HISS-18 exceptions in
 `.standards.yaml`: `security-scans.yml` and `verify-requirements.yml` (expiring on 2027-01-13),
 and `nvidia-open-module.yml`, `openzfs-module.yml` and `package-lifecycle.yml` (expiring on
-2027-01-16). Their jobs that need another job are skipped on a draft, and the audit reports them
+2027-01-15). Their jobs that need another job are skipped on a draft, and the audit reports them
 although nothing can merge through them. The last three build a matrix that a plan job computes,
 and no job of theirs is a required check; their exceptions say so, and
 `tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
