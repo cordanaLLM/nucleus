@@ -611,6 +611,21 @@ The repository's own releases never start a kernel release. `release-please-conf
 
 Below 1.0.0, a `feat` commit bumps the minor version and a breaking change bumps the minor version too (`bump-minor-pre-major: true`), so the next release after `nucleus-v0.3.0` that carries features is `0.4.0`, the version its milestone names. `bump-patch-for-minor-pre-major` is not set, because it would release features under a patch version; `scripts/check_release_please_config.py` refuses a configuration that sets it, and `tests/test_check_release_please_config.py` runs that check against `release-please-config.json`. A version can be forced with a `Release-As: X.Y.Z` footer in a commit body on `main` (release-please [README](https://github.com/googleapis/release-please#how-do-i-change-the-version-number)).
 
+Each repository release is checked once it exists. After release-please creates one, the `verify-tool-release` job in `.github/workflows/release-please.yml` runs `scripts/check_tool_release.py` against its tag, and refuses it unless:
+
+- the tag is `<package-name>-vX.Y.Z`, with the name from `release-please-config.json`;
+- `VERSION`, `.release-please-manifest.json` and the first `CHANGELOG.md` heading at the tag commit name `X.Y.Z`;
+- the tag commit is on `origin/main`;
+- `scripts/resolve_release_tag.py` refuses the tag (exit 1, not a crash), so it can never start a kernel release;
+- the GitHub Release is neither a draft nor a prerelease, carries no assets, and targets the tag commit.
+
+`tests/test_check_tool_release.py` refuses one planted defect per rule. To verify a tag by hand:
+
+```bash
+gh workflow run release-please.yml -R cordanaLLM/nucleus -f tag=nucleus-v0.4.0
+python3 scripts/check_tool_release.py --tag nucleus-v0.4.0
+```
+
 ### 5.5 Downstream Dispatch Credential (`KERNEL_FORGE_TOKEN`)
 
 `publish-release.yml` sends `kernel_release_published` to `cordanaLLM/imago` with the repository secret `KERNEL_FORGE_TOKEN`. It must be a token that may create repository dispatch events in `cordanaLLM/imago`: a fine-grained personal access token with **Contents: write** on that repository, or a classic token with the `repo` scope ([permissions for fine-grained tokens](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)). The secret is configured: since 2026-09-29 it holds a fine-grained token owned by `cordanaLLM`, limited to `cordanaLLM/imago` with Contents: write, that expires after 366 days. Rotate it before then, or the release job stops at its first step.
