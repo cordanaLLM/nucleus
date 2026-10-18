@@ -1332,6 +1332,32 @@ def test_release_please_marks_tool_release_not_latest():
     assert edit_step["env"]["TAG_NAME"] == "${{ steps.release.outputs.tag_name }}"
 
 
+def test_release_please_verifies_tool_release():
+    """release-please.yml declares verify-tool-release job and workflow_dispatch tag input."""
+    rp_parsed = yaml.safe_load((WORKFLOWS_DIR / "release-please.yml").read_text(encoding="utf-8"))
+
+    on_triggers = rp_parsed.get("on", rp_parsed.get(True, {}))
+    assert "workflow_dispatch" in on_triggers
+    dispatch_inputs = on_triggers["workflow_dispatch"].get("inputs", {})
+    assert "tag" in dispatch_inputs
+
+    jobs = rp_parsed["jobs"]
+    assert "verify-tool-release" in jobs
+    job = jobs["verify-tool-release"]
+
+    assert job["needs"] == "release-please"
+    assert job["if"] == "needs.release-please.outputs.release_created == 'true' || inputs.tag != ''"
+    assert job["permissions"] == {"contents": "read"}
+
+    steps = job["steps"]
+    checkout = steps[0]
+    assert "actions/checkout" in checkout["uses"]
+    assert checkout["with"]["persist-credentials"] is False
+
+    verify_step = steps[1]
+    assert "python3 scripts/check_tool_release.py" in verify_step["run"]
+
+
 # praetor-docs.yml is installed and locked by praetor (renovate.json); its group is praetor's.
 CONCURRENCY_OWNED_ELSEWHERE = {"praetor-docs.yml"}
 CANCEL_ON_PULL_REQUEST = "${{ github.event_name == 'pull_request' }}"
