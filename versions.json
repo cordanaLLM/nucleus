@@ -151,6 +151,16 @@
       ]
     }
   },
+  "schedulers": {
+    "simple": {
+      "description": "The example sched_ext scheduler scx_simple, built from each bound stream's own tools/sched_ext by scripts/build_sched_ext_scheduler.sh and loaded by the x86_64 boot smoke. Not lts: linux-6.18.y took the demo update 5dff82f1aa96 (scx_simple calls scx_bpf_task_set_dsq_vtime) without the kernel function it calls, so lts's scx_simple does not compile against its own kernel.",
+      "streams": [
+        "bleeding",
+        "mainstream",
+        "realtime"
+      ]
+    }
+  },
   "modules": {
     "openzfs": {
       "version": "2.4.4",

@@ -204,17 +204,28 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # The streams that load scx_simple come from versions.json (schedulers.simple); an
+      # unbound stream builds and loads none, and its boot still requires sched_ext disabled.
       - name: Build the sched_ext Scheduler
+        id: scheduler
         if: matrix.arch == 'x86_64' && env.DRY_RUN != 'true'
         shell: bash
         env:
           WORK_DIR: ${{ steps.disk.outputs.work_dir }}
         run: |
           set -euo pipefail
-          bash ./scripts/build_sched_ext_scheduler.sh \
-            --source-tree="${WORK_DIR}/linux-${STREAM}" \
-            --vmlinux="${WORK_DIR}/${STREAM}-${ARCH}/kbuild/vmlinux" \
-            --output="records/scx_simple-${STREAM}-${ARCH}"
+          scheduler=no
+          bound="$(python3 scripts/versions_query.py scheduler-streams simple)"
+          if grep -qxF -- "${STREAM}" <<<"${bound}"; then scheduler=yes; fi
+          if [[ "${scheduler}" == "yes" ]]; then
+            bash ./scripts/build_sched_ext_scheduler.sh \
+              --source-tree="${WORK_DIR}/linux-${STREAM}" \
+              --vmlinux="${WORK_DIR}/${STREAM}-${ARCH}/kbuild/vmlinux" \
+              --output="records/scx_simple-${STREAM}-${ARCH}"
+          else
+            echo "${STREAM} is not bound to scheduler simple in versions.json; none built."
+          fi
+          echo "scheduler=${scheduler}" >> "${GITHUB_OUTPUT}"
 
       - name: Save the Compiler Cache
         if: always() && steps.build.outputs.config_sha256 != ''
@@ -231,6 +242,7 @@ jobs:
         env:
           KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
           BOOT_TIMEOUT: ${{ matrix.arch == 'x86_64' && '300' || '600' }}
+          SCHEDULER: ${{ steps.scheduler.outputs.scheduler }}
         run: |
           set -euo pipefail
           boot_args=(
@@ -245,11 +257,13 @@ jobs:
           # tcp_available_congestion_control. The binding comes from versions.json.
           bbr3=no
           if [[ "${ARCH}" == "x86_64" ]]; then
-            boot_args+=(
-              --require-sched-ext
-              --scheduler="records/scx_simple-${STREAM}-${ARCH}"
-              --require-scheduler=simple
-            )
+            boot_args+=(--require-sched-ext)
+            if [[ "${SCHEDULER}" == "yes" ]]; then
+              boot_args+=(
+                --scheduler="records/scx_simple-${STREAM}-${ARCH}"
+                --require-scheduler=simple
+              )
+            fi
             bound="$(python3 scripts/versions_query.py series-streams bbr3)"
             if grep -qxF -- "${STREAM}" <<<"${bound}"; then bbr3=yes; fi
             if [[ "${bbr3}" == "yes" ]]; then
@@ -273,12 +287,16 @@ jobs:
         env:
           KERNELRELEASE: ${{ steps.build.outputs.kernelrelease }}
           BBR3: ${{ steps.boot.outputs.bbr3 }}
+          SCHEDULER: ${{ steps.scheduler.outputs.scheduler }}
         run: |
           set -euo pipefail
           log="records/boot-${STREAM}-${ARCH}.log"
           judge_args=()
           if [[ "${ARCH}" == "x86_64" ]]; then
-            judge_args+=(--require-sched-ext --require-scheduler=simple)
+            judge_args+=(--require-sched-ext)
+            if [[ "${SCHEDULER}" == "yes" ]]; then
+              judge_args+=(--require-scheduler=simple)
+            fi
             if [[ "${BBR3}" == "yes" ]]; then
               judge_args+=(--require-congestion=bbr --require-congestion=bbr3)
             fi

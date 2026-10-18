@@ -119,7 +119,7 @@ def test_list_unknown_collection_refused():
 
 
 def test_missing_name_for_subcommands_refused():
-    for cmd in ("source", "arch", "list", "series-streams"):
+    for cmd in ("source", "arch", "list", "series-streams", "scheduler-streams"):
         result = _run_query(cmd)
         assert result.returncode == 2
         assert f"query '{cmd}' requires a name argument" in result.stderr
@@ -203,3 +203,29 @@ def test_series_streams_refuses_streams_that_are_not_a_list(tmp_path):
     result = _run_query("series-streams", "bbr3", versions=manifest)
     assert result.returncode == 2
     assert "patches.bbr3.streams: missing or not a list" in result.stderr
+
+
+def test_scheduler_streams_lists_the_bound_streams():
+    result = _run_query("scheduler-streams", "simple")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == VERSIONS["schedulers"]["simple"]["streams"]
+    # linux-6.18.y's scx_simple calls a kernel function 6.18 does not have.
+    assert "lts" not in result.stdout.split()
+    assert set(result.stdout.split()) <= set(VERSIONS["streams"])
+
+
+def test_scheduler_streams_refuses_an_unknown_scheduler():
+    result = _run_query("scheduler-streams", "nope")
+    assert result.returncode == 2
+    assert "schedulers.nope: missing" in result.stderr
+    assert result.stdout == ""
+
+
+def test_scheduler_streams_does_not_read_patches(tmp_path):
+    bad = dict(VERSIONS)
+    bad["schedulers"] = {}
+    manifest = tmp_path / "versions.json"
+    manifest.write_text(json.dumps(bad), encoding="utf-8")
+    result = _run_query("scheduler-streams", "bbr3", versions=manifest)
+    assert result.returncode == 2
+    assert "schedulers.bbr3: missing" in result.stderr

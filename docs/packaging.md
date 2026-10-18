@@ -356,9 +356,14 @@ pass, and with `<release>-planted`, which must be refused with exit status 1, so
 stopped comparing the release would turn the leg red. On arm64 and riscv64 a boot on a console
 device that does not exist must be refused as well (`Refuse a boot whose console stays silent`).
 
-On `x86_64` the `Build the sched_ext Scheduler` step builds `records/scx_simple-${STREAM}-${ARCH}`
-after `Compile Kernel Package`, and every boot passes `--require-sched-ext`,
-`--scheduler=records/scx_simple-${STREAM}-${ARCH}` and `--require-scheduler=simple`. A stream that
+On `x86_64` every boot passes `--require-sched-ext`. A stream that
+`python3 scripts/versions_query.py scheduler-streams simple` lists (`schedulers.simple.streams` in
+`versions.json`) also has the `Build the sched_ext Scheduler` step build
+`records/scx_simple-${STREAM}-${ARCH}` after `Compile Kernel Package`, and its boot passes
+`--scheduler=records/scx_simple-${STREAM}-${ARCH}` and `--require-scheduler=simple`. `lts` is not
+bound: `linux-6.18.y` took the demo update `5dff82f1aa96`, whose `scx_simple` calls
+`scx_bpf_task_set_dsq_vtime`, without that kernel function, so its scheduler does not compile
+against its own kernel. A stream that
 `python3 scripts/versions_query.py series-streams bbr3` lists (the streams `versions.json` binds
 the BBRv3 series to under `patches.bbr3.streams`) also has `tcp_bbr3.ko` taken from its
 `linux-image` package, loaded with `--module`, and checked with `--require-congestion=bbr
