@@ -4,7 +4,7 @@ Date: 2026-10-16
 
 ## Status
 
-Proposed (2026-10-16)
+Accepted (2026-10-18)
 
 Supersedes the riscv64 debug information consequence of [ADR-0009](0009-kernel-compilation-and-artifact-gate.md) ("riscv64 kernels carry no debug information and so no BTF: `kconfig/riscv64.config` does not request `DEBUG_INFO_BTF`, unlike the x86_64 and arm64 fragments"). The rest of ADR-0009 stands.
 

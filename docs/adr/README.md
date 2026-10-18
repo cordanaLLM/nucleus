@@ -39,11 +39,11 @@ The following table indexes all architectural decision records governing `cordan
 | [**ADR-0009**](0009-kernel-compilation-and-artifact-gate.md) | Kernel Compilation, the Artifact Gate and the Boot Smoke Test (supersedes bullets 2 and 3 of section 1 of ADR-0004) | `Accepted`; release revisions above 1: see [ADR-0011](0011-bpf-trampoline-ftrace-and-release-revisions.md); riscv64 BTF: see [ADR-0013](0013-btf-on-every-architecture.md); module signing: see [ADR-0016](0016-module-signing-after-the-build.md) | 2026-09-29 | Kernel Build & Release Integrity |
 | [**ADR-0010**](0010-owner-json-schema-for-requirement-documents.md) | Requirement Documents Are Read Through the Owner's JSON Schema, Pinned by Commit and Digest (adds a check to ADR-0007) | `Accepted` | 2026-09-29 | Cross-Repo Requirement Contract |
 | [**ADR-0011**](0011-bpf-trampoline-ftrace-and-release-revisions.md) | Function Tracing in the Baseline for BPF Trampolines, and Release Revisions Above 1 (supersedes the single-revision clause of section 2 of ADR-0009) | `Accepted` | 2026-09-29 | Kernel Configuration & Release Integrity |
-| [**ADR-0012**](0012-slsa-build-level-3-reusable-workflow.md) | SLSA Build Level 3 via Reusable Release Build Workflow | `Proposed` | 2026-10-16 | Release Pipeline & Supply Chain |
-| [**ADR-0013**](0013-btf-on-every-architecture.md) | BTF on Every Architecture (supersedes the riscv64 BTF consequence of ADR-0009) | `Proposed` | 2026-10-16 | Kernel Configuration & Artifact Gate |
-| [**ADR-0014**](0014-github-release-assets-as-the-debian-channel.md) | GitHub Release Assets as the Debian Channel (supersedes the APT archive of ADR-0004) | `Proposed` | 2026-10-16 | Packaging & Release Distribution |
-| [**ADR-0015**](0015-module-abi-from-the-build-record.md) | Module ABI Verification from the Kernel Build Record (supersedes module-abi sentence of ADR-0007) | `Proposed` | 2026-10-16 | Cross-Repo Requirement Contract |
-| [**ADR-0016**](0016-module-signing-after-the-build.md) | Kernel Modules Are Signed After the Build, by a Recorded Step (supersedes the module-signing consequence of ADR-0009) | `Proposed` | 2026-10-17 | Kernel Build & Release Integrity |
+| [**ADR-0012**](0012-slsa-build-level-3-reusable-workflow.md) | SLSA Build Level 3 via Reusable Release Build Workflow | `Accepted` | 2026-10-16 | Release Pipeline & Supply Chain |
+| [**ADR-0013**](0013-btf-on-every-architecture.md) | BTF on Every Architecture (supersedes the riscv64 BTF consequence of ADR-0009) | `Accepted` | 2026-10-16 | Kernel Configuration & Artifact Gate |
+| [**ADR-0014**](0014-github-release-assets-as-the-debian-channel.md) | GitHub Release Assets as the Debian Channel (supersedes the APT archive of ADR-0004) | `Accepted` | 2026-10-16 | Packaging & Release Distribution |
+| [**ADR-0015**](0015-module-abi-from-the-build-record.md) | Module ABI Verification from the Kernel Build Record (supersedes module-abi sentence of ADR-0007) | `Accepted` | 2026-10-16 | Cross-Repo Requirement Contract |
+| [**ADR-0016**](0016-module-signing-after-the-build.md) | Kernel Modules Are Signed After the Build, by a Recorded Step (supersedes the module-signing consequence of ADR-0009) | `Accepted` | 2026-10-17 | Kernel Build & Release Integrity |
 
 ---
 

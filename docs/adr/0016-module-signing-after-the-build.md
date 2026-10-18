@@ -4,7 +4,7 @@ Date: 2026-10-17
 
 ## Status
 
-Proposed (2026-10-17)
+Accepted (2026-10-18)
 
 Supersedes the module-signing half of the first bullet under "Negative" in
 [ADR-0009](0009-kernel-compilation-and-artifact-gate.md) ("`CONFIG_MODULE_SIG_ALL` signs the

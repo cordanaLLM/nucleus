@@ -4,7 +4,7 @@ Date: 2026-10-16
 
 ## Status
 
-Proposed (2026-10-16)
+Accepted (2026-10-18)
 
 This record proposes upgrading the release pipeline to SLSA Build Level 3 compliance by separating release compilation, provenance attestation, and signing into an isolated reusable GitHub Actions workflow (`release-build.yml`), called by the entrypoint `publish-release.yml`.
 
