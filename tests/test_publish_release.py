@@ -70,6 +70,7 @@ def test_an_empty_directory_is_refused_and_no_checksum_file_is_written(tmp_path)
     [
         (("vmlinuz-7.2.8", "kernel-mainstream-x86_64.config"), "no Debian package"),
         ((*RELEASE, "notes.txt"), "notes.txt is not a publishable artifact"),
+        ((*RELEASE, "foo.efi"), "foo.efi is not a publishable artifact"),
         ((*RELEASE, "kernel-mainstream.manifest.json"), "is not a publishable artifact"),
     ],
 )
@@ -80,6 +81,18 @@ def test_a_directory_that_is_not_a_release_is_refused(tmp_path, names, message):
     assert result.returncode == 1
     assert message in result.stderr
     assert not (out / "SHA256SUMS").exists()
+
+
+def test_uki_artifact_is_publishable(tmp_path):
+    out = tmp_path / "release"
+    uki_name = "linux-mainstream-7.2.8-lusoris1-uki.efi"
+    _release(out, (*RELEASE, uki_name))
+    result = _run(out, "v7.2.8-mainstream-lusoris1", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    lines = (out / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    listed = {line.split("  ", 1)[1] for line in lines}
+    assert uki_name in listed
+    assert listed == set(RELEASE) | {uki_name}
 
 
 def test_a_zero_byte_artifact_is_refused_before_any_checksum(tmp_path):

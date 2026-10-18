@@ -97,6 +97,7 @@ requires eleven checks:
 | `Praetor Governance` | `ci.yml` | every pull request to `main` |
 | `Lint & Pytest Quality Gates` | `ci.yml` | every pull request to `main` |
 | `UKI Real ukify Build` | `ci.yml` | every pull request to `main` |
+| `Release UKI Dry Run` | `ci.yml` | every pull request to `main` |
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `REUSE lint` | `licence.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
