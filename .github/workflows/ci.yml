@@ -246,11 +246,14 @@ jobs:
           test -n "${image_pkg}"
           mkdir -p "${RUNNER_TEMP}/kernel"
           cd "${RUNNER_TEMP}/kernel"
-          apt-get download "${image_pkg}"
+          # Ubuntu ships /boot/config-* in linux-modules-*, not in linux-image-*.
+          modules_pkg="${image_pkg/linux-image-/linux-modules-}"
+          apt-get download "${image_pkg}" "${modules_pkg}"
           dpkg-deb -x "${image_pkg}"_*.deb root
+          dpkg-deb -x "${modules_pkg}"_*.deb modules
           vmlinuz="$(find "${PWD}/root/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"
-          config="$(find "${PWD}/root/boot" -maxdepth 1 -type f -name 'config-*' -print -quit)"
-          deb="$(find "${PWD}" -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          config="$(find "${PWD}/modules/boot" -maxdepth 1 -type f -name 'config-*' -print -quit)"
+          deb="$(find "${PWD}" -maxdepth 1 -type f -name "${image_pkg}_*.deb" -print -quit)"
           test -s "${vmlinuz}"
           test -s "${config}"
           test -s "${deb}"
