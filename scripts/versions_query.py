@@ -244,15 +244,33 @@ def list_names(versions: Mapping[str, object], collection: str) -> list[str]:
     return list(items.keys())
 
 
+def series_streams(versions: Mapping[str, object], series: str) -> list[str]:
+    """The streams a patch series under 'patches' names, in order."""
+    patches = versions.get("patches")
+    entry = patches.get(series) if isinstance(patches, dict) else None
+    if not isinstance(entry, dict):
+        raise QueryError(f"patches.{series}: missing or not an object in versions.json")
+    streams = entry.get("streams")
+    if not isinstance(streams, list) or not all(isinstance(name, str) for name in streams):
+        raise QueryError(f"patches.{series}.streams: missing or not a list of names")
+    return list(streams)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--versions", type=Path, default=Path("versions.json"))
-    parser.add_argument("query", choices=("source", "arch", "list", "openzfs", "nvidia-open"))
+    parser.add_argument(
+        "query",
+        choices=("source", "arch", "list", "openzfs", "nvidia-open", "series-streams"),
+    )
     parser.add_argument(
         "name",
         nargs="?",
         default="",
-        help="the stream (source), architecture (arch), or collection (list)",
+        help=(
+            "the stream (source), architecture (arch), collection (list), "
+            "or patch series (series-streams)"
+        ),
     )
     return parser
 
@@ -260,7 +278,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.query in ("source", "arch", "list") and not args.name:
+        if args.query in ("source", "arch", "list", "series-streams") and not args.name:
             raise QueryError(f"query {args.query!r} requires a name argument")
         versions = json.loads(args.versions.read_text(encoding="utf-8"))
         if not isinstance(versions, dict):
@@ -280,6 +298,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.query == "list":
             names = list_names(versions, args.name)
             print("\n".join(names))
+        elif args.query == "series-streams":
+            print("\n".join(series_streams(versions, args.name)))
     except (OSError, ValueError) as exc:
         print(f"versions_query: {exc}", file=sys.stderr)
         return 2
