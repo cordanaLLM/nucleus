@@ -4,7 +4,7 @@ Date: 2026-10-16
 
 ## Status
 
-Proposed (2026-10-16)
+Accepted (2026-10-18)
 
 Supersedes only the module-abi sentence of [ADR-0007](0007-document-driven-kernel-requirements.md) ("`abi.module-abi` names the release of a built kernel and cannot be verified before one exists (issue #18), so a document that sets it fails, saying so."). The rest of ADR-0007 stands.
 

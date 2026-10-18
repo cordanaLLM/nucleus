@@ -4,7 +4,7 @@ Date: 2026-10-16
 
 ## Status
 
-Proposed (2026-10-16)
+Accepted (2026-10-18)
 
 Supersedes the APT node of the decision diagram (`DEB1/DEB2/DEB3 --> APT["Authenticated APT Archive (apt.example.com)"]`) and the fourth bullet of decision section 1 ("Published to `https://apt.example.com/kernels/` via `reprepro` with GPG detached signatures.") of [ADR-0004](0004-native-debian-and-uki-dual-packaging.md), as well as its positive consequence wording ("install `.deb` packages via apt") only as far as it implies an archive. The rest of ADR-0004 stands, as amended by ADR-0006 and ADR-0009.
 
