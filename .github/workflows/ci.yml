@@ -274,8 +274,7 @@ jobs:
           cp "${TEST_DEB}" "${release_dir}/"
           cp "${TEST_VMLINUZ}" "${release_dir}/"
           cp "${TEST_CONFIG}" "${release_dir}/kernel-mainstream-x86_64.config"
-          ./scripts/stage_release_uki.sh --stream="${stream}" --version="${release_version}" \
-            --vmlinuz="${TEST_VMLINUZ}" --output-dir="${release_dir}"
+          # PLANTED DEFECT (#199 proof, never merged): the UKI is not staged.
           OUTPUT_DIR="${release_dir}" ./scripts/publish_release.sh dry-run
           summary_line="$(python3 scripts/check_release_uki.py --dir="${release_dir}" --stream="${stream}" --version="${release_version}")"
           echo "${summary_line}"
