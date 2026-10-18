@@ -89,3 +89,12 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "2026 The Lusoris Authors"
 SPDX-License-Identifier = "Apache-2.0"
+
+# Vendored interfig sources (tools/figures/third_party/interfig/VENDOR.md),
+# by Vectorize AI, Inc. under the MIT License; "override" so the whole-tree
+# table does not add EUPL-1.2 to them.
+[[annotations]]
+path = ["tools/figures/third_party/interfig/upstream/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Vectorize AI, Inc."
+SPDX-License-Identifier = "MIT"
