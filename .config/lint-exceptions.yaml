@@ -42,7 +42,7 @@ exceptions:
     reason: >-
       Engine-owned PreToolUse interceptor, formatted at a shorter line length than this
       repository's 100; cordanaLLM/praetor#1250.
-  - path: tools/figures/dist/player.js
+  - path: tools/figures/player/player.js
     tool: codespell
     rule: skip
     category: D
@@ -106,6 +106,15 @@ exceptions:
       Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
       whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
   - path: .devcontainer/praetor-source.005.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.006.b64
     tool: codespell
     rule: skip
     category: D

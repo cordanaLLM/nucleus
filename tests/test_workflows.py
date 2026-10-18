@@ -1030,9 +1030,10 @@ def test_hook_engine_finds_the_ci_pin():
 
     pipeline = (
         "tr -d '\\r' <\"$file\" | "
-        "sed -n 's/^[[:space:]]*PRAETOR_REF[[:space:]]*[:=][[:space:]]*//p' | "
+        "sed -n -e 's/^[[:space:]]*\\(PRAETOR_REF\\)[[:space:]]*[:=][[:space:]]*/\\1=/p' "
+        "-e 's/^[[:space:]]*\\(PRAETOR_COMMIT\\)[[:space:]]*[:=][[:space:]]*/\\1=/p' | "
         "sed -e 's/[[:space:]]*#.*$//' "
-        '-e "s/^[\\"\']//" '
+        '-e "s/=[\\"\']/=/" '
         '-e "s/[\\"\'][[:space:]]*\\$//" '
         "-e 's/[[:space:]]*$//'"
     )
@@ -1045,7 +1046,7 @@ def test_hook_engine_finds_the_ci_pin():
         cmd = f'file="{wf}"; {pipeline}'
         res = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, check=True)
         lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
-        found.extend(lines)
+        found.extend(line.split("=", 1)[1] for line in lines if line.startswith("PRAETOR_REF="))
 
     distinct = sorted(set(found))
     assert len(distinct) == 1, (
