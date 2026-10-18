@@ -203,6 +203,123 @@ jobs:
           # silent pass, so every test in the file must have run.
           grep -q 'skipped="0"' "${RUNNER_TEMP}/uki-junit.xml"
 
+  release-uki-dry-run:
+    name: Release UKI Dry Run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install ukify, the systemd-stub and tools
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            systemd-ukify systemd-boot-efi python3 gcc libc6-dev ca-certificates git
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Fetch a stock Ubuntu kernel image
+        run: |
+          # awk reads to the end: exiting early could SIGPIPE apt-cache, which pipefail reports.
+          image_pkg="$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-/ && !n++ {print $2}')"
+          test -n "${image_pkg}"
+          mkdir -p "${RUNNER_TEMP}/kernel"
+          cd "${RUNNER_TEMP}/kernel"
+          # Ubuntu ships /boot/config-* in linux-modules-*, not in linux-image-*.
+          modules_pkg="${image_pkg/linux-image-/linux-modules-}"
+          apt-get download "${image_pkg}" "${modules_pkg}"
+          dpkg-deb -x "${image_pkg}"_*.deb root
+          dpkg-deb -x "${modules_pkg}"_*.deb modules
+          vmlinuz="$(find "${PWD}/root/boot" -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"
+          config="$(find "${PWD}/modules/boot" -maxdepth 1 -type f -name 'config-*' -print -quit)"
+          deb="$(find "${PWD}" -maxdepth 1 -type f -name "${image_pkg}_*.deb" -print -quit)"
+          test -s "${vmlinuz}"
+          test -s "${config}"
+          test -s "${deb}"
+          {
+            echo "TEST_VMLINUZ=${vmlinuz}"
+            echo "TEST_CONFIG=${config}"
+            echo "TEST_DEB=${deb}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Stage and Publish Release UKI Dry Run
+        run: |
+          set -euo pipefail
+          stream="mainstream"
+          version="$(python3 -c 'import json; print(json.load(open("versions.json"))["streams"]["mainstream"]["version"])')"
+          release_version="${version}-lusoris1"
+          release_dir="${RUNNER_TEMP}/release"
+          mkdir -p "${release_dir}"
+          cp "${TEST_DEB}" "${release_dir}/"
+          cp "${TEST_VMLINUZ}" "${release_dir}/"
+          cp "${TEST_CONFIG}" "${release_dir}/kernel-mainstream-x86_64.config"
+          ./scripts/stage_release_uki.sh --stream="${stream}" --version="${release_version}" \
+            --vmlinuz="${TEST_VMLINUZ}" --output-dir="${release_dir}"
+          OUTPUT_DIR="${release_dir}" ./scripts/publish_release.sh dry-run
+          summary_line="$(python3 scripts/check_release_uki.py --dir="${release_dir}" --stream="${stream}" --version="${release_version}")"
+          echo "${summary_line}"
+          echo "${summary_line}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "RELEASE_VERSION=${release_version}" >> "${GITHUB_ENV}"
+
+      - name: Refuse a release without a UKI
+        run: |
+          set -euo pipefail
+          fresh_dir="${RUNNER_TEMP}/release-no-uki"
+          mkdir -p "${fresh_dir}"
+          for f in "${RUNNER_TEMP}/release"/*; do
+            if [[ "${f}" != *.efi && "${f}" != */SHA256SUMS* ]]; then
+              cp "${f}" "${fresh_dir}/"
+            fi
+          done
+          OUTPUT_DIR="${fresh_dir}" ./scripts/publish_release.sh dry-run
+          rc=0
+          python3 scripts/check_release_uki.py --dir="${fresh_dir}" --stream="mainstream" --version="${RELEASE_VERSION}" || rc=$?
+          if [[ "${rc}" -ne 1 ]]; then
+            echo "Expected check_release_uki.py to fail with exit status 1, got ${rc}" >&2
+            exit 1
+          fi
+
+      - name: Refuse stage_release_uki.sh when vmlinuz is not a kernel
+        run: |
+          set -euo pipefail
+          bad_dir="${RUNNER_TEMP}/bad-uki-output"
+          mkdir -p "${bad_dir}"
+          bad_vmlinuz="${RUNNER_TEMP}/not-a-kernel.txt"
+          echo "not a kernel image" > "${bad_vmlinuz}"
+          rc=0
+          ./scripts/stage_release_uki.sh --stream="mainstream" --version="${RELEASE_VERSION}" \
+            --vmlinuz="${bad_vmlinuz}" --output-dir="${bad_dir}" || rc=$?
+          if [[ "${rc}" -eq 0 ]]; then
+            echo "Expected stage_release_uki.sh to fail for non-kernel vmlinuz, got 0" >&2
+            exit 1
+          fi
+          efi_count="$(find "${bad_dir}" -maxdepth 1 -name '*.efi' | wc -l)"
+          if [[ "${efi_count}" -ne 0 ]]; then
+            echo "Expected no *.efi in output dir on failure, found ${efi_count}" >&2
+            exit 1
+          fi
+
   governance:
     name: Praetor Governance
     runs-on: ubuntu-24.04

@@ -153,6 +153,27 @@ jobs:
             --revision="${REVISION}" --kernelrelease="${kernelrelease}"
           echo "kernelrelease=${kernelrelease}" >> "${GITHUB_OUTPUT}"
 
+      # The release UKI is x86_64 only, like the release; boot_smoke.py compiles its static
+      # init with gcc, so the container installs gcc and libc6-dev (libc.a).
+      - name: Build and Stage the Unified Kernel Image
+        env:
+          STREAM: ${{ steps.meta.outputs.stream }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+          KERNELRELEASE: ${{ steps.gate.outputs.kernelrelease }}
+          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+        run: |
+          set -euo pipefail
+          mounts=(-v "${GITHUB_WORKSPACE}:/forge:ro" -v "${GITHUB_WORKSPACE}/output:/forge/output")
+          docker run --rm "${mounts[@]}" -w /forge \
+            -e STREAM -e RELEASE_VERSION -e KERNELRELEASE -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y --no-install-recommends systemd-ukify systemd-boot-efi python3 gcc libc6-dev
+              ./scripts/stage_release_uki.sh --stream="${STREAM}" --version="${RELEASE_VERSION}" \
+                --vmlinuz="output/vmlinuz-${KERNELRELEASE}" --output-dir=output
+              chown -R "${HOST_UID}:${HOST_GID}" output'
+
       - name: Keep the Build Record and Boot Log
         if: always()
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
@@ -166,11 +187,13 @@ jobs:
         env:
           STREAM: ${{ steps.meta.outputs.stream }}
           RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
         run: |
           set -euo pipefail
           syft dir:output/ -o "cyclonedx-json=output/kernel-${STREAM}.cdx.json"
           syft dir:output/ -o "spdx-json=output/kernel-${STREAM}.spdx.json"
           OUTPUT_DIR=output ./scripts/publish_release.sh "${RELEASE_TAG}"
+          python3 scripts/check_release_uki.py --dir=output --stream="${STREAM}" --version="${RELEASE_VERSION}"
 
       - name: Attest Build Provenance
         id: attest
@@ -180,6 +203,7 @@ jobs:
             output/*.deb
             output/vmlinuz-*
             output/*.config
+            output/*-uki.efi
             output/*.cdx.json
             output/*.spdx.json
 

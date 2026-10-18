@@ -69,10 +69,14 @@ jobs:
           tag_name: ${{ needs.build.outputs.release_tag }}
           make_latest: ${{ needs.build.outputs.make_latest }}
           prerelease: ${{ needs.build.outputs.prerelease == 'true' }}
+          body: >-
+            The x86_64 Unified Kernel Image (linux-*-uki.efi) is unsigned for Secure Boot;
+            arm64 and riscv64 ship no UKI with releases.
           files: |
             output/*.deb
             output/vmlinuz-*
             output/*.config
+            output/*-uki.efi
             output/*.cdx.json
             output/*.spdx.json
             output/*.manifest.json

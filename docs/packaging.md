@@ -20,7 +20,7 @@
 
 2. **Unified Kernel Images (UKI, `.efi`)**:
    - Single, self-contained, unsigned UEFI PE binary combining the systemd-stub, the Linux kernel (`.linux`), the kernel command line (`.cmdline`), and OS release, kernel release and SBAT metadata (`.osrel`, `.uname`, `.sbat`). An initramfs (`.initrd`) is embedded only when one is passed; no CPU microcode is embedded (section 3.1).
-   - Designed for UEFI boot and direct network streaming (iPXE / systemd-boot). Secure Boot signing and TPM 2.0 PCR 11 pre-calculation are planned and not wired yet (sections 3.2 and 3.4).
+   - Designed for UEFI boot and direct network streaming (iPXE / systemd-boot). Published for x86_64 in releases (`publish-release.yml`). Secure Boot signing and TPM 2.0 PCR 11 pre-calculation are planned and not wired yet (sections 3.2 and 3.5).
 
 ```mermaid
 flowchart TD
@@ -410,12 +410,23 @@ How this is tested:
   and arm64 as a build check, using an initramfs written by `scripts/boot_smoke.py --write-initramfs`.
   It tests both positive UKI synthesis and a planted negative case: given the initramfs as the kernel,
   `ukify` stops on an unknown file format and `package-uki.sh` exits non-zero with no `.efi` left.
-  The riscv64 leg is skipped because the cross-compilation runner lacks a riscv64 EFI stub. The UKI is a
-  build check only and is never staged into the release artifact directory or SHA256SUMS.
+  The riscv64 leg is skipped because the cross-compilation runner lacks a riscv64 EFI stub. In
+  `build-matrix.yml` the UKI is a build check only; `release-build.yml` publishes the x86_64 UKI via
+  `scripts/stage_release_uki.sh`.
 - To run the real-`ukify` test locally, install `ukify` and the stub, then run
   `NUCLEUS_UKI_TEST_VMLINUZ=<kernel image> pytest tests/test_package_uki.py`.
 
-### 3.4 TPM 2.0 PCR 11 Measurement & Sealing
+### 3.4 Release Unified Kernel Image (x86_64)
+
+The release workflow (`release-build.yml`, called by `publish-release.yml`) builds and stages the release UKI for `x86_64`:
+
+- **Naming**: `linux-<stream>-<version>-uki.efi`, where `<version>` is the package version (`<upstream_version>-lusoris<N>`) with `~` in release-candidate versions replaced by `.` (e.g. `linux-mainstream-7.2.10-lusoris1-uki.efi`, `linux-bleeding-7.3.rc7-lusoris1-uki.efi`).
+- **Scope & Signing**: The release UKI is built for `x86_64` only; `arm64` and `riscv64` ship no UKI with releases. It is unsigned for Secure Boot.
+- **Staging**: `scripts/stage_release_uki.sh` compiles a static initramfs via `scripts/boot_smoke.py --arch=x86_64 --write-initramfs`, calls `scripts/package-uki.sh`, checks the output with `scripts/check_uki.py`, and copies the binary to the output directory.
+- **Verification**: `scripts/check_release_uki.py` reads `SHA256SUMS`, verifies that exactly one matching UKI is listed, confirms the file is regular and that its SHA-256 matches. The UKI is covered by `SHA256SUMS`, attested in SLSA Build Level 3 provenance, and catalogued in `kernel-<stream>.manifest.json`.
+- **Dry-run CI gate**: The `Release UKI Dry Run` job (`release-uki-dry-run` in `.github/workflows/ci.yml`) exercises this pipeline on pull requests using a stock kernel image, verifying successful synthesis, checksum listing, and intentional refusal when the UKI is missing or when `stage_release_uki.sh` receives an invalid kernel binary.
+
+### 3.5 TPM 2.0 PCR 11 Measurement & Sealing
 
 When booting via `systemd-boot`, the UEFI boot loader measures the entire UKI payload directly into **TPM 2.0 PCR 11**:
 
@@ -425,7 +436,7 @@ When booting via `systemd-boot`, the UEFI boot loader measures the entire UKI pa
 `scripts/package-uki.sh` does not pass `--measure` yet. The `pcr11-measurements.json` that
 `--dry-run` writes hashes the simulated file and is marked `"simulated": true`.
 
-### 3.5 Automated Packaging CLI Drivers
+### 3.6 Automated Packaging CLI Drivers
 
 Developers and automation pipelines utilize dedicated shell drivers complying with NASA/JPL Power of 10:
 
@@ -507,6 +518,7 @@ written to `records/boot-<stream>-x86_64.log`; `records/` is uploaded as the run
   directly under QEMU;
 - `kernel-<stream>-x86_64.config`, the resolved configuration, byte-identical to
   `/boot/config-<kernelrelease>` in the image package;
+- `linux-<stream>-<version>-uki.efi` (`~` in candidate versions replaced by `.`), the x86_64 Unified Kernel Image synthesized by `scripts/stage_release_uki.sh`;
 - `kernel-<stream>.cdx.json` and `kernel-<stream>.spdx.json`;
 - `SHA256SUMS`, over exactly the files above, and `SHA256SUMS.bundle`;
 - `kernel-<stream>.manifest.json`.
@@ -521,8 +533,7 @@ gh release download <release-tag> --repo cordanaLLM/nucleus --dir release
 ./scripts/verify-release.sh release <release-tag> cordanaLLM/nucleus
 ```
 
-A release is x86_64 only: `imago.nucleus.kernel-artifact.v1` has no architecture field. No UKI
-(`.efi`) is built or uploaded: `publish-release.yml` does not call `scripts/package-uki.sh`.
+A release is x86_64 only: `imago.nucleus.kernel-artifact.v1` has no architecture field. The release workflow publishes the x86_64 UKI (`linux-<stream>-<version>-uki.efi`), unsigned for Secure Boot, covered by `SHA256SUMS`, SLSA Build Level 3 provenance, and catalogued in the manifest. arm64 and riscv64 ship no UKI with releases.
 
 The manifest follows `imago.nucleus.kernel-artifact.v1`, a contract owned by the consumer `cordanaLLM/imago` (`pkg/kernel`). It is generated after `SHA256SUMS` is signed and is deliberately not listed in it:
 

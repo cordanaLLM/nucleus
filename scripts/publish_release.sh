@@ -7,7 +7,7 @@
 # Usage: OUTPUT_DIR=<dir> publish_release.sh <release-tag-or-label>
 #
 # OUTPUT_DIR (default: output) must hold only publishable files: Debian packages, vmlinuz-*,
-# *.config and the *.cdx.json / *.spdx.json SBOMs. Anything else, an empty file, a directory
+# *.config, *-uki.efi and the *.cdx.json / *.spdx.json SBOMs. Anything else, an empty file, a directory
 # with nothing to publish, or an existing SHA256SUMS is refused with exit status 1, and no
 # SHA256SUMS is written. A sha256sum failure is never swallowed. The artifact gate
 # (scripts/check_kernel_artifacts.py) runs before this and has already opened the packages;
@@ -31,7 +31,7 @@ validate_environment() {
 
 publishable() {
   case "$1" in
-    *.deb | vmlinuz-* | *.config | *.cdx.json | *.spdx.json) return 0 ;;
+    *.deb | vmlinuz-* | *.config | *-uki.efi | *.cdx.json | *.spdx.json) return 0 ;;
     *) return 1 ;;
   esac
 }
