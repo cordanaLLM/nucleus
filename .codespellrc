@@ -1,10 +1,11 @@
 # The one codespell configuration; `make lint-spelling` runs it over the tracked tree.
 # hsa: AMD Heterogeneous System Architecture (docs/hardware/amd-rocm.md); devlop: an npm
 # package (tools/markdownlint/package-lock.json); unparseable: an accepted spelling; grap: the
-# split "grap" "hql" pattern of the adopted hook .config/agent/hooks/block_evasion.py.
-# ignore-regex: a line of 500 characters or more is minified code, never prose
-# (tools/figures/dist/player.js); every shorter line of every file is checked.
+# split "grap" "hql" pattern of the adopted hook .config/agent/hooks/block_evasion.py; ect:
+# ECN-Capable Transport (patches/bbr3/0011-losses-repaired-by-tlp.patch).
+# skip: one file per entry, each a dated exception in .config/lint-exceptions.yaml (tool
+# codespell); tests/test_lint_exceptions.py refuses a skip no entry names. Every other tracked
+# file is checked on every line.
 [codespell]
-skip = .git,output,*.deb,*.xz,.pytest_cache,*.zst,*.iso,*.patch
-ignore-words-list = bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight,fpr,hsa,devlop,unparseable,grap
-ignore-regex = ^.{500,}$
+skip = tools/figures/dist/player.js,patches/bbr3/0013-add-bbrv3.patch,.devcontainer/praetor-source.000.b64,.devcontainer/praetor-source.001.b64,.devcontainer/praetor-source.002.b64,.devcontainer/praetor-source.003.b64,.devcontainer/praetor-source.004.b64,.devcontainer/praetor-source.005.b64
+ignore-words-list = bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight,fpr,hsa,devlop,unparseable,grap,ect

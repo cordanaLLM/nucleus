@@ -1,7 +1,8 @@
 """make lint-spelling: codespell over the tracked tree with .codespellrc refuses a misspelling.
 
-The configuration ignores a line of 500 characters or more as minified code; these cases prove
-that a misspelling on a shorter line is still refused, at the length boundary too.
+The configuration skips only the files .config/lint-exceptions.yaml names, by their full path;
+every line of every other file is read, however long, and a file that only shares a skipped
+file's name is read too.
 """
 
 import subprocess
@@ -32,15 +33,22 @@ def test_the_tracked_tree_passes():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("width", [0, 400, 498])
-def test_a_planted_misspelling_on_a_short_line_is_refused(tmp_path, width):
-    line = "x" * width + " " + MISSPELLED
+@pytest.mark.parametrize("width", [0, 499, 520, 70000])
+def test_a_planted_misspelling_is_refused_at_any_line_length(tmp_path, width):
     planted = tmp_path / "planted.md"
-    planted.write_text(line[-499:] + "\n", encoding="utf-8")
+    planted.write_text("x" * width + " " + MISSPELLED + "\n", encoding="utf-8")
     assert spelling_exit(planted) != 0
 
 
-def test_a_minified_line_is_not_read(tmp_path):
-    planted = tmp_path / "bundle.js"
-    planted.write_text("x" * 520 + " " + MISSPELLED + "\n", encoding="utf-8")
-    assert spelling_exit(planted) == 0
+def test_a_long_prose_line_in_another_file_is_read(tmp_path):
+    words = " ".join(["the build record names the kernel release"] * 15)
+    planted = tmp_path / "notes.md"
+    planted.write_text(f"{words} {MISSPELLED} {words}\n", encoding="utf-8")
+    assert len(words) > 500
+    assert spelling_exit(planted) != 0
+
+
+def test_a_file_that_only_shares_a_skipped_name_is_read(tmp_path):
+    planted = tmp_path / "player.js"
+    planted.write_text(f"// {MISSPELLED}\n", encoding="utf-8")
+    assert spelling_exit(planted) != 0

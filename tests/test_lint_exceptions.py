@@ -1,9 +1,11 @@
-""".config/lint-exceptions.yaml: every ruff exclusion and adoption decline is a dated exception.
+""".config/lint-exceptions.yaml: every ruff exclusion, adoption decline and codespell skip is a
+dated exception.
 
 An exception names one file and one rule. It expires on its category's interval and then fails
 this suite, so it is a debt with a due date and never grows into a tier of unlinted files.
 """
 
+import configparser
 import datetime
 import tomllib
 from pathlib import Path
@@ -15,10 +17,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXCEPTIONS = REPO_ROOT / ".config" / "lint-exceptions.yaml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 STANDARDS = REPO_ROOT / ".standards.yaml"
+CODESPELLRC = REPO_ROOT / ".codespellrc"
 
 CATEGORY_DAYS = {"B": 3, "C": 10, "D": 120}
 FIELDS = {"path", "tool", "rule", "category", "entered", "expires", "reason"}
-TOOLS = {"ruff-lint", "ruff-format", "adoption-decline"}
+TOOLS = {"ruff-lint", "ruff-format", "adoption-decline", "codespell"}
 # licence.yml already runs the REUSE lint job the ruleset requires (comment in .standards.yaml).
 PERMANENT_DECLINES = {"reuse-gate"}
 
@@ -80,6 +83,25 @@ def test_ruff_format_excludes_are_exactly_the_declared_entries():
     declared = {(path, "format") for path in ruff.get("format", {}).get("exclude", [])}
     assert declared == pairs(load_entries(), "ruff-format")
     assert "extend-exclude" not in ruff
+
+
+def codespell_skips(path=CODESPELLRC):
+    config = configparser.ConfigParser()
+    config.read_string(path.read_text(encoding="utf-8"))
+    return {
+        (item.strip(), "skip") for item in config["codespell"]["skip"].split(",") if item.strip()
+    }
+
+
+def test_codespell_skips_are_exactly_the_declared_entries():
+    assert codespell_skips() == pairs(load_entries(), "codespell")
+
+
+def test_an_undeclared_codespell_skip_is_refused(tmp_path):
+    planted = tmp_path / ".codespellrc"
+    text = CODESPELLRC.read_text(encoding="utf-8")
+    planted.write_text(text.replace("skip = ", "skip = *.js,", 1), encoding="utf-8")
+    assert codespell_skips(planted) != pairs(load_entries(), "codespell")
 
 
 def test_adoption_declines_are_permanent_or_declared():
