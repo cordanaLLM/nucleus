@@ -3,7 +3,8 @@
 # file and one rule, a reason and an expiry. The category fixes the interval from the entry
 # date: B = 3 days, C = 10 days, D = 120 days. tests/test_lint_exceptions.py fails on an expired
 # entry, on an expiry that does not match its category, and on any ruff exclusion in
-# pyproject.toml or adoption decline in .standards.yaml that no entry names.
+# pyproject.toml, adoption decline in .standards.yaml or codespell skip in .codespellrc that no
+# entry names.
 exceptions:
   - path: .config/lefthook/scripts/checkpoint.py
     tool: ruff-lint
@@ -41,3 +42,75 @@ exceptions:
     reason: >-
       Engine-owned PreToolUse interceptor, formatted at a shorter line length than this
       repository's 100; cordanaLLM/praetor#1250.
+  - path: tools/figures/dist/player.js
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Minified bundle built by tools/figures (interfig with React); its short identifiers read as
+      misspellings. The fix is a build that emits a source map codespell can read instead.
+  - path: patches/bbr3/0013-add-bbrv3.patch
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Exported unchanged from the upstream BBR commit versions.json pins; its two misspellings (in the
+      commit message and one comment) are upstream text; a local fix would diverge from the commit.
+  - path: .devcontainer/praetor-source.000.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.001.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.002.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.003.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.004.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
+  - path: .devcontainer/praetor-source.005.b64
+    tool: codespell
+    rule: skip
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+    reason: >-
+      Base64 chunk of the praetor source the devcontainer builds (#129); encoded data, not text,
+      whose letter runs read as misspellings. Renewed or removed with the next praetor pin.
