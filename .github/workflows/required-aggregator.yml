@@ -4,7 +4,10 @@
 # jobs that register late and runs whose forge status went stale, and fails unless each one
 # succeeded (scripts/required_checks_gate.py). A skipped check counts only
 # when it is named with --allow-skip: Semgrep and Trivy, which the change detector in
-# security-scans.yml may exclude, and whose skip the required Security Scan Gate judges.
+# security-scans.yml may exclude, and whose skip the required Security Scan Gate judges; and
+# verify-tool-release, which release-please.yml runs only on the push that creates a release
+# (or on a dispatch naming a tag), so every other push to main skips it. A failure of any of
+# them still fails this gate.
 # The wait covers build-matrix.yml on a pull request that touches the build path: it runs its
 # twelve legs six at a time, in two waves of at most 90 minutes each (arm64); the longest
 # measured leg took 40 minutes (run 36507112520).
@@ -59,3 +62,4 @@ jobs:
           python3 scripts/required_checks_gate.py --repo "${REPO}" --ref "${REF}"
           --self required-checks --interval 20 --timeout 11400
           --allow-skip "Semgrep SAST" --allow-skip "Trivy Filesystem CVE Scan"
+          --allow-skip "verify-tool-release"
