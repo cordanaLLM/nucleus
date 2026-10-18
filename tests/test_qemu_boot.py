@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "boot_smoke.py"
+BUILD_SCHED_SCRIPT = REPO_ROOT / "scripts" / "build_sched_ext_scheduler.sh"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import boot_smoke  # noqa: E402
@@ -482,6 +484,11 @@ def test_toolchain_installs_the_package_that_ships_the_arch_qemu(tmp_path, arch)
     assert result.returncode == 0, result.stderr
     installed = log.read_text().split("install", 1)[1].split()
     assert QEMU_BINARY_PACKAGE[boot_smoke.DEFAULT_QEMU[arch]] in installed
+    if arch == "x86_64":
+        for pkg in ("clang", "llvm", "zlib1g-dev", "libzstd-dev"):
+            assert pkg in installed
+    else:
+        assert "clang" not in installed
 
 
 def test_write_initramfs_writes_newc_cpio_archive(tmp_path):
@@ -713,3 +720,340 @@ def test_x86_init_source_contains_required_symbols():
     assert "finit_module" in src
     assert "tcp_available_congestion_control" in src
     assert "/sys/kernel/sched_ext/state" in src
+    assert "/scheduler" in src
+    assert "SIGINT" in src
+    assert "sched_ext_loaded=" in src
+    assert "/sys/kernel/sched_ext/root/ops" in src
+
+
+def _elf64_bytes(p_types: tuple[int, ...] = (1,)) -> bytes:
+    """Craft minimal ELF64 little-endian bytes with the requested program header p_type values."""
+    e_ident = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
+    ehdr = struct.pack(
+        "<HHIQQQIHHHHHH",
+        2,
+        62,
+        1,
+        0x401000,
+        64,
+        0,
+        0,
+        64,
+        56,
+        len(p_types),
+        0,
+        0,
+        0,
+    )
+    phdrs = b"".join(struct.pack("<I", pt) + b"\x00" * 52 for pt in p_types)
+    return e_ident + ehdr + phdrs
+
+
+def test_verdict_scheduler_passes():
+    console = (
+        BANNER
+        + MARKER
+        + "NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=simple\n"
+        + "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=0\n"
+    )
+    assert boot_smoke.verdict(console, KR, scheduler="simple") == []
+
+
+def test_verdict_scheduler_tolerates_printk_tail():
+    console = (
+        BANNER
+        + MARKER
+        + 'NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=simple[    3.100000] sched_ext: BPF scheduler "simple" enabled\n'
+        + 'NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=0[    3.200000] sched_ext: BPF scheduler "simple" disabled\n'
+    )
+    assert boot_smoke.verdict(console, KR, scheduler="simple") == []
+
+
+def test_verdict_scheduler_refuses_missing_lines():
+    missing = boot_smoke.verdict(BANNER + MARKER, KR, scheduler="simple")
+    assert missing == [
+        "scheduler simple not enabled (observed: no scheduler line)",
+        "scheduler simple did not unload cleanly (observed: no scheduler line)",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("loaded_line", "expected"),
+    [
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_loaded=disabled ops=unreadable\n",
+            "scheduler simple not enabled (observed: sched_ext_loaded=disabled ops=unreadable)",
+        ),
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=other\n",
+            "scheduler simple not enabled (observed: sched_ext_loaded=enabled ops=other)",
+        ),
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=simplex\n",
+            "scheduler simple not enabled (observed: sched_ext_loaded=enabled ops=simplex)",
+        ),
+    ],
+)
+def test_verdict_scheduler_refuses_bad_loaded_line(loaded_line, expected):
+    console = (
+        BANNER + MARKER + loaded_line + "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=0\n"
+    )
+    missing = boot_smoke.verdict(console, KR, scheduler="simple")
+    assert missing == [expected]
+
+
+@pytest.mark.parametrize(
+    ("unloaded_line", "expected"),
+    [
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=1\n",
+            "scheduler simple did not unload cleanly (observed: sched_ext_unloaded=disabled exit=1)",
+        ),
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=-9\n",
+            "scheduler simple did not unload cleanly (observed: sched_ext_unloaded=disabled exit=-9)",
+        ),
+        (
+            "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=enabled exit=0\n",
+            "scheduler simple did not unload cleanly (observed: sched_ext_unloaded=enabled exit=0)",
+        ),
+    ],
+)
+def test_verdict_scheduler_refuses_bad_unloaded_line(unloaded_line, expected):
+    console = (
+        BANNER + MARKER + "NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=simple\n" + unloaded_line
+    )
+    missing = boot_smoke.verdict(console, KR, scheduler="simple")
+    assert missing == [expected]
+
+
+def test_initramfs_with_scheduler_holds_scheduler_0755(tmp_path):
+    sched = tmp_path / "scx_simple"
+    payload = _elf64_bytes((1,))
+    sched.write_bytes(payload)
+    entries = _read_newc(boot_smoke.initramfs(b"\x7fELF-init", scheduler=sched))
+    sched_entry = next(e for e in entries if e[0] == "scheduler")
+    assert oct(sched_entry[1]) == "0o100755"
+    assert sched_entry[2] == payload
+
+
+def test_initramfs_refuses_dynamic_scheduler_elf(tmp_path):
+    sched = tmp_path / "scx_dynamic"
+    sched.write_bytes(_elf64_bytes((1, 3)))  # PT_LOAD=1, PT_INTERP=3
+    with pytest.raises(boot_smoke.SmokeError, match="dynamically linked"):
+        boot_smoke.initramfs(b"\x7fELF-init", scheduler=sched)
+
+
+def test_initramfs_refuses_non_elf_scheduler(tmp_path):
+    sched = tmp_path / "scx_text"
+    sched.write_bytes(b"#!/bin/sh\nexit 0\n")
+    with pytest.raises(boot_smoke.SmokeError, match="not an ELF binary"):
+        boot_smoke.initramfs(b"\x7fELF-init", scheduler=sched)
+
+
+def test_initramfs_refuses_empty_scheduler(tmp_path):
+    sched = tmp_path / "scx_empty"
+    sched.write_bytes(b"")
+    with pytest.raises(boot_smoke.SmokeError, match="scheduler is empty"):
+        boot_smoke.initramfs(b"\x7fELF-init", scheduler=sched)
+
+
+def test_initramfs_refuses_missing_scheduler(tmp_path):
+    sched = tmp_path / "scx_missing"
+    with pytest.raises(boot_smoke.SmokeError, match="scheduler does not exist"):
+        boot_smoke.initramfs(b"\x7fELF-init", scheduler=sched)
+
+
+@pytest.mark.parametrize("flag", ["--scheduler=/tmp/scx_simple", "--require-scheduler=simple"])
+def test_cli_scheduler_on_arm64_exits_2(flag):
+    res = subprocess.run(
+        [sys.executable, str(SCRIPT), "--arch=arm64", flag],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 2
+    assert "only supported on --arch=x86_64" in res.stderr
+
+
+def test_cli_require_scheduler_without_scheduler_at_boot_exits_2(tmp_path):
+    res = _cli(tmp_path, _stub(tmp_path, "exit 0"), "--require-scheduler=simple")
+    assert res.returncode == 2
+    assert "--require-scheduler requires --scheduler" in res.stderr
+
+
+def test_judge_log_require_scheduler_planted_refuses_rc_1(tmp_path):
+    log = tmp_path / "boot.log"
+    log.write_text(
+        BANNER
+        + MARKER
+        + "NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=simple\n"
+        + "NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=0\n",
+        encoding="utf-8",
+    )
+    assert (
+        boot_smoke.main(
+            [
+                "--judge-log",
+                str(log),
+                "--kernelrelease",
+                KR,
+                "--require-scheduler",
+                "planted-sched",
+            ]
+        )
+        == 1
+    )
+
+
+def _setup_sched_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
+    tree = tmp_path / "linux"
+    (tree / "tools" / "sched_ext").mkdir(parents=True)
+    (tree / "tools" / "sched_ext" / "scx_simple.bpf.c").write_text("/* bpf */\n", encoding="utf-8")
+    vmlinux = tmp_path / "vmlinux"
+    vmlinux.write_bytes(b"\x7fELF-vmlinux")
+    output = tmp_path / "out" / "scx_simple"
+    return tree, vmlinux, output
+
+
+def _run_build_sched(args: list[str], env: dict[str, str] | None = None):
+    return subprocess.run(
+        ["/bin/bash", str(BUILD_SCHED_SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_build_sched_ext_scheduler_dry_run_writes_nothing(tmp_path):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    res = _run_build_sched(
+        [
+            f"--source-tree={tree}",
+            f"--vmlinux={vmlinux}",
+            f"--output={output}",
+            "--dry-run",
+        ]
+    )
+    assert res.returncode == 0, res.stderr
+    assert "make -C" in res.stdout and "VMLINUX_BTF=" in res.stdout
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("bad_scheduler", "expected"),
+    [
+        ("../evil", "must match [a-z0-9_]+"),
+        ("Simple", "must match [a-z0-9_]+"),
+        ("simple;id", "must match [a-z0-9_]+"),
+        ("nonexistent_sched", "has no tools/sched_ext/scx_nonexistent_sched.bpf.c"),
+    ],
+)
+def test_build_sched_ext_scheduler_refuses_bad_scheduler_or_missing_source(
+    tmp_path, bad_scheduler, expected
+):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    res = _run_build_sched(
+        [
+            f"--source-tree={tree}",
+            f"--vmlinux={vmlinux}",
+            f"--output={output}",
+            f"--scheduler={bad_scheduler}",
+        ]
+    )
+    assert res.returncode == 1
+    assert "Refused:" in res.stderr and expected in res.stderr
+    assert not output.exists()
+
+
+def test_build_sched_ext_scheduler_refuses_empty_vmlinux_or_existing_output(tmp_path):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    vmlinux.write_bytes(b"")
+    res = _run_build_sched([f"--source-tree={tree}", f"--vmlinux={vmlinux}", f"--output={output}"])
+    assert res.returncode == 1 and "is missing or empty" in res.stderr
+    assert not output.exists()
+
+    vmlinux.write_bytes(b"\x7fELF-vmlinux")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"already-there")
+    res2 = _run_build_sched([f"--source-tree={tree}", f"--vmlinux={vmlinux}", f"--output={output}"])
+    assert res2.returncode == 1 and "already exists and is not empty" in res2.stderr
+    assert output.read_bytes() == b"already-there"
+
+
+def _stub_sched_build_tools(tmp_path: Path, elf_payload: bytes) -> dict[str, str]:
+    bin_dir = tmp_path / "stub-bin"
+    bin_dir.mkdir()
+    clang_stub = bin_dir / "clang"
+    clang_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    clang_stub.chmod(0o755)
+    make_stub = bin_dir / "make"
+    make_stub.write_text(
+        "#!/bin/sh\n"
+        'for arg in "$@"; do\n'
+        '  case "$arg" in O=*) out="${arg#O=}" ;; esac\n'
+        "done\n"
+        'mkdir -p "$out/build/obj/sched_ext" "$out/build/obj/libbpf"\n'
+        'printf obj > "$out/build/obj/sched_ext/scx_simple.o"\n'
+        'printf lib > "$out/build/obj/libbpf/libbpf.a"\n',
+        encoding="utf-8",
+    )
+    make_stub.chmod(0o755)
+    payload_file = tmp_path / "elf_payload.bin"
+    payload_file.write_bytes(elf_payload)
+    gcc_stub = bin_dir / "gcc"
+    gcc_stub.write_text(
+        "#!/bin/sh\n"
+        'prev=""\n'
+        'for arg in "$@"; do\n'
+        '  if [ "$prev" = "-o" ]; then out="$arg"; fi\n'
+        '  prev="$arg"\n'
+        "done\n"
+        f'cp "{payload_file}" "$out"\n',
+        encoding="utf-8",
+    )
+    gcc_stub.chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}:/usr/bin:/bin"}
+
+
+def test_build_sched_ext_scheduler_succeeds_on_static_elf(tmp_path):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    static_elf = _elf64_bytes((1,))
+    env = _stub_sched_build_tools(tmp_path, static_elf)
+    res = _run_build_sched(
+        [f"--source-tree={tree}", f"--vmlinux={vmlinux}", f"--output={output}"],
+        env=env,
+    )
+    assert res.returncode == 0, res.stderr
+    assert output.read_bytes() == static_elf
+    assert "[DRY-RUN]" not in res.stdout
+
+
+def test_build_sched_ext_scheduler_refuses_dynamic_elf_output(tmp_path):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    dynamic_elf = _elf64_bytes((1, 3))
+    env = _stub_sched_build_tools(tmp_path, dynamic_elf)
+    res = _run_build_sched(
+        [f"--source-tree={tree}", f"--vmlinux={vmlinux}", f"--output={output}"],
+        env=env,
+    )
+    assert res.returncode == 1
+    assert "dynamically linked" in res.stderr
+    assert not output.exists()
+
+
+def test_build_sched_ext_scheduler_refuses_missing_tool(tmp_path):
+    tree, vmlinux, output = _setup_sched_tree(tmp_path)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    for tool in ("dirname", "pwd"):
+        real = subprocess.check_output(["which", tool], text=True).strip()
+        (empty_bin / tool).symlink_to(real)
+    res = _run_build_sched(
+        [f"--source-tree={tree}", f"--vmlinux={vmlinux}", f"--output={output}"],
+        env={"PATH": str(empty_bin)},
+    )
+    assert res.returncode == 1
+    assert "is required to build scx_simple and is not installed" in res.stderr
+    assert not output.exists()

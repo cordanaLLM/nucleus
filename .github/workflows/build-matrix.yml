@@ -21,6 +21,7 @@ on:
       - "scripts/verify-reproducibility.sh"
       - "scripts/sign_kernel_modules.py"
       - "scripts/boot_smoke.py"
+      - "scripts/build_sched_ext_scheduler.sh"
       - "scripts/package-uki.sh"
       - "scripts/check_uki.py"
       - "scripts/publish_release.sh"
@@ -203,6 +204,18 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Build the sched_ext Scheduler
+        if: matrix.arch == 'x86_64' && env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          WORK_DIR: ${{ steps.disk.outputs.work_dir }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/build_sched_ext_scheduler.sh \
+            --source-tree="${WORK_DIR}/linux-${STREAM}" \
+            --vmlinux="${WORK_DIR}/${STREAM}-${ARCH}/kbuild/vmlinux" \
+            --output="records/scx_simple-${STREAM}-${ARCH}"
+
       - name: Save the Compiler Cache
         if: always() && steps.build.outputs.config_sha256 != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -232,7 +245,11 @@ jobs:
           # tcp_available_congestion_control. The binding comes from versions.json.
           bbr3=no
           if [[ "${ARCH}" == "x86_64" ]]; then
-            boot_args+=(--require-sched-ext)
+            boot_args+=(
+              --require-sched-ext
+              --scheduler="records/scx_simple-${STREAM}-${ARCH}"
+              --require-scheduler=simple
+            )
             bound="$(python3 scripts/versions_query.py series-streams bbr3)"
             if grep -qxF -- "${STREAM}" <<<"${bound}"; then bbr3=yes; fi
             if [[ "${bbr3}" == "yes" ]]; then
@@ -261,7 +278,7 @@ jobs:
           log="records/boot-${STREAM}-${ARCH}.log"
           judge_args=()
           if [[ "${ARCH}" == "x86_64" ]]; then
-            judge_args+=(--require-sched-ext)
+            judge_args+=(--require-sched-ext --require-scheduler=simple)
             if [[ "${BBR3}" == "yes" ]]; then
               judge_args+=(--require-congestion=bbr --require-congestion=bbr3)
             fi
@@ -281,6 +298,14 @@ jobs:
               --require-congestion=planted-cc || rc=$?
             if [[ "${rc}" -ne 1 ]]; then
               echo "Expected exit status 1 for congestion planted-cc, got ${rc}" >&2
+              exit 1
+            fi
+            rc=0
+            python3 scripts/boot_smoke.py --judge-log="${log}" \
+              --kernelrelease="${KERNELRELEASE}" \
+              --require-scheduler=planted-sched || rc=$?
+            if [[ "${rc}" -ne 1 ]]; then
+              echo "Expected exit status 1 for scheduler planted-sched, got ${rc}" >&2
               exit 1
             fi
           fi

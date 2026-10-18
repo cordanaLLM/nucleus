@@ -292,16 +292,26 @@ QEMU at once (`panic=-1` with `-no-reboot`); a hang is killed at the timeout. Lo
 x86_64 kernels booted under TCG in 4 to 21 s.
 
 On `x86_64` the init then mounts `proc` and `sysfs`, loads every module the initramfs carries
-under `/modules` with `finit_module(2)`, and prints three more kinds of line:
+under `/modules` with `finit_module(2)`, and prints console lines for module loads, congestion
+control, `sched_ext` state, and (when `/scheduler` is packed into the initramfs) an in-tree BPF
+scheduler load/unload cycle:
 
 - `NUCLEUS-BOOT-SMOKE module=<file> rc=<0 or errno>`: one per module loaded.
 - `NUCLEUS-BOOT-SMOKE congestion=<list>` (or `congestion=unreadable errno=<n>`): the content of
   `/proc/sys/net/ipv4/tcp_available_congestion_control`.
 - `NUCLEUS-BOOT-SMOKE sched_ext=<state>` (or `sched_ext=unreadable errno=<n>`): the content of
   `/sys/kernel/sched_ext/state`.
+- `NUCLEUS-BOOT-SMOKE sched_ext_loaded=<state> ops=<ops>`: printed when `/scheduler` is present,
+  after the init forks `/scheduler` (with stdout and stderr redirected to `/dev/null`) and polls
+  `/sys/kernel/sched_ext/state` every 250 ms (at most 120 polls, 30 s) until `enabled` or child
+  exit; `<ops>` is `/sys/kernel/sched_ext/root/ops` or `unreadable`.
+- `NUCLEUS-BOOT-SMOKE sched_ext_unloaded=<state> exit=<code>`: printed after the init sends
+  `SIGINT` to `/scheduler`, waits for it to exit (up to 40 polls of 250 ms before `SIGKILL`),
+  and reads `/sys/kernel/sched_ext/state` again.
 
-Three flags turn those lines into requirements, on `x86_64` only (the freestanding `arm64` and
-`riscv64` inits do not print them yet, and the flags exit with status 2 there):
+Five flags turn those lines into requirements, on `x86_64` only (the freestanding `arm64` and
+`riscv64` inits do not print them or load a scheduler yet, and the flags exit with status 2
+there):
 
 - `--module=<path>` (repeatable, at most 16) packs an uncompressed `.ko` into `/modules`. A
   compressed, empty or missing module is refused before boot. Each module must then report
@@ -310,13 +320,32 @@ Three flags turn those lines into requirements, on `x86_64` only (the freestandi
   congestion list: `bbr` is not met by `bbr3`.
 - `--require-sched-ext` requires a `sched_ext=` line with one of `disabled`, `enabled`,
   `prepping`, `enabling`, `disabling`.
+- `--scheduler=<path>` packs a static ELF binary into `/scheduler` with mode `0755`. A missing,
+  empty, non-ELF or dynamically linked binary (`PT_INTERP` present) is refused before boot.
+- `--require-scheduler=<name>` (requires `--scheduler` at boot time, not with `--judge-log`)
+  requires `NUCLEUS-BOOT-SMOKE sched_ext_loaded=enabled ops=<name>` and
+  `NUCLEUS-BOOT-SMOKE sched_ext_unloaded=disabled exit=0`.
 
-The same flags apply with `--judge-log`.
+The requirement flags apply with `--judge-log` as well.
+
+`scripts/build_sched_ext_scheduler.sh` compiles an in-tree `tools/sched_ext/scx_<name>` scheduler
+(`simple` by default) from the verified kernel source tree against the built `vmlinux`
+(`VMLINUX_BTF`), links the resulting object statically against the in-tree `libbpf.a` (`-lelf -lz
+-lzstd`), and refuses the output unless its ELF program headers carry no `PT_INTERP` entry:
 
 ```bash
+./scripts/build_sched_ext_scheduler.sh \
+  --source-tree=build/linux-mainstream \
+  --vmlinux=build/mainstream-x86_64/kbuild/vmlinux \
+  --output=records/scx_simple-mainstream-x86_64
+
 python3 scripts/boot_smoke.py --arch=x86_64 \
   --kernel=output/mainstream-x86_64/vmlinuz-7.2.10-lusoris1-mainstream \
-  --kernelrelease=7.2.10-lusoris1-mainstream --log=boot.log
+  --kernelrelease=7.2.10-lusoris1-mainstream \
+  --require-sched-ext \
+  --scheduler=records/scx_simple-mainstream-x86_64 \
+  --require-scheduler=simple \
+  --log=boot.log
 make boot-smoke KERNEL=<vmlinuz> KERNELRELEASE=<release>
 ```
 
@@ -327,13 +356,15 @@ pass, and with `<release>-planted`, which must be refused with exit status 1, so
 stopped comparing the release would turn the leg red. On arm64 and riscv64 a boot on a console
 device that does not exist must be refused as well (`Refuse a boot whose console stays silent`).
 
-On `x86_64` every boot also passes `--require-sched-ext`. A stream that
+On `x86_64` the `Build the sched_ext Scheduler` step builds `records/scx_simple-${STREAM}-${ARCH}`
+after `Compile Kernel Package`, and every boot passes `--require-sched-ext`,
+`--scheduler=records/scx_simple-${STREAM}-${ARCH}` and `--require-scheduler=simple`. A stream that
 `python3 scripts/versions_query.py series-streams bbr3` lists (the streams `versions.json` binds
 the BBRv3 series to under `patches.bbr3.streams`) also has `tcp_bbr3.ko` taken from its
 `linux-image` package, loaded with `--module`, and checked with `--require-congestion=bbr
 --require-congestion=bbr3`, because `CONFIG_TCP_CONG_BBR3=m` registers `bbr3` only once the
 module is loaded. The judge step repeats those flags on the leg's console, and must refuse it
-with `--require-congestion=planted-cc`.
+with `--require-congestion=planted-cc` and with `--require-scheduler=planted-sched`.
 
 Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`).
 

@@ -1419,7 +1419,22 @@ def test_required_checks_waits_longer_than_the_reproducibility_job():
 
 
 def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
-    steps = {step.get("name", ""): step for step in _build_matrix()["steps"]}
+    step_list = _build_matrix()["steps"]
+    names = [step.get("name", "") for step in step_list]
+    steps = {step.get("name", ""): step for step in step_list}
+    sched_build = steps["Build the sched_ext Scheduler"]
+    assert sched_build["if"] == "matrix.arch == 'x86_64' && env.DRY_RUN != 'true'"
+    assert sched_build["shell"] == "bash"
+    assert sched_build["env"]["WORK_DIR"] == "${{ steps.disk.outputs.work_dir }}"
+    assert "scripts/build_sched_ext_scheduler.sh" in sched_build["run"]
+    assert '--source-tree="${WORK_DIR}/linux-${STREAM}"' in sched_build["run"]
+    assert '--vmlinux="${WORK_DIR}/${STREAM}-${ARCH}/kbuild/vmlinux"' in sched_build["run"]
+    assert '--output="records/scx_simple-${STREAM}-${ARCH}"' in sched_build["run"]
+    assert (
+        names.index("Compile Kernel Package")
+        < names.index("Build the sched_ext Scheduler")
+        < names.index("Boot the Kernel to Userspace")
+    )
     boot = steps["Boot the Kernel to Userspace"]
     judge = steps["Refuse a console of another release"]
     assert boot["id"] == "boot" and boot["shell"] == judge["shell"] == "bash"
@@ -1431,6 +1446,10 @@ def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
     assert "kernel/net/ipv4/tcp_bbr3.ko" in run
     assert "--require-congestion=bbr --require-congestion=bbr3" in run
     assert "--require-sched-ext" in run
+    assert '--scheduler="records/scx_simple-${STREAM}-${ARCH}"' in run
+    assert "--require-scheduler=simple" in run
     assert 'echo "bbr3=${bbr3}" >> "${GITHUB_OUTPUT}"' in run
     assert judge["env"]["BBR3"] == "${{ steps.boot.outputs.bbr3 }}"
+    assert "--require-scheduler=simple" in judge["run"]
     assert "--require-congestion=planted-cc" in judge["run"]
+    assert "--require-scheduler=planted-sched" in judge["run"]

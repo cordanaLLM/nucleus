@@ -38,6 +38,7 @@ import os
 import platform
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,8 @@ from pathlib import Path
 
 MARKER = "NUCLEUS-BOOT-SMOKE release="
 MAX_IMAGE_BYTES = 256 * 1024 * 1024
+PT_INTERP = 3
+MAX_ELF_PHNUM = 128
 
 DEFAULT_QEMU: dict[str, str] = {
     "x86_64": "qemu-system-x86_64",
@@ -72,6 +75,7 @@ INIT_SOURCE = r"""
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mount.h>
@@ -79,7 +83,9 @@ INIT_SOURCE = r"""
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 static void load_modules(void)
@@ -160,6 +166,120 @@ static void report_sched_ext(void)
     fflush(stdout);
 }
 
+static void read_sysfs_token(const char *path, char *out, size_t out_sz)
+{
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        snprintf(out, out_sz, "unreadable");
+        return;
+    }
+    char buf[256];
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n < 0) {
+        snprintf(out, out_sz, "unreadable");
+        return;
+    }
+    buf[n] = '\0';
+    int start = 0;
+    for (int i = 0; i < (int)n && isspace((unsigned char)buf[i]); i++)
+        start++;
+    for (int i = (int)n - 1; i >= start && isspace((unsigned char)buf[i]); i--)
+        buf[i] = '\0';
+    if (buf[start] == '\0')
+        snprintf(out, out_sz, "unreadable");
+    else
+        snprintf(out, out_sz, "%s", buf + start);
+}
+
+static void sleep_250ms(void)
+{
+    struct timespec ts = { 0, 250 * 1000 * 1000L };
+    nanosleep(&ts, NULL);
+}
+
+static void exec_scheduler_child(void)
+{
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull < 0) {
+        mknod("/dev/null", S_IFCHR | 0666, (1 << 8) | 3);
+        devnull = open("/dev/null", O_WRONLY);
+    }
+    if (devnull >= 0) {
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO);
+        if (devnull > STDERR_FILENO)
+            close(devnull);
+    }
+    execl("/scheduler", "/scheduler", (char *)NULL);
+    _exit(127);
+}
+
+static int stop_scheduler(pid_t pid, int reaped, int status)
+{
+    if (!reaped) {
+        kill(pid, SIGINT);
+        for (int i = 0; i < 40; i++) {
+            if (waitpid(pid, &status, WNOHANG) == pid) {
+                reaped = 1;
+                break;
+            }
+            sleep_250ms();
+        }
+    }
+    if (!reaped) {
+        kill(pid, SIGKILL);
+        waitpid(pid, &status, 0);
+    }
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status))
+        return -WTERMSIG(status);
+    return -1;
+}
+
+static void run_scheduler(void)
+{
+    struct stat st;
+    if (stat("/scheduler", &st) != 0 || !S_ISREG(st.st_mode))
+        return;
+    pid_t pid = fork();
+    if (pid < 0) {
+        printf("NUCLEUS-BOOT-SMOKE sched_ext_loaded=fork_failed ops=unreadable\n");
+        fflush(stdout);
+        return;
+    }
+    if (pid == 0)
+        exec_scheduler_child();
+    char state[256] = "unreadable";
+    char ops[256] = "unreadable";
+    int status = 0;
+    int reaped = 0;
+    for (int i = 0; i < 120; i++) {
+        read_sysfs_token("/sys/kernel/sched_ext/state", state, sizeof(state));
+        if (strcmp(state, "enabled") == 0)
+            break;
+        if (waitpid(pid, &status, WNOHANG) == pid) {
+            reaped = 1;
+            break;
+        }
+        sleep_250ms();
+    }
+    read_sysfs_token("/sys/kernel/sched_ext/state", state, sizeof(state));
+    read_sysfs_token("/sys/kernel/sched_ext/root/ops", ops, sizeof(ops));
+    printf("NUCLEUS-BOOT-SMOKE sched_ext_loaded=%s ops=%s\n", state, ops);
+    fflush(stdout);
+    int exit_code = stop_scheduler(pid, reaped, status);
+    for (int i = 0; i < 20; i++) {
+        read_sysfs_token("/sys/kernel/sched_ext/state", state, sizeof(state));
+        if (strcmp(state, "disabled") == 0)
+            break;
+        sleep_250ms();
+    }
+    printf("NUCLEUS-BOOT-SMOKE sched_ext_unloaded=%s exit=%d\n", state, exit_code);
+    fflush(stdout);
+}
+
 int main(void)
 {
     struct utsname name;
@@ -174,6 +294,7 @@ int main(void)
     load_modules();
     report_congestion();
     report_sched_ext();
+    run_scheduler();
 
     tcdrain(STDOUT_FILENO);
     sync();
@@ -484,11 +605,55 @@ def build_init(cc: str, workdir: Path, arch: str = "x86_64") -> bytes:
     return binary.read_bytes()
 
 
+def _elf_phdr_table(data: bytes, path: Path | str) -> tuple[str, int, int, int]:
+    if not data:
+        raise SmokeError(f"{path}: scheduler is empty")
+    if len(data) < 52 or data[:4] != b"\x7fELF":
+        raise SmokeError(f"{path}: scheduler is not an ELF binary")
+    endian = {1: "<", 2: ">"}.get(data[5])
+    if endian is None or data[4] not in (1, 2):
+        raise SmokeError(f"{path}: invalid ELF class or endianness")
+    if data[4] == 2:
+        if len(data) < 64:
+            raise SmokeError(f"{path}: truncated ELF64 header")
+        (e_phoff,) = struct.unpack_from(f"{endian}Q", data, 32)
+        e_phentsize, e_phnum = struct.unpack_from(f"{endian}HH", data, 54)
+        return endian, e_phoff, e_phentsize if e_phentsize >= 56 else 0, e_phnum
+    (e_phoff,) = struct.unpack_from(f"{endian}I", data, 28)
+    e_phentsize, e_phnum = struct.unpack_from(f"{endian}HH", data, 42)
+    return endian, e_phoff, e_phentsize if e_phentsize >= 32 else 0, e_phnum
+
+
+def check_static_elf(data: bytes, path: Path | str = "<elf>") -> None:
+    """Refuse data unless it is an ELF binary with no PT_INTERP program header."""
+    endian, e_phoff, e_phentsize, e_phnum = _elf_phdr_table(data, path)
+    if not 1 <= e_phnum <= MAX_ELF_PHNUM or e_phentsize == 0:
+        raise SmokeError(f"{path}: invalid ELF program header table")
+    if e_phoff + e_phnum * e_phentsize > len(data):
+        raise SmokeError(f"{path}: ELF program header table out of bounds")
+    for idx in range(e_phnum):
+        (p_type,) = struct.unpack_from(f"{endian}I", data, e_phoff + idx * e_phentsize)
+        if p_type == PT_INTERP:
+            raise SmokeError(f"{path}: scheduler is dynamically linked (PT_INTERP)")
+
+
+def _scheduler_entry(scheduler: Path | str) -> CpioEntry:
+    if not str(scheduler).strip():
+        raise SmokeError("empty scheduler path")
+    p = Path(scheduler)
+    if not p.is_file():
+        raise SmokeError(f"{p}: scheduler does not exist")
+    data = p.read_bytes()
+    check_static_elf(data, p)
+    return CpioEntry("scheduler", 0o100755, data)
+
+
 def build_initramfs(
     cc: str,
     arch: str = "x86_64",
     init_binary: Path | None = None,
     modules: Sequence[Path | str] = (),
+    scheduler: Path | str | None = None,
 ) -> bytes:
     """Compile the static init (or read init_binary) and pack into a newc initramfs."""
     if init_binary is not None:
@@ -496,10 +661,14 @@ def build_initramfs(
     else:
         with tempfile.TemporaryDirectory(prefix="boot-smoke-init-") as tmp:
             init = build_init(cc, Path(tmp), arch)
-    return initramfs(init, modules)
+    return initramfs(init, modules, scheduler=scheduler)
 
 
-def initramfs(init: bytes, modules: Sequence[Path | str] = ()) -> bytes:
+def initramfs(
+    init: bytes,
+    modules: Sequence[Path | str] = (),
+    scheduler: Path | str | None = None,
+) -> bytes:
     """The smallest root that boots: /init and the console it writes to."""
     if len(modules) > 16:
         raise SmokeError(f"at most 16 modules supported, got {len(modules)}")
@@ -520,17 +689,18 @@ def initramfs(init: bytes, modules: Sequence[Path | str] = ()) -> bytes:
             raise SmokeError(f"{p}: module is empty")
         module_entries.append(CpioEntry(f"modules/{name}", 0o100644, p.read_bytes()))
 
-    return newc_archive(
-        [
-            CpioEntry("dev", 0o040755),
-            CpioEntry("dev/console", 0o020600, rdev=(5, 1)),
-            CpioEntry("init", 0o100755, init),
-            CpioEntry("proc", 0o040755),
-            CpioEntry("sys", 0o040755),
-            CpioEntry("modules", 0o040755),
-            *module_entries,
-        ]
-    )
+    entries = [
+        CpioEntry("dev", 0o040755),
+        CpioEntry("dev/console", 0o020600, rdev=(5, 1)),
+        CpioEntry("init", 0o100755, init),
+        CpioEntry("proc", 0o040755),
+        CpioEntry("sys", 0o040755),
+        CpioEntry("modules", 0o040755),
+        *module_entries,
+    ]
+    if scheduler is not None:
+        entries.append(_scheduler_entry(scheduler))
+    return newc_archive(entries)
 
 
 def qemu_command(args: argparse.Namespace, initrd: Path, kernel: Path | None = None) -> list[str]:
@@ -602,6 +772,29 @@ def _check_sched_ext(console: str, missing: list[str]) -> None:
         missing.append(f"no sched_ext state on the console (observed: {found_state})")
 
 
+def _check_scheduler(console: str, name: str, missing: list[str]) -> None:
+    loaded_prefix = "NUCLEUS-BOOT-SMOKE sched_ext_loaded="
+    unloaded_prefix = "NUCLEUS-BOOT-SMOKE sched_ext_unloaded="
+    loaded_line: str | None = None
+    unloaded_line: str | None = None
+    for raw in console.splitlines():
+        line = raw.strip()
+        if loaded_line is None and line.startswith(loaded_prefix):
+            cleaned = re.sub(r"\[\s*\d+\.\d+\].*$", "", line[len(loaded_prefix) :]).strip()
+            loaded_line = f"sched_ext_loaded={cleaned}"
+        elif unloaded_line is None and line.startswith(unloaded_prefix):
+            cleaned = re.sub(r"\[\s*\d+\.\d+\].*$", "", line[len(unloaded_prefix) :]).strip()
+            unloaded_line = f"sched_ext_unloaded={cleaned}"
+    if loaded_line is None:
+        missing.append(f"scheduler {name} not enabled (observed: no scheduler line)")
+    elif loaded_line.split() != ["sched_ext_loaded=enabled", f"ops={name}"]:
+        missing.append(f"scheduler {name} not enabled (observed: {loaded_line})")
+    if unloaded_line is None:
+        missing.append(f"scheduler {name} did not unload cleanly (observed: no scheduler line)")
+    elif unloaded_line.split() != ["sched_ext_unloaded=disabled", "exit=0"]:
+        missing.append(f"scheduler {name} did not unload cleanly (observed: {unloaded_line})")
+
+
 def _check_modules(console: str, modules: Sequence[Path | str], missing: list[str]) -> None:
     """Every module the initramfs carried must report rc=0; a silent init proves nothing."""
     loaded: dict[str, str] = {}
@@ -624,6 +817,7 @@ def verdict(
     congestion: Sequence[str] = (),
     sched_ext: bool = False,
     modules: Sequence[Path | str] = (),
+    scheduler: str | None = None,
 ) -> list[str]:
     """Every missing proof of a boot; an empty list means the kernel reached userspace."""
     missing = []
@@ -642,6 +836,8 @@ def verdict(
         _check_sched_ext(console, missing)
     if modules:
         _check_modules(console, modules, missing)
+    if scheduler:
+        _check_scheduler(console, scheduler, missing)
 
     return missing
 
@@ -666,6 +862,8 @@ def boot(args: argparse.Namespace, initrd: Path, kernel: Path | None = None) -> 
 
 def run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Build the initramfs, boot, and judge the console."""
+    if getattr(args, "require_scheduler", None) and getattr(args, "scheduler", None) is None:
+        raise SmokeError("--require-scheduler requires --scheduler when booting")
     if not args.kernel.is_file() or args.kernel.stat().st_size == 0:
         raise SmokeError(f"{args.kernel} is not a kernel image")
     arch = getattr(args, "arch", "x86_64")
@@ -685,6 +883,7 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
                 arch,
                 getattr(args, "init_binary", None),
                 modules=args.module,
+                scheduler=getattr(args, "scheduler", None),
             )
         )
         console, timed_out = boot(args, initrd, kernel)
@@ -694,6 +893,7 @@ def run(args: argparse.Namespace) -> tuple[list[str], str]:
         congestion=args.require_congestion,
         sched_ext=args.require_sched_ext,
         modules=args.module,
+        scheduler=getattr(args, "require_scheduler", None),
     )
     if timed_out and missing:
         missing.append(f"QEMU was killed after {args.timeout}s")
@@ -706,6 +906,7 @@ def judge_log(
     congestion: Sequence[str] = (),
     sched_ext: bool = False,
     modules: Sequence[Path | str] = (),
+    scheduler: str | None = None,
 ) -> int:
     """Judge a console a boot already wrote; the matrix plants a wrong release with it."""
     try:
@@ -719,6 +920,7 @@ def judge_log(
         congestion=congestion,
         sched_ext=sched_ext,
         modules=modules,
+        scheduler=scheduler,
     )
     if missing:
         print(f"Refused: {log} does not show {kernelrelease} reaching userspace:", file=sys.stderr)
@@ -775,6 +977,17 @@ def _parser() -> argparse.ArgumentParser:
         default=False,
         help="require sched_ext state readable in /sys/kernel/sched_ext/state (x86_64 only)",
     )
+    parser.add_argument(
+        "--scheduler",
+        type=Path,
+        default=None,
+        help="static BPF scheduler binary to include in initramfs at /scheduler and load at boot (x86_64 only)",
+    )
+    parser.add_argument(
+        "--require-scheduler",
+        default=None,
+        help="require sched_ext scheduler NAME to enable and unload cleanly (x86_64 only)",
+    )
     return parser
 
 
@@ -790,6 +1003,7 @@ def _handle_write_initramfs(args: argparse.Namespace) -> int:
             args.arch,
             getattr(args, "init_binary", None),
             modules=args.module,
+            scheduler=args.scheduler,
         )
         target.write_bytes(data)
     except (SmokeError, OSError) as exc:
@@ -799,16 +1013,26 @@ def _handle_write_initramfs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _x86_only_flags_used(args: argparse.Namespace) -> bool:
+    return bool(
+        args.module
+        or args.require_congestion
+        or args.require_sched_ext
+        or args.scheduler
+        or args.require_scheduler
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.arch != "x86_64" and (args.module or args.require_congestion or args.require_sched_ext):
+    if args.arch != "x86_64" and _x86_only_flags_used(args):
         print(
-            "boot_smoke: error: --module, --require-congestion, and --require-sched-ext are only supported on --arch=x86_64",
+            "boot_smoke: error: --module, --require-congestion, --require-sched-ext, "
+            "--scheduler, and --require-scheduler are only supported on --arch=x86_64",
             file=sys.stderr,
         )
         return 2
-    if args.cc is None:
-        args.cc = default_cc(args.arch)
+    args.cc = args.cc or default_cc(args.arch)
     if args.write_initramfs is not None:
         return _handle_write_initramfs(args)
 
@@ -819,6 +1043,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             congestion=args.require_congestion,
             sched_ext=args.require_sched_ext,
             modules=args.module,
+            scheduler=args.require_scheduler,
         )
     if args.kernel is None or args.kernelrelease is None:
         print(
@@ -830,10 +1055,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 1 <= args.timeout <= 3600:
         print("boot_smoke: --timeout must be between 1 and 3600 seconds", file=sys.stderr)
         return 2
-    if args.qemu is None:
-        args.qemu = DEFAULT_QEMU[args.arch]
-    if args.console is None:
-        args.console = DEFAULT_CONSOLE[args.arch]
+    args.qemu = args.qemu or DEFAULT_QEMU[args.arch]
+    args.console = args.console or DEFAULT_CONSOLE[args.arch]
     try:
         missing, console = run(args)
     except (SmokeError, OSError) as exc:
