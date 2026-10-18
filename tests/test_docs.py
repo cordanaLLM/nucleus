@@ -386,7 +386,7 @@ def test_no_document_claims_an_apt_archive():
         str(path.relative_to(REPO_ROOT)): path.read_text(encoding="utf-8")
         for pattern in ("**/*.md", ".github/workflows/*.yml")
         for path in REPO_ROOT.glob(pattern)
-        if ".workingdir" not in path.parts and "node_modules" not in path.parts
+        if not {".workingdir", ".standards", "node_modules"} & set(path.parts)
     }
     assert apt_archive_claims(files) == []
     planted = {"docs/packaging.md": "Published to apt.example.com via reprepro."}
