@@ -1,3 +1,10 @@
+# The one codespell configuration; `make lint-spelling` runs it over the tracked tree.
+# hsa: AMD Heterogeneous System Architecture (docs/hardware/amd-rocm.md); devlop: an npm
+# package (tools/markdownlint/package-lock.json); unparseable: an accepted spelling; grap: the
+# split "grap" "hql" pattern of the adopted hook .config/agent/hooks/block_evasion.py.
+# ignore-regex: a line of 500 characters or more is minified code, never prose
+# (tools/figures/dist/player.js); every shorter line of every file is checked.
 [codespell]
 skip = .git,output,*.deb,*.xz,.pytest_cache,*.zst,*.iso,*.patch
-ignore-words-list = bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight,fpr
+ignore-words-list = bbrv3,sched_ext,virtio,virtiofs,kspp,vmlinuz,initramfs,ukify,cgroup,cgroups,cgroupfs,containerd,resolute,nd,te,hart,kconfig,hindsight,fpr,hsa,devlop,unparseable,grap
+ignore-regex = ^.{500,}$
