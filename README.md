@@ -269,6 +269,7 @@ released under the Apache License 2.0 and keep that licence.
 | Kernel patches under `patches/` (none carried) | `GPL-2.0-only`, the licence of the kernel they change |
 | kernel.org signing keys under `keys/` | `CC0-1.0`; a public key is not a work under copyright |
 | Test fixtures copied from other repositories | the licence of their source, named in `REUSE.toml` |
+| The vendored figure engine interfig, `tools/figures/third_party/interfig/upstream/` (Vectorize AI, Inc.) | `MIT` |
 
 The version above is the version of this repository (`VERSION`). The kernel release tags
 (`v<kernel version>-<stream>-lusoris<N>`) count separately, and the kernel packages a release

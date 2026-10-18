@@ -110,7 +110,7 @@ reason and the bounds.
 ### 3.4 Slab Freelist Hardening & Initialization
 
 - **`CONFIG_SLAB_FREELIST_HARDENED=y`**: Encrypts freelist pointers inside SLUB caches using an XOR cipher with a per-cache random key and the address of the freelist entry, preventing metadata corruption and arbitrary write primitives.
-- **`CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y` & `INIT_ON_FREE_DEFAULT_ON=y`**: Zeroes memory pages upon allocation and free operations, completely eliminating uninitialized data disclosure and stale pointer re-use.
+- **`CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y` & `INIT_ON_FREE_DEFAULT_ON=y`**: Zeroes memory pages upon allocation and free operations, completely eliminating uninitialized data disclosure and stale pointer reuse.
 
 ### 3.5 Usercopy Bounds Hardening
 
