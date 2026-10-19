@@ -31,6 +31,7 @@ private scratch-link policy.
 [![License](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Automated%20Gates-emerald.svg)](.github/workflows/ci.yml)
 [![Downstream](https://img.shields.io/badge/downstream-imago-purple.svg)](https://github.com/cordanaLLM/imago)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15665/badge)](https://www.bestpractices.dev/projects/15665)
 
 `cordanaLLM/nucleus` is the companion repository and automated build forge producing customized, hardened, and hardware-optimized Linux kernel distributions for `imago`.
 
