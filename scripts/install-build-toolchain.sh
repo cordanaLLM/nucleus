@@ -12,7 +12,9 @@
 # the uutils install Ubuntu 26.04 ships races in the kernel's parallel device-tree install.
 #
 # Usage: install-build-toolchain.sh [--with-qemu]
-#   --with-qemu   also install QEMU for $ARCH (default x86_64) for scripts/boot_smoke.py
+#   --with-qemu   also install QEMU for $ARCH (default x86_64) for scripts/boot_smoke.py, and on
+#                 x86_64 install clang, llvm, zlib1g-dev and libzstd-dev to build the sched_ext
+#                 BPF scheduler (scripts/build_sched_ext_scheduler.sh)
 set -euo pipefail
 
 readonly PACKAGES=(
@@ -28,7 +30,7 @@ main() {
     --with-qemu)
       local arch="${ARCH:-x86_64}"
       case "${arch}" in
-        x86_64) packages+=(qemu-system-x86) ;;
+        x86_64) packages+=(qemu-system-x86 clang llvm zlib1g-dev libzstd-dev) ;;
         arm64) packages+=(qemu-system-arm) ;;
         riscv64) packages+=(qemu-system-riscv opensbi) ;;
         *)

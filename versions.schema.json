@@ -175,6 +175,27 @@
         }
       }
     },
+    "schedulers": {
+      "description": "sched_ext schedulers from the kernel tree's tools/sched_ext that the x86_64 boot smoke loads, each bound to the streams whose tree builds it against its own kernel.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": {
+          "type": "object",
+          "required": ["description", "streams"],
+          "additionalProperties": false,
+          "properties": {
+            "description": { "type": "string", "minLength": 1 },
+            "streams": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+            }
+          }
+        }
+      }
+    },
     "modules": {
       "type": "object",
       "additionalProperties": false,

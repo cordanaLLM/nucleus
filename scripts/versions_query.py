@@ -16,6 +16,11 @@ so every value they place on a command line has been checked against its shape f
                                         supported kernel version range
     versions_query.py nvidia-open       the NVIDIA Open GPU kernel module source, pins, and
                                         supported streams
+    versions_query.py series-streams <series>
+                                        the streams a patch series is bound to, one per line
+    versions_query.py scheduler-streams <scheduler>
+                                        the streams whose x86_64 boot loads a sched_ext
+                                        scheduler, one per line
 
 A value outside its shape, an unknown stream, an unknown architecture or an unknown collection
 is refused with exit status 2 and nothing on standard output. versions.schema.json states the
@@ -244,16 +249,21 @@ def list_names(versions: Mapping[str, object], collection: str) -> list[str]:
     return list(items.keys())
 
 
-def series_streams(versions: Mapping[str, object], series: str) -> list[str]:
-    """The streams a patch series under 'patches' names, in order."""
-    patches = versions.get("patches")
-    entry = patches.get(series) if isinstance(patches, dict) else None
+def series_streams(
+    versions: Mapping[str, object], series: str, collection: str = "patches"
+) -> list[str]:
+    """The streams an entry under 'patches' (or 'schedulers') names, in order."""
+    entries = versions.get(collection)
+    entry = entries.get(series) if isinstance(entries, dict) else None
     if not isinstance(entry, dict):
-        raise QueryError(f"patches.{series}: missing or not an object in versions.json")
+        raise QueryError(f"{collection}.{series}: missing or not an object in versions.json")
     streams = entry.get("streams")
     if not isinstance(streams, list) or not all(isinstance(name, str) for name in streams):
-        raise QueryError(f"patches.{series}.streams: missing or not a list of names")
+        raise QueryError(f"{collection}.{series}.streams: missing or not a list of names")
     return list(streams)
+
+
+_NAMED = ("source", "arch", "list", "series-streams", "scheduler-streams")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -261,7 +271,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--versions", type=Path, default=Path("versions.json"))
     parser.add_argument(
         "query",
-        choices=("source", "arch", "list", "openzfs", "nvidia-open", "series-streams"),
+        choices=(
+            "source",
+            "arch",
+            "list",
+            "openzfs",
+            "nvidia-open",
+            "series-streams",
+            "scheduler-streams",
+        ),
     )
     parser.add_argument(
         "name",
@@ -269,7 +287,7 @@ def _parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "the stream (source), architecture (arch), collection (list), "
-            "or patch series (series-streams)"
+            "patch series (series-streams), or scheduler (scheduler-streams)"
         ),
     )
     return parser
@@ -278,7 +296,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.query in ("source", "arch", "list", "series-streams") and not args.name:
+        if args.query in _NAMED and not args.name:
             raise QueryError(f"query {args.query!r} requires a name argument")
         versions = json.loads(args.versions.read_text(encoding="utf-8"))
         if not isinstance(versions, dict):
@@ -300,6 +318,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("\n".join(names))
         elif args.query == "series-streams":
             print("\n".join(series_streams(versions, args.name)))
+        elif args.query == "scheduler-streams":
+            print("\n".join(series_streams(versions, args.name, "schedulers")))
     except (OSError, ValueError) as exc:
         print(f"versions_query: {exc}", file=sys.stderr)
         return 2
