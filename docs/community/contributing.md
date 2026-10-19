@@ -118,6 +118,12 @@ repository ruleset (`.github/rulesets/main.json`, applied to `main`) requires, a
 the `required-checks` aggregate; see
 [Repository Governance](../repository-governance.md#4-branch-ruleset).
 
+The gate also runs on every push to `main`. There it looks up the merged pull request whose merge
+commit the push is (`GET /repos/{owner}/{repo}/commits/{sha}/pulls`) and runs the same three
+checks on that pull request, so the head of `main` carries the check the ruleset requires. A
+commit that no merged pull request landed fails it. `tests/test_workflows.py` covers the lookup
+with a stubbed `gh`.
+
 **No skip markers.** The gate also refuses a title or body that contains a marker GitHub
 honours to skip workflows: the bracketed forms `skip ci`, `ci skip`, `no ci`, `skip actions`
 and `actions skip`, in any letter case, and a `skip-checks: true` trailer. A squash merge
