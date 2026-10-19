@@ -117,6 +117,19 @@ jobs:
             exit 0
           fi
 
+          # 0c. Dependency update waiver.
+          # Renovate opens its update pull requests from a template: no milestone, no
+          # issue it fixes, and only the "dependencies" label. Waive the three gates only
+          # when the author is the Renovate app's bot account AND the branch is one
+          # Renovate owns. GitHub reserves the "[bot]" suffix for apps, so no person can
+          # take that login; the branch prefix alone is not enough, since anyone with
+          # push access can name a branch renovate/*.
+          if [[ "${PR_AUTHOR}" == "renovate[bot]" && "${PR_HEAD_REF}" == renovate/* ]]; then
+            echo "==> Dependency update pull request: ${PR_AUTHOR} on ${PR_HEAD_REF}."
+            echo "==> Metadata gates waived. Code gates (ci, codeql, security-scans) still apply."
+            exit 0
+          fi
+
           # 1. Milestone Check (with live query fallback if event payload lagged)
           if [[ -z "${PR_MILESTONE}" || "${PR_MILESTONE}" == "null" ]]; then
             PR_MILESTONE="$(gh pr view "${PR_NUMBER}" --json milestone --jq .milestone.title)"

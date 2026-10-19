@@ -131,7 +131,7 @@ turns the title and body into the commit message on `main`, and a marker there s
 workflow for that commit, which is how #34's merge landed unverified (#39). To discuss a
 marker, name it without its brackets. This check applies to release pull requests too.
 
-**One waiver exists.** A release pull request is authored by `github-actions[bot]` from a
+**Two waivers exist.** A release pull request is authored by `github-actions[bot]` from a
 generated changelog on a `release-please--branches--*` branch. It cannot satisfy any of the
 three — release-please has no API to assign a milestone, a changelog references no single
 issue, and it applies only the `autorelease: pending` label — so the metadata gates are
@@ -141,6 +141,14 @@ code gates (`ci`, `codeql`, `security-scans`) are never waived. `tests/test_work
 the gate's own script on release-please's pull request, which passes and says the waiver applied,
 and refuses a human author on that branch with the label, the bot on another branch, a branch
 that only contains the prefix, and an author that is not the bot account.
+
+A dependency update pull request is authored by `renovate[bot]` from Renovate's template on a
+`renovate/*` branch, with no milestone, no issue it fixes, and only the `dependencies` label;
+the same three gates are waived for it when both the author and the branch prefix match.
+GitHub reserves the `[bot]` suffix for apps, so no person can take that login, and a branch
+named `renovate/*` by anyone else is not waived. The tests pass Renovate's pull request and
+refuse a human, the login without `[bot]` and another bot on a Renovate branch, the bot on
+another branch, an unanchored prefix, and a skip marker in a Renovate title.
 
 **Keeping a branch up to date.** `main` requires signed commits and an up-to-date branch. Do not
 use GitHub's rebase-mode Update branch button: it rewrites the commits without a signature and
