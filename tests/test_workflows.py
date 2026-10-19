@@ -1466,6 +1466,26 @@ def test_dependency_waiver_does_not_exempt_a_skip_marker():
     assert "skip marker" in result.stdout + result.stderr
 
 
+def test_container_jobs_install_envsubst_before_cosign_installer():
+    """sigstore/cosign-installer v4 runs envsubst on its install-dir input; the bare
+    ubuntu:26.04 image has none (exit 127 on #233), so a container job installs
+    gettext-base in a step before the installer."""
+    checked = 0
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for name, job in parsed.get("jobs", {}).items():
+            steps = job.get("steps", [])
+            uses = [
+                i for i, s in enumerate(steps) if "sigstore/cosign-installer" in s.get("uses", "")
+            ]
+            if not uses or "container" not in job:
+                continue
+            checked += 1
+            before = " ".join(s.get("run", "") for s in steps[: uses[0]])
+            assert re.search(r"\bgettext-base\b", before), f"{path.name}:{name}"
+    assert checked >= 2
+
+
 def test_every_pull_request_job_stops_on_a_draft():
     """A draft runs no gate (HISS-18): each job a pull request starts begins with the draft step,
     and the trigger listens for ready_for_review so the gate runs once the draft is marked ready."""
