@@ -138,7 +138,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential libssl-dev libelf-dev python3 ca-certificates \
-            curl kmod git
+            curl kmod git gettext-base
 
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
