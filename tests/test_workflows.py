@@ -1158,6 +1158,150 @@ def test_release_waiver_does_not_exempt_a_skip_marker():
     assert "skip marker" in result.stdout + result.stderr
 
 
+_LANDED_SHA = "751868804a1b2c3d4e5f60718293a4b5c6d7e8f9"
+
+
+def _landed_pull(**overrides) -> dict:
+    """A merged pull request as `GET /repos/{repo}/commits/{sha}/pulls` returns it."""
+    pull = {
+        "number": 228,
+        "title": "feat(boot): load scx_simple under QEMU",
+        "body": "Closes #215\n\nSecond paragraph.",
+        "milestone": {"title": "0.5.0"},
+        "labels": [{"name": "kind/feature"}, {"name": "area/ci-cd"}],
+        "user": {"login": "lusoris"},
+        "head": {"ref": "feat/boot-smoke-scx-simple"},
+        "base": {"ref": "main"},
+        "merged_at": "2026-10-19T00:55:00Z",
+        "merge_commit_sha": _LANDED_SHA,
+    }
+    pull.update(overrides)
+    return pull
+
+
+def _resolve_landed_pull(tmp_path: Path, pulls: list) -> tuple[subprocess.CompletedProcess, dict]:
+    """Run the push-to-main resolution step with `gh` stubbed to return `pulls`; parse its outputs."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "pr-project-gate.yml").read_text(encoding="utf-8"))
+    step = next(s for s in parsed["jobs"]["validate-metadata"]["steps"] if s.get("id") == "merged")
+    fixture = tmp_path / "pulls.json"
+    fixture.write_text(json.dumps(pulls), encoding="utf-8")
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    stub = stub_dir / "gh"
+    stub.write_text(f"#!/bin/sh\ncat '{fixture}'\n", encoding="utf-8")
+    stub.chmod(0o755)
+    output = tmp_path / "github_output"
+    output.write_text("", encoding="utf-8")
+    env = {
+        "PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}",
+        "REPO": "owner/nucleus",
+        "SHA": _LANDED_SHA,
+        "GITHUB_OUTPUT": str(output),
+    }
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-c", step["run"]],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    values: dict[str, str] = {}
+    lines = output.read_text(encoding="utf-8").splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if "<<" in line and "=" not in line.split("<<", 1)[0]:
+            key, delim = line.split("<<", 1)
+            end = lines.index(delim, index + 1)
+            values[key] = "\n".join(lines[index + 1 : end])
+            index = end + 1
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+        index += 1
+    return result, values
+
+
+def test_metadata_gate_runs_on_a_push_to_main():
+    """The ruleset requires the check, so main's head must carry it, not only pull requests."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "pr-project-gate.yml").read_text(encoding="utf-8"))
+    on = parsed.get("on", parsed.get(True, {}))
+    assert on["push"] == {"branches": ["main"]}
+    steps = parsed["jobs"]["validate-metadata"]["steps"]
+    resolve = next(s for s in steps if s.get("id") == "merged")
+    assert resolve["if"] == "github.event_name == 'push'"
+    verify = next(
+        s for s in steps if s.get("name") == "Verify PR Milestone, Issue Reference and Labels"
+    )
+    assert steps.index(resolve) < steps.index(verify)
+    for key in (
+        "PR_NUMBER",
+        "PR_TITLE",
+        "PR_BODY",
+        "PR_MILESTONE",
+        "PR_LABELS",
+        "PR_AUTHOR",
+        "PR_HEAD_REF",
+    ):
+        assert "steps.merged.outputs." in verify["env"][key], key
+
+
+def test_push_gate_checks_the_pull_request_that_landed_the_commit(tmp_path):
+    """The landed pull request's metadata feeds the same checks a pull request event runs."""
+    result, values = _resolve_landed_pull(tmp_path, [_landed_pull()])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert values["number"] == "228"
+    assert values["body"] == "Closes #215\n\nSecond paragraph."
+    assert json.loads(values["labels"]) == ["kind/feature", "area/ci-cd"]
+    gate = _run_metadata_gate(
+        tmp_path,
+        PR_NUMBER=values["number"],
+        PR_TITLE=values["title"],
+        PR_BODY=values["body"],
+        PR_MILESTONE=values["milestone"],
+        PR_LABELS=values["labels"],
+        PR_AUTHOR=values["author"],
+        PR_HEAD_REF=values["head_ref"],
+    )
+    assert gate.returncode == 0, gate.stdout + gate.stderr
+
+
+def test_push_gate_refuses_a_landed_pull_request_without_metadata(tmp_path):
+    """A landed pull request without an issue reference fails on main as it would have on the pull request."""
+    result, values = _resolve_landed_pull(tmp_path, [_landed_pull(body="No reference here.")])
+    assert result.returncode == 0, result.stdout + result.stderr
+    gate = _run_metadata_gate(
+        tmp_path,
+        PR_NUMBER=values["number"],
+        PR_TITLE=values["title"],
+        PR_BODY=values["body"],
+        PR_MILESTONE=values["milestone"],
+        PR_LABELS=values["labels"],
+        PR_AUTHOR=values["author"],
+        PR_HEAD_REF=values["head_ref"],
+    )
+    assert gate.returncode == 1
+    assert "must reference a tracked Issue" in gate.stdout + gate.stderr
+
+
+@pytest.mark.parametrize(
+    "pulls",
+    [
+        [],
+        [_landed_pull(merged_at=None)],
+        [_landed_pull(merge_commit_sha="0" * 40)],
+        [_landed_pull(base={"ref": "feat/other"})],
+        [_landed_pull(), _landed_pull(number=229)],
+    ],
+    ids=["none", "unmerged", "other-merge-commit", "other-base", "ambiguous"],
+)
+def test_push_gate_refuses_a_commit_no_merged_pull_request_landed(tmp_path, pulls):
+    """A direct push, or a commit that only passed through a pull request, has no metadata to check."""
+    result, _ = _resolve_landed_pull(tmp_path, pulls)
+    assert result.returncode == 1
+    assert "No merged pull request landed" in result.stdout + result.stderr
+
+
 def test_package_lifecycle_workflow_contract():
     """Verify package-lifecycle.yml structure, triggers, permissions, cosign identity, and container execution."""
     workflow_path = WORKFLOWS_DIR / "package-lifecycle.yml"
@@ -1272,6 +1416,74 @@ def test_release_waiver_needs_the_bot_and_its_branch(tmp_path, override):
     assert result.returncode == 1, result.stdout
     assert "waived" not in result.stdout
     assert "missing an assigned milestone" in result.stdout + result.stderr
+
+
+RENOVATE_PR = {
+    "PR_AUTHOR": "renovate[bot]",
+    "PR_HEAD_REF": "renovate/github-actions",
+    "PR_TITLE": "chore(deps): update github-actions",
+    "PR_BODY": "This PR contains the following updates: no issue reference.",
+    "PR_MILESTONE": "",
+    "PR_LABELS": '["dependencies"]',
+}
+
+
+def test_dependency_waiver_passes_the_renovate_pull_request(tmp_path):
+    """Positive: Renovate's own update pull request (#229) merges, and the log says why."""
+    result = _run_metadata_gate(tmp_path, **RENOVATE_PR)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Metadata gates waived" in result.stdout
+    assert "renovate[bot] on renovate/github-actions" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param({"PR_AUTHOR": "lusoris"}, id="human-on-renovate-branch"),
+        pytest.param({"PR_AUTHOR": "renovate"}, id="not-the-bot-account"),
+        pytest.param({"PR_AUTHOR": "github-actions[bot]"}, id="other-bot-on-renovate-branch"),
+        pytest.param({"PR_HEAD_REF": "fix/example"}, id="bot-off-renovate-branch"),
+        pytest.param({"PR_HEAD_REF": "x-renovate/github-actions"}, id="prefix-not-anchored"),
+        pytest.param({"PR_HEAD_REF": "renovate"}, id="prefix-without-slash"),
+    ],
+)
+def test_dependency_waiver_needs_the_bot_and_its_branch(tmp_path, override):
+    """Negative and boundary: an impostor author, or the bot off its branch, is not waived."""
+    stub = tmp_path / "gh"
+    stub.write_text("#!/bin/sh\necho null\n", encoding="utf-8")
+    stub.chmod(0o755)
+    path = f"{tmp_path}{os.pathsep}{os.environ['PATH']}"
+    result = _run_metadata_gate(None, **{**RENOVATE_PR, **override, "PATH": path})
+    assert result.returncode == 1, result.stdout
+    assert "waived" not in result.stdout
+    assert "missing an assigned milestone" in result.stdout + result.stderr
+
+
+def test_dependency_waiver_does_not_exempt_a_skip_marker():
+    """A Renovate pull request with a skip marker is refused before the waiver."""
+    result = _run_metadata_gate(**{**RENOVATE_PR, "PR_TITLE": "chore(deps): bump [skip ci]"})
+    assert result.returncode == 1, result.stdout
+    assert "skip marker" in result.stdout + result.stderr
+
+
+def test_container_jobs_install_envsubst_before_cosign_installer():
+    """sigstore/cosign-installer v4 runs envsubst on its install-dir input; the bare
+    ubuntu:26.04 image has none (exit 127 on #233), so a container job installs
+    gettext-base in a step before the installer."""
+    checked = 0
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for name, job in parsed.get("jobs", {}).items():
+            steps = job.get("steps", [])
+            uses = [
+                i for i, s in enumerate(steps) if "sigstore/cosign-installer" in s.get("uses", "")
+            ]
+            if not uses or "container" not in job:
+                continue
+            checked += 1
+            before = " ".join(s.get("run", "") for s in steps[: uses[0]])
+            assert re.search(r"\bgettext-base\b", before), f"{path.name}:{name}"
+    assert checked >= 2
 
 
 def test_every_pull_request_job_stops_on_a_draft():

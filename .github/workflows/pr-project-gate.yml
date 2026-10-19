@@ -3,6 +3,11 @@ name: pr-project-gate
 on:
   pull_request:
     types: [opened, reopened, edited, labeled, unlabeled, synchronize, milestoned, ready_for_review]
+  # The ruleset requires this check, and the default branch's head must carry it too: on a push
+  # to main the gate checks the pull request that landed the commit, and refuses a commit that
+  # no merged pull request landed.
+  push:
+    branches: [main]
 
 # A newer push to the same pull request supersedes this run. Every other event gets a group
 # of its own (run_id), so a run for main, a schedule or a dispatch is never cancelled.
@@ -38,16 +43,51 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Resolve the pull request that landed the pushed commit
+        id: merged
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          pulls="$(mktemp)"
+          if ! gh api "repos/${REPO}/commits/${SHA}/pulls" > "${pulls}"; then
+            echo "::error::Could not list the pull requests of ${SHA}."
+            exit 1
+          fi
+          landed="$(jq -c --arg sha "${SHA}" '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha)]' "${pulls}")"
+          if [[ "$(jq 'length' <<< "${landed}")" != "1" ]]; then
+            echo "::error::No merged pull request landed ${SHA} on main; commits reach main only through a pull request."
+            exit 1
+          fi
+          pr="$(jq -c '.[0]' <<< "${landed}")"
+          delim="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            echo "number=$(jq -r '.number' <<< "${pr}")"
+            echo "milestone=$(jq -r '.milestone.title // ""' <<< "${pr}")"
+            echo "labels=$(jq -c '[.labels[].name]' <<< "${pr}")"
+            echo "author=$(jq -r '.user.login' <<< "${pr}")"
+            echo "head_ref=$(jq -r '.head.ref' <<< "${pr}")"
+            echo "title<<${delim}"
+            jq -r '.title' <<< "${pr}"
+            echo "${delim}"
+            echo "body<<${delim}"
+            jq -r '.body // ""' <<< "${pr}"
+            echo "${delim}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Verify PR Milestone, Issue Reference and Labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_MILESTONE: ${{ github.event.pull_request.milestone.title }}
-          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number || steps.merged.outputs.number }}
+          PR_TITLE: ${{ github.event.pull_request.title || steps.merged.outputs.title }}
+          PR_BODY: ${{ github.event.pull_request.body || steps.merged.outputs.body }}
+          PR_MILESTONE: ${{ github.event.pull_request.milestone.title || steps.merged.outputs.milestone }}
+          PR_LABELS: ${{ github.event_name == 'push' && steps.merged.outputs.labels || toJson(github.event.pull_request.labels.*.name) }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || steps.merged.outputs.author }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref || steps.merged.outputs.head_ref }}
         run: |
           set -euo pipefail
           echo "==> Validating PR metadata against governance hard gates..."
@@ -73,6 +113,19 @@ jobs:
           # any contributor can apply a label to their own pull request.
           if [[ "${PR_AUTHOR}" == "github-actions[bot]" && "${PR_HEAD_REF}" == release-please--branches--* ]]; then
             echo "==> Release automation pull request: ${PR_AUTHOR} on ${PR_HEAD_REF}."
+            echo "==> Metadata gates waived. Code gates (ci, codeql, security-scans) still apply."
+            exit 0
+          fi
+
+          # 0c. Dependency update waiver.
+          # Renovate opens its update pull requests from a template: no milestone, no
+          # issue it fixes, and only the "dependencies" label. Waive the three gates only
+          # when the author is the Renovate app's bot account AND the branch is one
+          # Renovate owns. GitHub reserves the "[bot]" suffix for apps, so no person can
+          # take that login; the branch prefix alone is not enough, since anyone with
+          # push access can name a branch renovate/*.
+          if [[ "${PR_AUTHOR}" == "renovate[bot]" && "${PR_HEAD_REF}" == renovate/* ]]; then
+            echo "==> Dependency update pull request: ${PR_AUTHOR} on ${PR_HEAD_REF}."
             echo "==> Metadata gates waived. Code gates (ci, codeql, security-scans) still apply."
             exit 0
           fi

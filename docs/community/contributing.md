@@ -118,6 +118,12 @@ repository ruleset (`.github/rulesets/main.json`, applied to `main`) requires, a
 the `required-checks` aggregate; see
 [Repository Governance](../repository-governance.md#4-branch-ruleset).
 
+The gate also runs on every push to `main`. There it looks up the merged pull request whose merge
+commit the push is (`GET /repos/{owner}/{repo}/commits/{sha}/pulls`) and runs the same three
+checks on that pull request, so the head of `main` carries the check the ruleset requires. A
+commit that no merged pull request landed fails it. `tests/test_workflows.py` covers the lookup
+with a stubbed `gh`.
+
 **No skip markers.** The gate also refuses a title or body that contains a marker GitHub
 honours to skip workflows: the bracketed forms `skip ci`, `ci skip`, `no ci`, `skip actions`
 and `actions skip`, in any letter case, and a `skip-checks: true` trailer. A squash merge
@@ -125,7 +131,7 @@ turns the title and body into the commit message on `main`, and a marker there s
 workflow for that commit, which is how #34's merge landed unverified (#39). To discuss a
 marker, name it without its brackets. This check applies to release pull requests too.
 
-**One waiver exists.** A release pull request is authored by `github-actions[bot]` from a
+**Two waivers exist.** A release pull request is authored by `github-actions[bot]` from a
 generated changelog on a `release-please--branches--*` branch. It cannot satisfy any of the
 three — release-please has no API to assign a milestone, a changelog references no single
 issue, and it applies only the `autorelease: pending` label — so the metadata gates are
@@ -135,6 +141,14 @@ code gates (`ci`, `codeql`, `security-scans`) are never waived. `tests/test_work
 the gate's own script on release-please's pull request, which passes and says the waiver applied,
 and refuses a human author on that branch with the label, the bot on another branch, a branch
 that only contains the prefix, and an author that is not the bot account.
+
+A dependency update pull request is authored by `renovate[bot]` from Renovate's template on a
+`renovate/*` branch, with no milestone, no issue it fixes, and only the `dependencies` label;
+the same three gates are waived for it when both the author and the branch prefix match.
+GitHub reserves the `[bot]` suffix for apps, so no person can take that login, and a branch
+named `renovate/*` by anyone else is not waived. The tests pass Renovate's pull request and
+refuse a human, the login without `[bot]` and another bot on a Renovate branch, the bot on
+another branch, an unanchored prefix, and a skip marker in a Renovate title.
 
 **Keeping a branch up to date.** `main` requires signed commits and an up-to-date branch. Do not
 use GitHub's rebase-mode Update branch button: it rewrites the commits without a signature and
