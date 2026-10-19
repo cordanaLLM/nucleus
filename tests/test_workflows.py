@@ -1418,6 +1418,54 @@ def test_release_waiver_needs_the_bot_and_its_branch(tmp_path, override):
     assert "missing an assigned milestone" in result.stdout + result.stderr
 
 
+RENOVATE_PR = {
+    "PR_AUTHOR": "renovate[bot]",
+    "PR_HEAD_REF": "renovate/github-actions",
+    "PR_TITLE": "chore(deps): update github-actions",
+    "PR_BODY": "This PR contains the following updates: no issue reference.",
+    "PR_MILESTONE": "",
+    "PR_LABELS": '["dependencies"]',
+}
+
+
+def test_dependency_waiver_passes_the_renovate_pull_request(tmp_path):
+    """Positive: Renovate's own update pull request (#229) merges, and the log says why."""
+    result = _run_metadata_gate(tmp_path, **RENOVATE_PR)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Metadata gates waived" in result.stdout
+    assert "renovate[bot] on renovate/github-actions" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param({"PR_AUTHOR": "lusoris"}, id="human-on-renovate-branch"),
+        pytest.param({"PR_AUTHOR": "renovate"}, id="not-the-bot-account"),
+        pytest.param({"PR_AUTHOR": "github-actions[bot]"}, id="other-bot-on-renovate-branch"),
+        pytest.param({"PR_HEAD_REF": "fix/example"}, id="bot-off-renovate-branch"),
+        pytest.param({"PR_HEAD_REF": "x-renovate/github-actions"}, id="prefix-not-anchored"),
+        pytest.param({"PR_HEAD_REF": "renovate"}, id="prefix-without-slash"),
+    ],
+)
+def test_dependency_waiver_needs_the_bot_and_its_branch(tmp_path, override):
+    """Negative and boundary: an impostor author, or the bot off its branch, is not waived."""
+    stub = tmp_path / "gh"
+    stub.write_text("#!/bin/sh\necho null\n", encoding="utf-8")
+    stub.chmod(0o755)
+    path = f"{tmp_path}{os.pathsep}{os.environ['PATH']}"
+    result = _run_metadata_gate(None, **{**RENOVATE_PR, **override, "PATH": path})
+    assert result.returncode == 1, result.stdout
+    assert "waived" not in result.stdout
+    assert "missing an assigned milestone" in result.stdout + result.stderr
+
+
+def test_dependency_waiver_does_not_exempt_a_skip_marker():
+    """A Renovate pull request with a skip marker is refused before the waiver."""
+    result = _run_metadata_gate(**{**RENOVATE_PR, "PR_TITLE": "chore(deps): bump [skip ci]"})
+    assert result.returncode == 1, result.stdout
+    assert "skip marker" in result.stdout + result.stderr
+
+
 def test_every_pull_request_job_stops_on_a_draft():
     """A draft runs no gate (HISS-18): each job a pull request starts begins with the draft step,
     and the trigger listens for ready_for_review so the gate runs once the draft is marked ready."""
