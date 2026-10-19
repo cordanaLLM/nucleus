@@ -100,7 +100,7 @@ requires eleven checks:
 | `Release UKI Dry Run` | `ci.yml` | every pull request to `main` |
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `REUSE lint` | `licence.yml` | every pull request to `main` |
-| `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`) |
+| `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`), and every push to `main`, where it checks the merged pull request whose merge commit the push is and fails when none is |
 | `required-checks` | `required-aggregator.yml` | every pull request |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
 | `Security Scan Gate` | `security-scans.yml` | every pull request; fails unless every scan job succeeded or the change detector excluded it |
