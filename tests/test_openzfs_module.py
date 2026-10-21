@@ -92,11 +92,11 @@ def test_openzfs_workflow_shape():
     # Permissions
     assert parsed.get("permissions") == {"contents": "read"}
 
-    # Triggers
+    # Triggers: pull_request runs live in build-matrix.yml against same-SHA headers
     on_triggers = parsed.get("on", parsed.get(True, {}))
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
-    assert "pull_request" in on_triggers
+    assert "pull_request" not in on_triggers
     assert "push" in on_triggers
 
     # Filtered paths
@@ -107,9 +107,11 @@ def test_openzfs_workflow_shape():
         "scripts/check-openzfs-module.sh",
         ".github/workflows/openzfs-module.yml",
     ]
-    assert sorted(on_triggers["pull_request"]["paths"]) == sorted(expected_paths)
     assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
     assert on_triggers["push"]["branches"] == ["main"]
+
+    plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
+    assert "python3 scripts/module_stream_matrix.py --module=openzfs" in plan_step["run"]
 
     # Container image digest equals release-build.yml
     release_build_workflow = REPO_ROOT / ".github" / "workflows" / "release-build.yml"
@@ -134,8 +136,11 @@ def test_openzfs_workflow_shape():
         assert f"stream: {stream}" not in build_job_text
         assert f"- {stream}" not in build_job_text
 
-    # Cosign identity and issuer
-    steps = build_job["steps"]
+
+def test_openzfs_workflow_verifies_the_release_with_cosign():
+    """The push and schedule path proves the published release's SHA256SUMS with cosign."""
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["build"]["steps"]
     build_mod_step = next(
         s for s in steps if s.get("name") == "Download Release Assets and Build Module"
     )
@@ -295,3 +300,149 @@ def test_openzfs_workflow_names_no_repository_and_bounds_every_job():
         assert isinstance(job.get("timeout-minutes"), int), f"job {name} has no timeout-minutes"
     assert "urlopen(req, timeout=" in text
     assert "urlopen(down_req, timeout=" in text
+
+
+def test_build_matrix_runs_openzfs_module_against_same_sha_headers():
+    """Ensure build-matrix.yml runs OpenZFS module check against the build job's headers artifact."""
+    bm_path = REPO_ROOT / ".github" / "workflows" / "build-matrix.yml"
+    bm = yaml.safe_load(bm_path.read_text(encoding="utf-8"))
+    plan_job = bm["jobs"]["plan-modules"]
+    assert plan_job["permissions"] == {"contents": "read"}
+    assert plan_job["steps"][0]["name"] == "Stop on a draft pull request"
+    zfs_plan = next(s for s in plan_job["steps"] if s.get("id") == "openzfs")
+    assert "python3 scripts/module_stream_matrix.py --module=openzfs" in zfs_plan["run"]
+
+    job = bm["jobs"]["openzfs-module"]
+    assert job["name"] == "Build OpenZFS Module (${{ matrix.stream }})"
+    assert sorted(job["needs"]) == ["build", "plan-modules"]
+    assert job["permissions"] == {"contents": "read"}
+    assert job["container"]["image"] == bm["jobs"]["build"]["container"]["image"]
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan-modules.outputs.openzfs) }}"
+    assert job["env"]["DRY_RUN"] == "${{ github.event.inputs.dry_run == 'true' }}"
+    assert job["steps"][0]["name"] == "Stop on a draft pull request"
+
+    steps = {s.get("name", ""): s for s in job["steps"]}
+    for step_name in (
+        "Install Toolchain",
+        "Download Kernel Build Artifact",
+        "Build OpenZFS Module",
+    ):
+        assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
+    dl = steps["Download Kernel Build Artifact"]
+    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
+    build_run = steps["Build OpenZFS Module"]["run"]
+    assert "api.github.com" not in build_run
+    assert "./scripts/check-openzfs-module.sh" in build_run
+    assert '--headers-deb="${HEADERS_DEB}"' in build_run
+    assert '--work="zfs-work-${STREAM}"' in build_run
+    assert "--jobs=4" in build_run
+
+
+def test_module_stream_matrix_positive(tmp_path: Path):
+    """Positive: module_stream_matrix.py selects in-range streams and writes summary + output."""
+    script = REPO_ROOT / "scripts" / "module_stream_matrix.py"
+    gh_out = tmp_path / "github_output"
+    summary = tmp_path / "step_summary.md"
+    res = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--module=openzfs",
+            f"--versions={REPO_ROOT / 'versions.json'}",
+            f"--github-output={gh_out}",
+            f"--step-summary={summary}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    out_text = gh_out.read_text(encoding="utf-8").strip()
+    assert out_text.startswith("matrix=")
+    matrix = json.loads(out_text.split("=", 1)[1])
+    assert matrix == {"stream": ["mainstream", "lts", "realtime"]}
+    summary_text = summary.read_text(encoding="utf-8")
+    assert "### OpenZFS" in summary_text
+    assert "#### Supported Streams (Matrix)" in summary_text
+    assert "- `mainstream`" in summary_text
+    assert "#### Out of Range Streams (Skipped)" in summary_text
+    assert "- `bleeding`" in summary_text
+
+
+def test_module_stream_matrix_negative_missing_module_refused(tmp_path: Path):
+    """Negative: missing module key is refused with non-zero exit status."""
+    script = REPO_ROOT / "scripts" / "module_stream_matrix.py"
+    res = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--module=nonexistent_module",
+            f"--versions={REPO_ROOT / 'versions.json'}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode != 0
+    assert "modules.nonexistent_module missing" in res.stderr
+
+
+def test_module_stream_matrix_boundary_min_max_and_outside(tmp_path: Path):
+    """Boundary: streams at linux_minimum and linux_maximum are included; just outside are skipped."""
+    script = REPO_ROOT / "scripts" / "module_stream_matrix.py"
+    manifest = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))
+    manifest["modules"]["openzfs"]["linux_minimum"] = "4.18"
+    manifest["modules"]["openzfs"]["linux_maximum"] = "7.2"
+    manifest["streams"] = {
+        "at_min": {"version": "4.18.0"},
+        "at_max": {"version": "7.2.99"},
+        "below_min": {"version": "4.17.19"},
+        "above_max": {"version": "7.3-rc1"},
+    }
+    manifest_file = tmp_path / "versions.json"
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+    gh_out = tmp_path / "github_output"
+    summary = tmp_path / "step_summary.md"
+
+    res = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--module=openzfs",
+            f"--versions={manifest_file}",
+            f"--github-output={gh_out}",
+            f"--step-summary={summary}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    matrix = json.loads(gh_out.read_text(encoding="utf-8").strip().split("=", 1)[1])
+    assert matrix == {"stream": ["at_min", "at_max"]}
+    summary_text = summary.read_text(encoding="utf-8")
+    assert "`below_min` (`4.17.19` is outside `[4.18, 7.2]`)" in summary_text
+    assert "`above_max` (`7.3-rc1` is outside `[4.18, 7.2]`)" in summary_text
+
+
+def test_module_stream_matrix_refuses_more_streams_than_its_bound(tmp_path: Path):
+    """Boundary: a manifest above the stream bound is refused, never truncated."""
+    script = REPO_ROOT / "scripts" / "module_stream_matrix.py"
+    streams = {f"s{i}": {"version": "7.2.10"} for i in range(33)}
+    manifest = {
+        "streams": streams,
+        "modules": {
+            "openzfs": {"version": "2.4.2", "linux_minimum": "4.18", "linux_maximum": "7.2"}
+        },
+    }
+    versions = tmp_path / "versions.json"
+    versions.write_text(json.dumps(manifest), encoding="utf-8")
+    res = subprocess.run(
+        ["python3", str(script), "--module=openzfs", f"--versions={versions}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode != 0
+    assert "more than 32" in res.stderr
