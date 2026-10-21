@@ -173,11 +173,11 @@ def test_nvidia_open_workflow_shape():
     # Permissions
     assert parsed.get("permissions") == {"contents": "read"}
 
-    # Triggers
+    # Triggers: pull_request runs live in build-matrix.yml against same-SHA headers
     on_triggers = parsed.get("on", parsed.get(True, {}))
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
-    assert "pull_request" in on_triggers
+    assert "pull_request" not in on_triggers
     assert "push" in on_triggers
 
     # Filtered paths
@@ -187,9 +187,46 @@ def test_nvidia_open_workflow_shape():
         "scripts/check-nvidia-open-module.sh",
         ".github/workflows/nvidia-open-module.yml",
     ]
-    assert sorted(on_triggers["pull_request"]["paths"]) == sorted(expected_paths)
     assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
     assert on_triggers["push"]["branches"] == ["main"]
+
+    plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
+    assert "python3 scripts/module_stream_matrix.py --module=nvidia_open" in plan_step["run"]
+
+
+def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
+    """Ensure build-matrix.yml runs NVIDIA Open module check against the build job's headers artifact."""
+    bm_path = REPO_ROOT / ".github" / "workflows" / "build-matrix.yml"
+    bm = yaml.safe_load(bm_path.read_text(encoding="utf-8"))
+    plan_job = bm["jobs"]["plan-modules"]
+    nv_plan = next(s for s in plan_job["steps"] if s.get("id") == "nvidia_open")
+    assert "python3 scripts/module_stream_matrix.py --module=nvidia_open" in nv_plan["run"]
+
+    job = bm["jobs"]["nvidia-open-module"]
+    assert job["name"] == "Build NVIDIA Open Module (${{ matrix.stream }})"
+    assert sorted(job["needs"]) == ["build", "plan-modules"]
+    assert job["permissions"] == {"contents": "read"}
+    assert job["container"]["image"] == bm["jobs"]["build"]["container"]["image"]
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan-modules.outputs.nvidia_open) }}"
+    assert job["env"]["DRY_RUN"] == "${{ github.event.inputs.dry_run == 'true' }}"
+    assert job["steps"][0]["name"] == "Stop on a draft pull request"
+
+    steps = {s.get("name", ""): s for s in job["steps"]}
+    for step_name in (
+        "Install Toolchain",
+        "Download Kernel Build Artifact",
+        "Build NVIDIA Open Module",
+    ):
+        assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
+    dl = steps["Download Kernel Build Artifact"]
+    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
+    build_run = steps["Build NVIDIA Open Module"]["run"]
+    assert "api.github.com" not in build_run
+    assert "./scripts/check-nvidia-open-module.sh" in build_run
+    assert '--headers-deb="${HEADERS_DEB}"' in build_run
+    assert '--work="nvidia-work-${STREAM}"' in build_run
+    assert "--jobs=4" in build_run
 
 
 def test_nvidia_open_workflow_builds_in_the_release_image():

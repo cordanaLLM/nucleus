@@ -169,6 +169,7 @@ BUILD_INPUTS = {
     "keys/**",
     "patches/**",
     "versions.json",
+    "versions.schema.json",
     "docker/Dockerfile.builder",
 }
 
@@ -207,7 +208,13 @@ def test_build_matrix_compiles_every_pull_request_that_touches_the_build_path():
     on = _on("build-matrix.yml")
     paths = set(on["pull_request"]["paths"])
     scripts = _build_path_scripts()
-    assert {"scripts/build_kernel.sh", "scripts/verify_kernel_requirement.py"} <= scripts
+    assert {
+        "scripts/build_kernel.sh",
+        "scripts/verify_kernel_requirement.py",
+        "scripts/module_stream_matrix.py",
+        "scripts/check-openzfs-module.sh",
+        "scripts/check-nvidia-open-module.sh",
+    } <= scripts
     expected = scripts | BUILD_INPUTS | {".github/workflows/build-matrix.yml"}
     assert paths == expected, (
         f"missing: {sorted(expected - paths)}, not on the build path: {sorted(paths - expected)}"
@@ -1682,3 +1689,86 @@ def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
     assert judge_if < judge["run"].index("--require-scheduler=simple")
     assert "--require-congestion=planted-cc" in judge["run"]
     assert "--require-scheduler=planted-sched" in judge["run"]
+
+
+MODULE_JOBS = [
+    (
+        "openzfs-module",
+        "Build OpenZFS Module (${{ matrix.stream }})",
+        "openzfs",
+        "check-openzfs-module.sh",
+    ),
+    (
+        "nvidia-open-module",
+        "Build NVIDIA Open Module (${{ matrix.stream }})",
+        "nvidia_open",
+        "check-nvidia-open-module.sh",
+    ),
+]
+
+
+def _build_matrix_jobs():
+    return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"]
+
+
+@pytest.mark.parametrize(("job_id", "expected_name", "mod_key", "script_name"), MODULE_JOBS)
+def test_build_matrix_builds_modules_from_same_sha_headers(
+    job_id, expected_name, mod_key, script_name
+):
+    """PR module checks run in build-matrix.yml against the x86_64 headers artifact from build."""
+    jobs = _build_matrix_jobs()
+    assert "plan-modules" in jobs
+    job = jobs[job_id]
+    assert job["name"] == expected_name
+    assert sorted(job["needs"]) == ["build", "plan-modules"]
+    assert job["permissions"] == {"contents": "read"}
+    assert job["steps"][0]["name"] == DRAFT_STEP
+    assert job["strategy"]["matrix"] == f"${{{{ fromJSON(needs.plan-modules.outputs.{mod_key}) }}}}"
+    assert job["env"]["DRY_RUN"] == "${{ github.event.inputs.dry_run == 'true' }}"
+    build_step = job["steps"][-1]
+    assert build_step["if"] == "env.DRY_RUN != 'true'"
+    assert f"./scripts/{script_name}" in build_step["run"]
+
+
+def _run_module_step(run: str, cwd: Path) -> subprocess.CompletedProcess:
+    env = {"PATH": os.environ["PATH"], "STREAM": "mainstream"}
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", run],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(("job_id", "expected_name", "mod_key", "script_name"), MODULE_JOBS)
+def test_build_matrix_module_step_requires_exactly_one_headers_deb(
+    tmp_path: Path, job_id, expected_name, mod_key, script_name
+):
+    """The module step refuses 0 and 2 headers packages and runs the check on exactly 1."""
+    run = _build_matrix_jobs()[job_id]["steps"][-1]["run"]
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    stub = scripts_dir / script_name
+    stub.write_text('#!/usr/bin/env bash\necho "invoked: $*"\n', encoding="utf-8")
+    stub.chmod(0o755)
+    out_dir = tmp_path / "output" / "mainstream-x86_64"
+    out_dir.mkdir(parents=True)
+
+    res_zero = _run_module_step(run, tmp_path)
+    assert res_zero.returncode == 1
+    assert "found 0: none" in res_zero.stderr
+
+    deb1 = out_dir / "linux-headers-7.2.10-lusoris1-mainstream_7.2.10-lusoris1_amd64.deb"
+    deb1.write_text("deb1", encoding="utf-8")
+    res_one = _run_module_step(run, tmp_path)
+    assert res_one.returncode == 0, res_one.stderr
+    assert f"--headers-deb=output/mainstream-x86_64/{deb1.name}" in res_one.stdout
+
+    deb2 = out_dir / "linux-headers-7.2.11-lusoris1-mainstream_7.2.11-lusoris1_amd64.deb"
+    deb2.write_text("deb2", encoding="utf-8")
+    res_two = _run_module_step(run, tmp_path)
+    assert res_two.returncode == 1
+    assert "found 2:" in res_two.stderr
+    assert deb1.name in res_two.stderr and deb2.name in res_two.stderr
