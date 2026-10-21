@@ -709,22 +709,27 @@ Every third-party action in `.github/workflows/` is pinned to a commit SHA with 
 ### 5.6 OpenZFS Module Build (`.github/workflows/openzfs-module.yml`)
 
 imago builds OpenZFS as an out-of-tree module against the `linux-headers-<kernelrelease>` package a
-release publishes. `openzfs-module.yml` checks that this works before a consumer finds out: it runs
-weekly, on every push to `main` and on pull requests that touch `versions.json`, its schema,
-`keys/`, the build script or the workflow.
+release publishes. On pull requests that touch the build path, `build-matrix.yml` runs
+`Build OpenZFS Module (<stream>)` against the `linux-headers-*_amd64.deb` artifact produced by the
+same run's `Build Kernel (<stream> / x86_64)` job, so a stream-version bump pull request is checked
+before its GitHub Release exists. `openzfs-module.yml` runs weekly, on `workflow_dispatch` and on
+every push to `main` that touches `versions.json`, its schema, `keys/`, the build script or the
+workflow, proving the published release assets.
 
 - **What is pinned.** `modules.openzfs` in `versions.json` names the OpenZFS version, its
   tarball and detached signature, the tarball's `sha256`, the accepted signer
   (`keys/4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027.asc`, see [`keys/README.md`](https://github.com/cordanaLLM/nucleus/blob/main/keys/README.md))
   and the Linux range the release declares in its `META` file (`linux_minimum`,
   `linux_maximum`).
-- **Which streams.** The plan job builds every stream whose `major.minor` lies in that range
-  and lists the others in the step summary. A release candidate above `linux_maximum`, as
-  `bleeding` usually is, is skipped and reported, not built.
-- **What each leg proves.** It picks the stream's newest `v<version>-<stream>-lusoris<N>`
-  release and verifies its `SHA256SUMS` with cosign against the `publish-release.yml` identity
-  of that tag. It then checks the headers package's digest against that list, and runs
-  `scripts/check-openzfs-module.sh`. The script refuses a tarball whose `sha256` or `gpgv`
+- **Which streams.** `scripts/module_stream_matrix.py --module=openzfs` selects every stream
+  whose `major.minor` lies in that range and lists the others in the step summary. A release
+  candidate above `linux_maximum`, as `bleeding` usually is, is skipped and reported, not built.
+- **What each leg proves.** In `build-matrix.yml`, each leg downloads the `kernel-<stream>-x86_64`
+  artifact from the `build` job, requires a single `linux-headers-*_amd64.deb`, and runs
+  `scripts/check-openzfs-module.sh`. In `openzfs-module.yml`, each leg picks the stream's newest
+  `v<version>-<stream>-lusoris<N>` release, verifies its `SHA256SUMS` with cosign against the
+  release signer identity of that tag, checks the headers package's digest against that list, and
+  runs `scripts/check-openzfs-module.sh`. The script refuses a tarball whose `sha256` or `gpgv`
   signature does not match. It configures OpenZFS against the headers tree
   (`--with-config=kernel`), builds `module/`, and requires `module/zfs.ko` with a `vermagic` of
   the release's kernel release.
@@ -739,9 +744,9 @@ weekly, on every push to `main` and on pull requests that touch `versions.json`,
 
 ### 5.7 NVIDIA Open GPU Kernel Modules Build (`.github/workflows/nvidia-open-module.yml`)
 
-NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream images builds on the open-source kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`). `nvidia-open-module.yml` checks that the pinned release of NVIDIA open-gpu-kernel-modules compiles cleanly against the published `linux-headers-<kernelrelease>` package for streams `bleeding` and `mainstream` on x86_64: it runs weekly, on every push to `main` and on pull requests touching `versions.json`, its schema, the build script or the workflow.
+NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream images builds on the open-source kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`). On pull requests that touch the build path, `build-matrix.yml` runs `Build NVIDIA Open Module (<stream>)` against the `linux-headers-*_amd64.deb` artifact from the same run's `Build Kernel (<stream> / x86_64)` job. `nvidia-open-module.yml` checks that the pinned release of NVIDIA open-gpu-kernel-modules compiles cleanly against the published `linux-headers-<kernelrelease>` package for streams `bleeding` and `mainstream` on x86_64: it runs weekly, on `workflow_dispatch` and on every push to `main` touching `versions.json`, its schema, the build script or the workflow.
 
 - **What is pinned.** `modules.nvidia_open` in `versions.json` pins the driver version (`615.78.08`), source archive URL, `sha256` digest, and peeled git commit. NVIDIA upstream tags carry no GPG signature and no detached `.asc`, so the script proves the archive by its pinned SHA-256 digest and by the commit that `git get-tar-commit-id` reads from the archive header, which must equal the pinned commit.
-- **Which streams.** The plan job builds streams `bleeding` and `mainstream` on `x86_64`, matching `modules.nvidia_open.streams`.
-- **What each leg proves.** It selects the newest release of each stream, verifies its `SHA256SUMS` with Cosign against the release signer identity (`release-build.yml` or `publish-release.yml`), confirms the package digest, and invokes `scripts/check-nvidia-open-module.sh`. The script unpacks the headers package, runs `make modules SYSSRC=<headers-tree> SYSOUT=<headers-tree>` (the variables `kernel-open/Makefile` reads), and verifies that all four required kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`) exist and that the release in each `vermagic` equals the target kernel release.
+- **Which streams.** `scripts/module_stream_matrix.py --module=nvidia_open` selects streams `bleeding` and `mainstream` on `x86_64`, matching `modules.nvidia_open.streams`.
+- **What each leg proves.** In `build-matrix.yml`, each leg downloads the `kernel-<stream>-x86_64` artifact from the `build` job, requires a single `linux-headers-*_amd64.deb`, and invokes `scripts/check-nvidia-open-module.sh`. In `nvidia-open-module.yml`, each leg selects the newest release of each stream, verifies its `SHA256SUMS` with Cosign against the release signer identity (`release-build.yml` or `publish-release.yml`), confirms the package digest, and invokes `scripts/check-nvidia-open-module.sh`. The script unpacks the headers package, runs `make modules SYSSRC=<headers-tree> SYSOUT=<headers-tree>` (the variables `kernel-open/Makefile` reads), and verifies that all four required kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`) exist and that the release in each `vermagic` equals the target kernel release.
 - **Plan mode.** `scripts/check-nvidia-open-module.sh --headers-deb=<deb> --print-plan` prints the pinned source URL, SHA-256 digest, kernel release, and target legs without downloading anything or modifying the worktree.
