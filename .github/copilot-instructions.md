@@ -228,7 +228,7 @@ which is the second reason the production path refuses rather than fabricates.
 
 Key capabilities:
 
-- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc7), `mainstream` (7.2.10), `lts` (6.18.56), and `realtime` (7.2.10 with in-tree `PREEMPT_RT`).
+- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc7), `mainstream` (7.2.10), `lts` (6.18.58), and `realtime` (7.2.10 with in-tree `PREEMPT_RT`).
 - **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
 - **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
 - **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `imago`.

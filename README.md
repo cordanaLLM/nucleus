@@ -61,7 +61,7 @@ flowchart TD
     subgraph Streams["Kernel Release Streams"]
         Bleeding["bleeding (7.3-rc7)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
         Mainstream["mainstream (7.2.10)<br/><small>AMD ROCm / Podman 5.x</small>"]:::stream
-        LTS["lts (6.18.56)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
+        LTS["lts (6.18.58)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
         RT["realtime (7.2.10 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
     end
 
@@ -84,10 +84,10 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200 (open kernel modules checked in CI, [packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)), CXL 3.0, sched-ext, BBR | `*-nvidia-bleeding` |
 | **`mainstream`** | **Linux 7.2.10** | Podman 5.x; Intel Arc Battlemage Xe2 (`xe`) and AMD Radeon for ROCm (`amdgpu` with KFD) are built and claimed on all four streams on x86_64 (arm64 waits for a consumer requirement document); NVIDIA open kernel modules checked in CI ([packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)) | `base-*`, `docker-*`, `ai-infer-*` |
-| **`lts`** | **Linux 6.18.56** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
+| **`lts`** | **Linux 6.18.58** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
 | **`realtime`** | **Linux 7.2.10**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
 
-Intel Arc Battlemage (Xe2) on `xe` and AMD Radeon for ROCm on `amdgpu` with `HSA_AMD` are built and claimed across all four streams on x86_64; arm64 is not claimed until a consumer requirement document asks for it. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
+Intel Arc Battlemage (Xe2) on `xe` and AMD Radeon for ROCm on `amdgpu` with `HSA_AMD` are built and claimed across all four streams on x86_64; arm64 is not claimed until a consumer requirement document asks for it. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.58) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 
 ### Downstream Kernel Requirements
 

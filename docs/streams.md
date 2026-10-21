@@ -12,7 +12,7 @@
         ┌───────────────────┬────────────┴───────┬───────────────────┐
         ▼                   ▼                    ▼                   ▼
     bleeding            mainstream              lts               realtime
-  (Linux 7.3-rc7)      (Linux 7.2.10)      (Linux 6.18.56)   (Linux 7.2.10 + RT)
+  (Linux 7.3-rc7)      (Linux 7.2.10)      (Linux 6.18.58)   (Linux 7.2.10 + RT)
         │                   │                    │                   │
         ▼                   ▼                    ▼                   ▼
   Blackwell B200       Intel Xe2 Arc (xe)   Enterprise K8s      Game Servers
@@ -38,12 +38,12 @@ authority, and section 3 says how each source is proven.
 
 - **Upstream Release**: Linux 7.2.10 (Stable)
 - **Target Hardware**: Intel Arc Battlemage Xe2 on `xe` is built and claimed across all four streams on x86_64 (arm64 is not claimed until a consumer requirement document asks for it), AMD Radeon RX 7000/8000 for ROCm on `amdgpu` with the KFD compute interface (`HSA_AMD`). NVIDIA's open kernel modules are checked against headers in CI ([packaging 5.7](packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)). Section 4.1 lists the symbols and the check that refuses a build without them.
-- **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built). Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
+- **Key Features**: BBR congestion control (BBRv1 the default, BBRv3 as the `tcp_bbr3` module from the `bbr3` patch series), `mq-deadline` (the default for single-queue devices when built). Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.58) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 - **Flavors**: `base-*`, `docker-*`, `podman-*`, `ai-infer-*`.
 
 ### 2.3 Long-Term Support Stream (`lts`)
 
-- **Upstream Release**: Linux 6.18.56 (Longterm)
+- **Upstream Release**: Linux 6.18.58 (Longterm)
 - **Target Workloads**: Enterprise Kubernetes nodes, OpenZFS 2.3.x root filesystems, PostgreSQL / CNPG databases.
 - **Key Features**: Rock-solid stability, proven OpenZFS kernel module API stability, strict memory overcommit controls.
 - **Flavors**: `k8s-node-*`, `cloudnative-storage`, `cloudnative-pg`.
@@ -145,7 +145,7 @@ fragments, the scripts, `keys/` or `versions.json`, whether or not a requirement
 the stream or lists the architecture. A failed resolution leaves no `.config` behind, neither
 at the output path nor in the build directory. The kernel
 release each resolved tree reports (`make kernelrelease`) is `7.3.0-rc7` for `bleeding`,
-`7.2.10` for `mainstream` and `realtime`, and `6.18.56` for `lts`.
+`7.2.10` for `mainstream` and `realtime`, and `6.18.58` for `lts`.
 
 The build (`scripts/build_kernel.sh`, [packaging section 2](packaging.md)) adds the localversion
 `-lusoris<N>-<stream>`, so every stream's kernel names itself, and `mainstream` and `realtime`,
@@ -161,7 +161,8 @@ built from the same tree, do not share a release or a package name:
 A release candidate's package version spells `-rc7` as `~rc7`, so dpkg orders it before the
 final release, and its package files spell that `~` as `.` ([packaging section 2.2](packaging.md)).
 
-The table shows revision 3 of the current pins (tags `v7.3-rc7-bleeding-lusoris3`,
+`lts` is pinned at 6.18.58 and has no release of that version yet; its
+row shows the last release, of 6.18.56. The table shows revision 3 of these pins (tags `v7.3-rc7-bleeding-lusoris3`,
 `v7.2.10-mainstream-lusoris3`, `v6.18.56-lts-lusoris3`, `v7.2.10-realtime-lusoris3`), which adds
 user namespaces, PSI, the iSCSI TCP initiator, XFS, ZRAM, dm-thin, NBD and, except on `realtime`,
 the legacy iptables raw table to the Kubernetes node configuration (section 4.1). Revision 2
