@@ -25,12 +25,16 @@ on:
       - "scripts/package-uki.sh"
       - "scripts/check_uki.py"
       - "scripts/publish_release.sh"
+      - "scripts/module_stream_matrix.py"
+      - "scripts/check-openzfs-module.sh"
+      - "scripts/check-nvidia-open-module.sh"
       - "docker/Dockerfile.builder"
       - "kconfig/**"
       - "patches/**"
       - "scripts/check_patches_apply.py"
       - "keys/**"
       - "versions.json"
+      - "versions.schema.json"
       - ".github/workflows/build-matrix.yml"
   schedule:
     - cron: "0 2 * * 0"
@@ -553,3 +557,198 @@ jobs:
               command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 1; }
             done
             scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run'
+
+  # Out-of-tree kernel module checks run in build-matrix.yml on pull requests against the
+  # same-SHA x86_64 headers package built above, because a version-bump pull request has no
+  # published GitHub Release yet.
+  plan-modules:
+    name: Plan Out-of-Tree Module Build Matrices
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      openzfs: ${{ steps.openzfs.outputs.matrix }}
+      nvidia_open: ${{ steps.nvidia_open.outputs.matrix }}
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Compute OpenZFS Module Matrix
+        id: openzfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/module_stream_matrix.py --module=openzfs
+
+      - name: Compute NVIDIA Open Module Matrix
+        id: nvidia_open
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/module_stream_matrix.py --module=nvidia_open
+
+  openzfs-module:
+    name: Build OpenZFS Module (${{ matrix.stream }})
+    needs: [build, plan-modules]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-modules.outputs.openzfs) }}
+    env:
+      STREAM: ${{ matrix.stream }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install Toolchain
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool gawk uuid-dev libblkid-dev libudev-dev \
+            libssl-dev zlib1g-dev libaio-dev libattr1-dev libelf-dev python3 ca-certificates \
+            curl gpg gpgv kmod gettext-base
+
+      - name: Checkout Repository
+        if: env.DRY_RUN != 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download Kernel Build Artifact
+        if: env.DRY_RUN != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-${{ matrix.stream }}-x86_64
+
+      - name: Build OpenZFS Module
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=("output/${STREAM}-x86_64"/linux-headers-*_amd64.deb)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "Refused: expected 1 linux-headers-*_amd64.deb in output/${STREAM}-x86_64/, found ${#debs[@]}: ${debs[*]:-none}" >&2
+            exit 1
+          fi
+          HEADERS_DEB="${debs[0]}"
+          ./scripts/check-openzfs-module.sh \
+            --headers-deb="${HEADERS_DEB}" \
+            --work="zfs-work-${STREAM}" \
+            --jobs=4
+
+  nvidia-open-module:
+    name: Build NVIDIA Open Module (${{ matrix.stream }})
+    needs: [build, plan-modules]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-modules.outputs.nvidia_open) }}
+    env:
+      STREAM: ${{ matrix.stream }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install Toolchain
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential libssl-dev libelf-dev python3 ca-certificates \
+            curl kmod git gettext-base
+
+      - name: Checkout Repository
+        if: env.DRY_RUN != 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download Kernel Build Artifact
+        if: env.DRY_RUN != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kernel-${{ matrix.stream }}-x86_64
+
+      - name: Build NVIDIA Open Module
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=("output/${STREAM}-x86_64"/linux-headers-*_amd64.deb)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "Refused: expected 1 linux-headers-*_amd64.deb in output/${STREAM}-x86_64/, found ${#debs[@]}: ${debs[*]:-none}" >&2
+            exit 1
+          fi
+          HEADERS_DEB="${debs[0]}"
+          ./scripts/check-nvidia-open-module.sh \
+            --headers-deb="${HEADERS_DEB}" \
+            --work="nvidia-work-${STREAM}" \
+            --jobs=4

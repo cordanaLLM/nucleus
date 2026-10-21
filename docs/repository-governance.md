@@ -148,9 +148,10 @@ Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Ag
 Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
 for them and requires their success like any other check run. `build-matrix.yml` works the
 same way: a pull request that touches a file the build runs or reads (the paths its
-`pull_request` trigger lists: the build scripts, `kconfig/`, `keys/`, `versions.json`, the
-builder image and the workflow itself) compiles, gates and boots all twelve legs, and
-`required-checks` waits for them. The organisation's hosted runners are one pool for every
+`pull_request` trigger lists: the build and module scripts, `kconfig/`, `keys/`, `versions.json`,
+`versions.schema.json`, the builder image and the workflow itself) compiles, gates and boots all
+twelve legs, then builds the OpenZFS and NVIDIA open kernel modules against the x86_64 headers
+packages produced in that same run, and `required-checks` waits for them. The organisation's hosted runners are one pool for every
 repository, so the matrix runs at most six legs at once (`max-parallel`), and at most half of
 them, which `tests/test_workflows.py` checks; on 2026-10-17 two runs of all twelve legs left
 other repositories' jobs queued. Twelve legs six at a time take two waves, and the arm64 leg
@@ -230,14 +231,17 @@ A draft pull request runs no gate. Every job a pull request starts begins with t
 until the pull request is marked ready for review. The `ready_for_review` event then starts the
 gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
 `test_every_pull_request_job_stops_on_a_draft` in `tests/test_workflows.py` refuses a workflow
-without that step or without the event. Five workflows are declared as HISS-18 exceptions in
+without that step or without the event. Four workflows are declared as HISS-18 exceptions in
 `.standards.yaml`: `security-scans.yml` and `verify-requirements.yml` (expiring on 2027-01-13),
-and `nvidia-open-module.yml`, `openzfs-module.yml` and `package-lifecycle.yml` (expiring on
+and `build-matrix.yml` and `package-lifecycle.yml` (expiring on
 2027-01-15). Their jobs that need another job are skipped on a draft, and the audit reports them
-although nothing can merge through them. The last three build a matrix that a plan job computes,
+although nothing can merge through them. The last two build a matrix that a plan job computes
+(`build-matrix.yml` runs `Build OpenZFS Module (<stream>)` and `Build NVIDIA Open Module (<stream>)`
+against the same-SHA x86_64 headers artifacts, while `openzfs-module.yml` and `nvidia-open-module.yml`
+run on `push` to `main`, `schedule` and `workflow_dispatch` against published releases),
 and no job of theirs is a required check; their exceptions say so, and
 `tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
-`.github/rulesets/main.json` requires. All five close with cordanaLLM/praetor#1368.
+`.github/rulesets/main.json` requires. All four close with cordanaLLM/praetor#1368.
 
 ## 5. The praetor pin
 

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.4.0...nucleus-v0.5.0) (2026-10-21)
+
+
+### Features
+
+* **boot:** load scx_simple under QEMU and require sched_ext enabled on x86_64 ([#228](https://github.com/cordanaLLM/nucleus/issues/228)) ([7518688](https://github.com/cordanaLLM/nucleus/commit/7518688045cd6cf52d828f53a5e39ce13d72f7ad))
+* **kconfig:** claim AMD ROCm on all four streams on x86_64 ([#219](https://github.com/cordanaLLM/nucleus/issues/219)) ([3392531](https://github.com/cordanaLLM/nucleus/commit/3392531368b16aadfc4932aa553ac2169f795a87)), closes [#213](https://github.com/cordanaLLM/nucleus/issues/213)
+
+
+### Bug Fixes
+
+* **ci:** install envsubst before cosign-installer in container jobs ([#236](https://github.com/cordanaLLM/nucleus/issues/236)) ([6d87a5a](https://github.com/cordanaLLM/nucleus/commit/6d87a5adad09df7cefb93c0d3a628a1494444d3e))
+* **ci:** report the metadata gate on pushes to main ([#232](https://github.com/cordanaLLM/nucleus/issues/232)) ([55a7298](https://github.com/cordanaLLM/nucleus/commit/55a72980e99b67feccc8f4bc4db8d9c983de389f)), closes [#231](https://github.com/cordanaLLM/nucleus/issues/231)
+* **ci:** waive the metadata gate for Renovate's own pull requests ([#235](https://github.com/cordanaLLM/nucleus/issues/235)) ([38a3025](https://github.com/cordanaLLM/nucleus/commit/38a302597eb2e2eae5f7a36fa47a3086acd754bf))
+
 ## [0.4.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.3.0...nucleus-v0.4.0) (2026-10-18)
 
 
