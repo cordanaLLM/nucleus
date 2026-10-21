@@ -1,16 +1,11 @@
 ---
 name: nvidia-open-module
+# Pull request module checks run in build-matrix.yml against the same-SHA headers artifact
+# because a stream-version bump pull request has no published GitHub Release yet.
 on:
   workflow_dispatch:
   schedule:
     - cron: "47 6 * * 1"
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "versions.json"
-      - "versions.schema.json"
-      - "scripts/check-nvidia-open-module.sh"
-      - ".github/workflows/nvidia-open-module.yml"
   push:
     branches: [main]
     paths:
@@ -64,47 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-
-          with open("versions.json", encoding="utf-8") as f:
-              data = json.load(f)
-
-          modules = data.get("modules", {})
-          nv = modules.get("nvidia_open")
-          if not nv:
-              raise SystemExit("modules.nvidia_open missing from versions.json")
-
-          streams = nv.get("streams", [])
-          if not streams:
-              raise SystemExit("modules.nvidia_open.streams missing or empty")
-
-          version = nv.get("version", "unknown")
-          commit = nv.get("source", {}).get("commit", "unknown")
-
-          summary_lines = [
-              f"### NVIDIA Open GPU Kernel Module {version} Stream Compatibility",
-              f"- NVIDIA Open version: `{version}`",
-              f"- Pinned commit: `{commit}`",
-              "",
-              "#### Target Streams (Matrix)",
-          ]
-          for s in streams:
-              stream_ver = data.get("streams", {}).get(s, {}).get("version", "unknown")
-              summary_lines.append(f"- `{s}` (`{stream_ver}`)")
-
-          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_file:
-              with open(summary_file, "a", encoding="utf-8") as sf:
-                  sf.write("\n".join(summary_lines) + "\n")
-
-          matrix = {"stream": streams}
-          output_file = os.environ.get("GITHUB_OUTPUT")
-          if output_file:
-              with open(output_file, "a", encoding="utf-8") as of:
-                  of.write(f"matrix={json.dumps(matrix)}\n")
-          PY
+          python3 scripts/module_stream_matrix.py --module=nvidia_open
 
   build:
     name: Build NVIDIA Open Module (${{ matrix.stream }})

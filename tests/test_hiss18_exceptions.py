@@ -61,11 +61,10 @@ def load_yaml(path):
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_the_claim_is_made_by_the_three_matrix_workflows():
+def test_the_claim_is_made_by_the_two_matrix_workflows():
     claimed = claimed_workflows(load_yaml(STANDARDS))
     assert sorted(claimed) == [
-        ".github/workflows/nvidia-open-module.yml",
-        ".github/workflows/openzfs-module.yml",
+        ".github/workflows/build-matrix.yml",
         ".github/workflows/package-lifecycle.yml",
     ]
 
@@ -78,10 +77,14 @@ def test_no_claimed_workflow_has_a_required_job():
 
 @pytest.mark.parametrize(
     "context",
-    ["Build NVIDIA Open Module (bleeding)", "Plan NVIDIA Open Module Build Matrix"],
+    [
+        "Build NVIDIA Open Module (bleeding)",
+        "Build OpenZFS Module (mainstream)",
+        "Plan Out-of-Tree Module Build Matrices",
+    ],
 )
 def test_a_planted_required_job_is_refused(context):
-    workflow = load_yaml(REPO_ROOT / ".github" / "workflows" / "nvidia-open-module.yml")
+    workflow = load_yaml(REPO_ROOT / ".github" / "workflows" / "build-matrix.yml")
     assert required_jobs(workflow, {"Praetor Governance", context}) != []
 
 
