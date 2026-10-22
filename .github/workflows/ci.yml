@@ -42,13 +42,13 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # 3.12 is the floor pyproject.toml declares and stays the default python (setup-python
       # makes the last listed version the default); 3.14 is the python3 of ubuntu:26.04, which
       # runs the artifact gate, the boot test and the manifest in every build and release.
       - name: Setup Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: |
             3.14
@@ -142,7 +142,7 @@ jobs:
             systemd-ukify systemd-boot-efi python3 python3-pytest ca-certificates git
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Fetch a stock Ubuntu kernel image
         run: |
@@ -235,7 +235,7 @@ jobs:
             systemd-ukify systemd-boot-efi python3 gcc libc6-dev ca-certificates git
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
@@ -341,12 +341,12 @@ jobs:
       # No credential stays in .git/config while this job runs a binary built from another
       # repository.
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
       - name: Check out pinned praetor source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: cordanaLLM/praetor
           ref: ${{ env.PRAETOR_REF }}

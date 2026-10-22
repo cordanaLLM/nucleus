@@ -74,7 +74,7 @@ The image package places `/boot/vmlinuz-<kernelrelease>`, `/boot/config-<kernelr
 
 Its maintainer script then runs the hooks the host keeps in `/etc/kernel/postinst.d` and `/usr/share/kernel/postinst.d`. The initramfs and the boot entry come from those hooks, which belong to the host's initramfs generator and boot loader packages; nucleus ships none. `dpkg --ctrl-tarfile linux-image-*.deb | tar -xO ./postinst` prints the script.
 
-`.github/workflows/package-lifecycle.yml` performs sections 2–4 weekly on the two newest revisions of every stream, in a container with `initramfs-tools` and `kmod`. It verifies clean package installation, side-by-side coexistence of successive kernel releases, byte-identity of `/boot/vmlinuz-<kernelrelease>` and `/boot/config-<kernelrelease>` against the release assets, generation of `/boot/initrd.img-<kernelrelease>` by the host's postinst hook, and clean uninstallation via `dpkg --purge` without leftover files in `/boot`, `/lib/modules`, or `/usr/src`.
+`.github/workflows/package-lifecycle.yml` performs sections 2–4 weekly on the two newest revisions of every stream, in a container with `initramfs-tools` and `kmod`. When a stream version is bumped in `versions.json` before a release is published, the workflow substitutes the stream's most recently published version for up to 7 days after the bump. It verifies clean package installation, side-by-side coexistence of successive kernel releases, byte-identity of `/boot/vmlinuz-<kernelrelease>` and `/boot/config-<kernelrelease>` against the release assets, generation of `/boot/initrd.img-<kernelrelease>` by the host's postinst hook, and clean uninstallation via `dpkg --purge` without leftover files in `/boot`, `/lib/modules`, or `/usr/src`.
 
 ## 5. Not Provided Today
 

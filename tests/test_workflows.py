@@ -106,6 +106,7 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert '--revision="${REVISION}"' in build["run"]
     assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
     assert BUILD_IMAGE.fullmatch(build["env"]["BUILD_IMAGE"]) and '"${BUILD_IMAGE}"' in build["run"]
+    assert "-e ARCH=x86_64" in build["run"]
     assert "install-build-toolchain.sh --with-qemu" in build["run"]
     assert "-e GITHUB_TOKEN" not in build["run"] and "ACTIONS_ID_TOKEN" not in build["run"]
     gate = steps[names.index("Gate the Kernel Artifacts")]
@@ -406,6 +407,10 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     )
     assert order.index("Refuse a boot whose console stays silent") < order.index(
         "Stage Artifacts and Checksums"
+    )
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
     )
     restore = steps["Restore the Compiler Cache"]
     save = steps["Save the Compiler Cache"]
@@ -1428,6 +1433,7 @@ def test_package_lifecycle_workflow_contract():
     assert "pull_request" in on, "pull_request trigger required"
     assert on["pull_request"]["paths"] == [
         "scripts/package_lifecycle.py",
+        "scripts/select_lifecycle_releases.py",
         ".github/workflows/package-lifecycle.yml",
     ]
     assert "schedule" in on, "schedule trigger required"
@@ -1736,7 +1742,134 @@ def test_reproducibility_builds_one_leg_twice_with_one_key_and_compares():
     delete = steps["Delete the Module Signing Key"]
     assert delete["if"].startswith("always()") and 'rm -rf "${KEY_DIR}"' in delete["run"]
     names = [step.get("name", "") for step in job["steps"]]
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
+    )
     assert names.index("Build Twice and Compare") < names.index("Delete the Module Signing Key")
+
+
+def _toolchain_cache_problems(steps: list[dict]) -> list[str]:
+    problems = []
+    names = [s.get("name", "") for s in steps]
+    step_map = {s.get("name", ""): s for s in steps}
+    if "Restore the Toolchain Package Cache" not in step_map:
+        problems.append("missing restore step")
+    if "Save the Toolchain Package Cache" not in step_map:
+        problems.append("missing save step")
+    if "Install the Build Toolchain" not in step_map:
+        problems.append("missing install step")
+    if not problems:
+        r_idx = names.index("Restore the Toolchain Package Cache")
+        i_idx = names.index("Install the Build Toolchain")
+        s_idx = names.index("Save the Toolchain Package Cache")
+        if not (r_idx < i_idx < s_idx):
+            problems.append("wrong step order")
+        r_step = step_map["Restore the Toolchain Package Cache"]
+        s_step = step_map["Save the Toolchain Package Cache"]
+        r_key = r_step.get("with", {}).get("key", "")
+        s_key = s_step.get("with", {}).get("key", "")
+        if "run_id" in r_key:
+            problems.append("restore key contains run_id")
+        if r_key != s_key:
+            problems.append("restore and save keys do not match")
+        if "steps.restore_apt_cache.outputs.cache-hit != 'true'" not in s_step.get("if", ""):
+            problems.append("missing cache-hit guard on save")
+        # actions/cache puts the compression method into the cache version; without zstd at
+        # restore time the restore looks for a gzip entry that the save never writes.
+        compressor = step_map.get("Install the Cache Compressor", {})
+        if (
+            "zstd" not in compressor.get("run", "")
+            or names.index("Install the Cache Compressor") > r_idx
+        ):
+            problems.append("zstd not installed before restore")
+    return problems
+
+
+_COMPRESSOR = {"name": "Install the Cache Compressor", "run": "apt-get install -y zstd"}
+
+
+def test_build_matrix_toolchain_cache_structure():
+    assert _toolchain_cache_problems(_build_matrix()["steps"]) == []
+    assert _toolchain_cache_problems(_reproducibility_job()["steps"]) == []
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected_problem"),
+    [
+        (
+            [
+                _COMPRESSOR,
+                {
+                    "name": "Restore the Toolchain Package Cache",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+            ],
+            "restore key contains run_id",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-b"},
+                },
+            ],
+            "restore and save keys do not match",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "always()",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "missing cache-hit guard on save",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "wrong step order",
+        ),
+        (
+            [
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "zstd not installed before restore",
+        ),
+    ],
+)
+def test_toolchain_cache_problems_planted_refusals(steps, expected_problem):
+    problems = _toolchain_cache_problems(steps)
+    assert expected_problem in problems
 
 
 def test_required_checks_waits_longer_than_the_reproducibility_job():
