@@ -123,7 +123,7 @@ skips it, and main commit 3392531 went red on that skip. `tests/test_gates_refus
 fails when the list differs from the detector-gated jobs in `security-scans.yml` plus the
 release-gated jobs in `release-please.yml`, and when a listed check that failed or was
 cancelled passes. The gate also fails when it finds no other check
-run, or when the others are still running after 190 minutes. Before this, the aggregator
+run, or when the others are still running after 330 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
 Two forge behaviours shape the wait. A job that `needs` another one registers its check run
@@ -135,12 +135,13 @@ timeout); a run that carries a conclusion and a completion time counts as comple
 its status says, and its conclusion is judged like any other. Both are tested in
 `tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
 
-The 190 minutes are a wall-clock deadline measured from the gate's start, not a number of
+The 330 minutes are a wall-clock deadline measured from the gate's start, not a number of
 polls, so slow `gh api` calls count against it, and each call is killed after 60 seconds
 (`--fetch-timeout`). A failed or hung call is retried on the next poll. At the deadline the gate
 fails and names what it waited for: the check runs still pending, or the last `gh api` error
-when no poll succeeded. The job's own `timeout-minutes` of 200 is the second bound. A check
-that never finishes, a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
+when no poll succeeded. The job's own `timeout-minutes` of 340 is the second bound, staying
+under GitHub's 6-hour (360-minute) hosted runner execution limit. A check that never finishes,
+a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
 
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
@@ -151,17 +152,21 @@ same way: a pull request that touches a file the build runs or reads (the paths 
 `pull_request` trigger lists: the build and module scripts, `kconfig/`, `keys/`, `versions.json`,
 `versions.schema.json`, the builder image and the workflow itself) compiles, gates and boots all
 twelve legs, then builds the OpenZFS and NVIDIA open kernel modules against the x86_64 headers
-packages produced in that same run, and `required-checks` waits for them. The organisation's hosted runners are one pool for every
-repository, so the matrix runs at most six legs at once (`max-parallel`), and at most half of
-them, which `tests/test_workflows.py` checks; on 2026-10-17 two runs of all twelve legs left
-other repositories' jobs queued. Twelve legs six at a time take two waves, and the arm64 leg
-may run for 90 minutes (the longest measured leg took 40, run 36507112520): that is why the
-gate waits 190 minutes. One build runs per branch: a pull request run and a dispatch on its
-branch share a concurrency group, so a second run waits for the first. A new push to the pull
-request cancels the build still running for its branch, a dispatched one included; a scheduled
-run, or a dispatch on a branch without a pull request, is never cancelled.
-`tests/test_workflows.py` fails when the trigger, its paths, the cap, the group or the wait
-change.
+packages produced in that same run, and `required-checks` waits for them. The organisation's
+hosted runners are one pool for every repository, so the matrix runs at most six legs at once
+(`max-parallel`), and at most half of them, which `tests/test_workflows.py` checks; on 2026-10-17
+two runs of all twelve legs left other repositories' jobs queued. While kernel execution takes 54
+to 3002 seconds per leg, queue delay under shared-runner saturation dominates the total elapsed
+time. Across 10 measured runs in `tests/data/required-checks-spans.json`, pull request build-matrix
+spans reached 13397 s (run 39626121442). The gate waits 19800 s (330 minutes, giving ~1.48x
+headroom over the worst span), and the job bound of 340 minutes stays below the 6-hour (360-minute)
+hosted runner execution limit. `test_required_checks_deadline_covers_every_measured_build_span` in
+`tests/test_workflows.py` asserts that the workflow deadline covers every measured run span with at
+least 25% margin. One build runs per branch: a pull request run and a dispatch on its branch share
+a concurrency group, so a second run waits for the first. A new push to the pull request cancels
+the build still running for its branch, a dispatched one included; a scheduled run, or a dispatch
+on a branch without a pull request, is never cancelled. `tests/test_workflows.py` fails when the
+trigger, its paths, the cap, the group or the wait change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:

@@ -90,3 +90,22 @@ exceptions:
       step; lifecycle needs plan for its matrix, which the check reports because it reads no always() and no required context;
       no job of this workflow is a required check. Closed by cordanaLLM/praetor#1368.
     expires: "2027-01-15"
+  - rule: codespell
+    path: tools/figures/player/player.js
+    reason: >-
+      Category D, 120 days from 2026-10-18, the same entry as .config/lint-exceptions.yaml (tool
+      codespell). Minified bundle built by tools/figures (interfig with React); its short identifiers
+      read as misspellings. The fix is a build that emits a source map codespell can read instead.
+    category: D
+    entered: "2026-10-18"
+    expires: "2027-02-15"
+  - rule: release-token
+    path: .github/workflows/release-please.yml
+    reason: >-
+      Category C, 10 days from 2026-10-22 (UTC), derived from aegis-os-bump-red-release-token-20261019.
+      release-please still takes the workflow token: the plurano-release GitHub App is installed on the
+      organisation, but no app id or private key reaches this repository yet (operator card
+      nucleus-release-app-setup). The step moves to an actions/create-github-app-token step once they do.
+    category: C
+    entered: "2026-10-22"
+    expires: "2026-11-01"
