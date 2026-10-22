@@ -732,10 +732,12 @@ only fail.
   `scripts/check-openzfs-module.sh`. In `openzfs-module.yml`, each leg picks the stream's newest
   `v<version>-<stream>-lusoris<N>` release, verifies its `SHA256SUMS` with cosign against the
   release signer identity of that tag, checks the headers package's digest against that list, and
-  runs `scripts/check-openzfs-module.sh`. The script refuses a tarball whose `sha256` or `gpgv`
-  signature does not match. It configures OpenZFS against the headers tree
-  (`--with-config=kernel`), builds `module/`, and requires `module/zfs.ko` with a `vermagic` of
-  the release's kernel release.
+  runs `scripts/check-openzfs-module.sh`. A schedule or dispatch run whose pinned version has no
+  published release yet substitutes the newest published release of the stream for 7 days after
+  the bump, names the substitution in the step summary, and is refused thereafter. The script
+  refuses a tarball whose `sha256` or `gpgv` signature does not match. It configures OpenZFS against
+  the headers tree (`--with-config=kernel`), builds `module/`, and requires `module/zfs.ko` with a
+  `vermagic` of the release's kernel release.
 - **Why every stream carries zlib deflate.** OpenZFS's `configure` refuses a kernel without
   `ZLIB_DEFLATE`. On the x86_64 defconfig base only i915 selected it, and `PREEMPT_RT` excludes
   i915, so `realtime` lost it. The baseline fragment now declares `CRYPTO_DEFLATE` and
@@ -751,5 +753,5 @@ NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream imag
 
 - **What is pinned.** `modules.nvidia_open` in `versions.json` pins the driver version (`615.78.08`), source archive URL, `sha256` digest, and peeled git commit. NVIDIA upstream tags carry no GPG signature and no detached `.asc`, so the script proves the archive by its pinned SHA-256 digest and by the commit that `git get-tar-commit-id` reads from the archive header, which must equal the pinned commit.
 - **Which streams.** `scripts/module_stream_matrix.py --module=nvidia_open` selects streams `bleeding` and `mainstream` on `x86_64`, matching `modules.nvidia_open.streams`.
-- **What each leg proves.** In `build-matrix.yml`, each leg downloads the `kernel-<stream>-x86_64` artifact from the `build` job, requires a single `linux-headers-*_amd64.deb`, and invokes `scripts/check-nvidia-open-module.sh`. In `nvidia-open-module.yml`, each leg selects the newest release of each stream, verifies its `SHA256SUMS` with Cosign against the release signer identity (`release-build.yml` or `publish-release.yml`), confirms the package digest, and invokes `scripts/check-nvidia-open-module.sh`. The script unpacks the headers package, runs `make modules SYSSRC=<headers-tree> SYSOUT=<headers-tree>` (the variables `kernel-open/Makefile` reads), and verifies that all four required kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`) exist and that the release in each `vermagic` equals the target kernel release.
+- **What each leg proves.** In `build-matrix.yml`, each leg downloads the `kernel-<stream>-x86_64` artifact from the `build` job, requires a single `linux-headers-*_amd64.deb`, and invokes `scripts/check-nvidia-open-module.sh`. In `nvidia-open-module.yml`, each leg selects the newest release of each stream, verifies its `SHA256SUMS` with Cosign against the release signer identity (`release-build.yml` or `publish-release.yml`), confirms the package digest, and invokes `scripts/check-nvidia-open-module.sh`. A schedule or dispatch run whose pinned version has no published release yet substitutes the newest published release of the stream for 7 days after the bump, names the substitution in the step summary, and is refused thereafter. The script unpacks the headers package, runs `make modules SYSSRC=<headers-tree> SYSOUT=<headers-tree>` (the variables `kernel-open/Makefile` reads), and verifies that all four required kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`) exist and that the release in each `vermagic` equals the target kernel release.
 - **Plan mode.** `scripts/check-nvidia-open-module.sh --headers-deb=<deb> --print-plan` prints the pinned source URL, SHA-256 digest, kernel release, and target legs without downloading anything or modifying the worktree.

@@ -219,7 +219,12 @@ def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
         if s.get("name") == "Download Release Assets and Build Module"
     )
     assert build_step["env"]["PUBLISHED_TAG"] == published
-    assert "matching = [m for m in matching if m[1] == published]" in build_step["run"]
+    assert "from select_module_release import select_module_release" in build_step["run"]
+    assert "No release tag found matching prefix" not in build_step["run"]
+    build_checkout = next(
+        s for s in parsed["jobs"]["build"]["steps"] if s.get("name") == "Checkout Repository"
+    )
+    assert build_checkout["with"]["fetch-depth"] == 0
 
 
 def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():

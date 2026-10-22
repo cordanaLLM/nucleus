@@ -105,6 +105,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Cosign
@@ -118,11 +119,20 @@ jobs:
           PUBLISHED_TAG: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          # find_bump_time reads the versions.json history with git; the container runs as root on a
+          # checkout owned by the runner's user, which git refuses without this setting.
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="${GITHUB_WORKSPACE}"
           python3 - <<'PY'
           import json
           import os
-          import re
+          import sys
           import urllib.request
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          from select_lifecycle_releases import find_bump_time
+          from select_module_release import select_module_release
 
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ.get("GH_TOKEN", "")
@@ -132,7 +142,6 @@ jobs:
               v = json.load(f)
           version = v["streams"][stream]["version"]
           tag_ver = version.replace("~", "-")
-          prefix = f"v{tag_ver}-{stream}-lusoris"
 
           req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases?per_page=100")
           if token:
@@ -143,21 +152,28 @@ jobs:
           with urllib.request.urlopen(req, timeout=60) as resp:
               releases = json.load(resp)
 
-          matching = []
-          for rel in releases:
-              tag = rel.get("tag_name", "")
-              m = re.match(rf"^v{re.escape(tag_ver)}-{re.escape(stream)}-lusoris(\d+)$", tag)
-              if m:
-                  matching.append((int(m.group(1)), tag, rel))
-
           published = os.environ.get("PUBLISHED_TAG", "")
-          if published:
-              matching = [m for m in matching if m[1] == published]
-          if not matching:
-              raise SystemExit(f"No release tag found matching prefix {prefix}<N>")
+          now = datetime.now(UTC)
+          try:
+              bump_time = find_bump_time(stream, version, Path("."), now)
+              best_tag, lines = select_module_release(
+                  stream, tag_ver, releases, published, bump_time, now
+              )
+          except (ValueError, RuntimeError) as exc:
+              raise SystemExit(f"Refused: {exc}")
 
-          matching.sort(key=lambda x: x[0], reverse=True)
-          best_rev, best_tag, best_rel = matching[0]
+          for line in lines:
+              print(line)
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary and lines:
+              with open(step_summary, "a", encoding="utf-8") as f:
+                  f.write(f"### Stream `{stream}`\n")
+                  for line in lines:
+                      f.write(f"{line}\n")
+
+          best_rel = next((r for r in releases if r.get("tag_name") == best_tag), None)
+          if not best_rel:
+              raise SystemExit(f"Refused: release object for {best_tag} not found")
           print(f"Selected release tag: {best_tag}")
 
           os.makedirs("release_assets", exist_ok=True)
