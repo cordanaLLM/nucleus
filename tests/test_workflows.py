@@ -514,6 +514,55 @@ def test_every_ubuntu_26_04_container_is_pinned_to_one_digest():
         assert name in users, name
 
 
+def test_renovate_custom_manager_matches_workflow_image_env_pins():
+    """Renovate customManager regexes match workflow *_IMAGE: env pins and extract image, tag, and digest."""
+    renovate = json.loads((REPO_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    manager = next(
+        m
+        for m in renovate.get("customManagers", [])
+        if m.get("customType") == "regex"
+        and m.get("datasourceTemplate") == "docker"
+        and any("_IMAGE:" in pat for pat in m.get("matchStrings", []))
+    )
+    assert manager.get("managerFilePatterns") == ["/^\\.github\\/workflows\\/.*\\.ya?ml$/"]
+
+    patterns = [
+        re.compile(re.sub(r"\?<([a-zA-Z0-9_]+)>", r"?P<\1>", pat))
+        for pat in manager.get("matchStrings", [])
+    ]
+    assert patterns
+
+    matched_lines = 0
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for line in wf.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("#") or "_IMAGE: " not in line:
+                continue
+            matched = False
+            for pat in patterns:
+                m = pat.search(line)
+                if m:
+                    matched = True
+                    assert m.group("depName") == "ubuntu", f"unexpected depName in {wf.name}"
+                    assert m.group("currentValue") == "26.04", (
+                        f"unexpected currentValue in {wf.name}"
+                    )
+                    digest = m.group("currentDigest")
+                    assert re.fullmatch(r"sha256:[a-f0-9]{64}", digest), (
+                        f"invalid digest in {wf.name}"
+                    )
+                    break
+            assert matched, f"No matchString in customManager matched: {line!r} in {wf.name}"
+            matched_lines += 1
+
+    assert matched_lines >= 3, (
+        f"Expected at least 3 _IMAGE: lines in workflows, got {matched_lines}"
+    )
+
+    # Negative case: a line without a digest does not match
+    no_digest_line = "BUILD_IMAGE: ubuntu:26.04"
+    assert not any(pat.search(no_digest_line) for pat in patterns)
+
+
 def test_no_run_block_interpolates_event_data():
     """Event data reaches a script through env:, never through ${{ }} inside a run: block."""
     event_data = re.compile(r"\$\{\{[^}]*github\.(event|head_ref)[^}]*\}\}")
