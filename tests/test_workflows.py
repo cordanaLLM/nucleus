@@ -1,6 +1,7 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
 import json
+import math
 import os
 import re
 import shutil
@@ -257,6 +258,65 @@ def test_required_checks_waits_longer_than_every_build_wave():
         f"the gate gives up at {wait} s, before {waves} waves ({legs} minutes) end"
     )
     assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
+
+
+def _measured_spans() -> tuple[list[int], int]:
+    """Measured pull request build-matrix spans and the hosted runner job limit, in minutes."""
+    fixture = json.loads(
+        (REPO_ROOT / "tests" / "data" / "required-checks-spans.json").read_text(encoding="utf-8")
+    )
+    return [entry["span_seconds"] for entry in fixture["runs"]], fixture["hosted_job_limit_minutes"]
+
+
+def _deadline_problems(
+    wait: int, job_minutes: int, spans: list[int], limit_minutes: int
+) -> list[str]:
+    """Pure check of aggregator wait and job timeout against spans and runner limits."""
+    problems: list[str] = []
+    if wait < math.ceil(max(spans) * 1.25):
+        problems.append("deadline below measured worst span + 25%")
+    if job_minutes * 60 <= wait:
+        problems.append("job killed before the gate's deadline")
+    if job_minutes > limit_minutes:
+        problems.append("job bound over the hosted runner limit")
+    return problems
+
+
+def test_required_checks_deadline_covers_every_measured_build_span():
+    """Aggregator timeout must cover all measured PR build-matrix spans with headroom."""
+    job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]["required-checks"]
+    run = job["steps"][-1]["run"]
+    wait = int(re.search(r"--timeout (\d+)", run)[1])
+    job_minutes = job["timeout-minutes"]
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == []
+
+
+@pytest.mark.parametrize(
+    ("wait", "job_minutes", "expected_message"),
+    [
+        (11400, 200, "deadline below measured worst span + 25%"),
+        (19800, 330, "job killed before the gate's deadline"),
+        (19800, 370, "job bound over the hosted runner limit"),
+    ],
+)
+def test_deadline_problems_planted_refusals(wait: int, job_minutes: int, expected_message: str):
+    """Planted invalid deadlines must be refused with the exact expected diagnostic."""
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == [expected_message]
+
+
+def test_deadline_problems_boundary():
+    """Wait at exactly ceil(max * 1.25) passes; one second less triggers rule a."""
+    spans, limit_minutes = _measured_spans()
+    boundary_wait = math.ceil(max(spans) * 1.25)
+    job_minutes = boundary_wait // 60 + 1
+    assert _deadline_problems(boundary_wait, job_minutes, spans, limit_minutes) == []
+    assert _deadline_problems(boundary_wait - 1, job_minutes, spans, limit_minutes) == [
+        "deadline below measured worst span + 25%"
+    ]
 
 
 def _container_run_shells() -> dict[tuple[str, str, str], str | None]:
