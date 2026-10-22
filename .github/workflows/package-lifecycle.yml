@@ -80,6 +80,13 @@ jobs:
     needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
     strategy:
