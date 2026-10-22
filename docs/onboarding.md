@@ -103,6 +103,7 @@ Verify the target kernel streams:
 Run it in `ubuntu:26.04` with `scripts/install-build-toolchain.sh`, the toolchain the workflows
 use; a leg needs 8 to 16 GiB of disk, depending on the architecture
 (`scripts/probe-build-space.sh`, and `disk_gib` in `build-matrix.yml`).
+The installer reads target architecture from `ARCH` to install only the cross compiler needed for that build, while `--all-arches` (or leaving `ARCH` unset) installs all cross compilers.
 
 ```bash
 # State the fetch, the resolution, the make command and the expected kernel release:
