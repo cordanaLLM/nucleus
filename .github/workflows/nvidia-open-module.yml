@@ -24,7 +24,8 @@ permissions:
 
 jobs:
   plan:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # head_sha is checked out below: only this repository's own release commit may run here.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
     name: Plan NVIDIA Open Module Build Matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -67,7 +68,7 @@ jobs:
   build:
     name: Build NVIDIA Open Module (${{ matrix.stream }})
     needs: plan
-    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null
+    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:

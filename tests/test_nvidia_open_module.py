@@ -200,10 +200,13 @@ def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
     }
     plan_job = parsed["jobs"]["plan"]
     assert plan_job["if"] == (
-        "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'"
+        "github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success'"
+        " && github.event.workflow_run.head_repository.full_name == github.repository)"
     )
     assert parsed["jobs"]["build"]["if"] == (
         "needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null"
+        " && (github.event_name != 'workflow_run'"
+        " || github.event.workflow_run.head_repository.full_name == github.repository)"
     )
     for job in ("plan", "build"):
         checkout = next(
