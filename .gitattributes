@@ -1,3 +1,7 @@
+# Test fixtures pinned by digest in tests/test_fetch_kernel_requirements.py; checkout bytes must not change.
+fuzz/corpus/verify_kernel_requirement/imago.json -text
+tests/fixtures/kernel-requirement/imago.json -text
+
 # BEGIN praetor managed attributes (praetorctl adopt)
 # praetorctl audit hashes these files; keep their checkout bytes the same on every platform.
 .devcontainer/Dockerfile.praetor text eol=lf
