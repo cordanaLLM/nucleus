@@ -1428,6 +1428,7 @@ def test_package_lifecycle_workflow_contract():
     assert "pull_request" in on, "pull_request trigger required"
     assert on["pull_request"]["paths"] == [
         "scripts/package_lifecycle.py",
+        "scripts/select_lifecycle_releases.py",
         ".github/workflows/package-lifecycle.yml",
     ]
     assert "schedule" in on, "schedule trigger required"
