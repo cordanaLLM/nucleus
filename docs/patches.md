@@ -49,11 +49,11 @@ Changes to Linux kernel files carry the kernel's licence, `GPL-2.0-only`, throug
 | `commit` | `674859761ded9f32690c7bdaf22ef585531452ed`, the branch head that was taken |
 | `base` | `c1c3d01e3a9038d3e8f497e773e1f7b5d6b8212a`, the `net-next` parent of the first patch (Linux 7.1-rc5) |
 | `commits` | the 13 kernel commits of the series, in order; the branch's later commits change only its test scripts, `iproute2` and the README, and are not carried |
-| `streams` | `bleeding` (7.3-rc7), `mainstream` and `realtime` (7.2.10) |
+| `streams` | `bleeding` (7.3-rc7), `mainstream` and `realtime` (7.2.11) |
 
 Twelve patches extend TCP rate sampling and the congestion-control hooks (for example `skb_marked_lost()` and loss counts repaired by TLP). The thirteenth adds `net/ipv4/tcp_bbr3.c` as its own module, `tcp_bbr3` with algorithm name `bbr3`, and the option `CONFIG_TCP_CONG_BBR3`. BBRv1 (`tcp_bbr`) is left as it is and stays the default (`CONFIG_DEFAULT_BBR=y`). The streams that carry the series build BBRv3 as a module (`CONFIG_TCP_CONG_BBR3=m` in `kconfig/streams/<stream>.config`), and the `bbr3` claim in `kconfig/required-config.json` refuses a resolved configuration where it is off. A node selects it with `sysctl net.ipv4.tcp_congestion_control=bbr3`.
 
-The series applies to 7.2.10 and 7.3-rc7 without fuzz, and `net/ipv4/` compiles there without warnings. It does not apply to `lts` 6.18.56: patch `0002` refuses both hunks in `net/ipv4/tcp_input.c`. `lts` carries no BBRv3.
+The series applies to 7.2.10, 7.2.11 and 7.3-rc7 without fuzz, and `net/ipv4/` compiles without warnings on 7.2.10 and 7.3-rc7. It does not apply to `lts` 6.18.56: patch `0002` refuses both hunks in `net/ipv4/tcp_input.c`. `lts` carries no BBRv3.
 
 Criterion 2 of section 1 holds only in part: its authors maintain the series out of tree at google/bbr, and it is not queued in a maintainer tree. Issue #192 asked for it.
 

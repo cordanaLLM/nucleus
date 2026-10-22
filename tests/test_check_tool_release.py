@@ -191,7 +191,10 @@ def test_refuse_malformed_tag(tmp_path: Path):
 
 def test_refuse_kernel_shaped_tag(tmp_path: Path):
     repo = init_repo(tmp_path)
-    result = _run(["--tag", "v7.2.10-mainstream-lusoris1", "--repo-root", str(repo)])
+    version = json.loads((REPO_ROOT / "versions.json").read_text())["streams"]["mainstream"][
+        "version"
+    ]
+    result = _run(["--tag", f"v{version}-mainstream-lusoris1", "--repo-root", str(repo)])
     assert result.returncode == 1
     assert "resolve_release_tag" in result.stderr
 
