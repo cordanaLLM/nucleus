@@ -116,7 +116,8 @@ jobs:
             mounts+=(-v /mnt/nucleus-build:/work/mnt)
           fi
           docker run --rm "${mounts[@]}" -w /forge \
-            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
+            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            -e ARCH=x86_64 "${BUILD_IMAGE}" bash -c '
               set -euo pipefail
               bash ./scripts/install-build-toolchain.sh --with-qemu
               candidates=(/work/temp)

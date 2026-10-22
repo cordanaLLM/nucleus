@@ -139,16 +139,44 @@ jobs:
         with:
           persist-credentials: false
 
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
+
       - name: Install the Build Toolchain
         env:
           WITH_QEMU: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
           set -euo pipefail
           if [[ "${WITH_QEMU}" == "true" ]]; then
-            bash ./scripts/install-build-toolchain.sh --with-qemu
+            bash ./scripts/install-build-toolchain.sh --with-qemu --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           else
-            bash ./scripts/install-build-toolchain.sh
+            bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           fi
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
 
       # The hosted runners keep a larger scratch disk at /mnt; the build goes wherever there is
       # more room, and a runner without enough anywhere fails here rather than an hour in.
@@ -452,10 +480,38 @@ jobs:
         with:
           persist-credentials: false
 
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
+
       - name: Install the Build Toolchain
         run: |
           set -euo pipefail
-          bash ./scripts/install-build-toolchain.sh
+          bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
 
       - name: State the Comparison
         if: env.DRY_RUN == 'true'
