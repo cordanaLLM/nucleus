@@ -371,7 +371,7 @@ the BBRv3 series to under `patches.bbr3.streams`) also has `tcp_bbr3.ko` taken f
 module is loaded. The judge step repeats those flags on the leg's console, and must refuse it
 with `--require-congestion=planted-cc` and with `--require-scheduler=planted-sched`.
 
-Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`).
+Package installation, upgrade coexistence, and uninstallation lifecycle of published `.deb` packages are verified weekly across the two newest revisions of each stream by `.github/workflows/package-lifecycle.yml` (`scripts/package_lifecycle.py`). When `versions.json` bumps a stream version before a release is published, the workflow substitutes the stream's most recently published version for up to 7 days after the bump.
 
 ---
 
