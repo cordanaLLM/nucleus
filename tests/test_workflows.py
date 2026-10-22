@@ -904,9 +904,11 @@ def _security_gate_job():
 
 
 def test_security_scans_aggregate_contract():
-    """Ensure one always() job in security-scans.yml needs every scan job."""
+    """Ensure one !cancelled() job in security-scans.yml needs every scan job."""
     jobs, gate = _security_gate_job()
-    assert str(gate["if"]).strip() == "always()", "the gate must report on every run"
+    assert str(gate["if"]).strip() == "${{ !cancelled() }}", (
+        "the gate must report on every run that a newer push did not cancel"
+    )
     assert "continue-on-error" not in gate, "an advisory gate can never fail"
     scans = sorted(name for name in jobs if name != "security-gate")
     assert sorted(gate["needs"]) == scans, "the gate must need every other job of the workflow"
