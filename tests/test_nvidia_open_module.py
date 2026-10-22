@@ -178,20 +178,44 @@ def test_nvidia_open_workflow_shape():
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
     assert "pull_request" not in on_triggers
-    assert "push" in on_triggers
-
-    # Filtered paths
-    expected_paths = [
-        "versions.json",
-        "versions.schema.json",
-        "scripts/check-nvidia-open-module.sh",
-        ".github/workflows/nvidia-open-module.yml",
-    ]
-    assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
-    assert on_triggers["push"]["branches"] == ["main"]
+    # A merged stream bump has no release until publish-release.yml publishes it, so the
+    # release path runs after that workflow succeeds, never on the push that merged the bump.
+    assert "push" not in on_triggers
 
     plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
     assert "python3 scripts/module_stream_matrix.py --module=nvidia_open" in plan_step["run"]
+    assert '--release-tag="${PUBLISHED_TAG}"' in plan_step["run"]
+    assert plan_step["env"]["PUBLISHED_TAG"] == "${{ github.event.workflow_run.head_branch || '' }}"
+
+
+def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
+    """The release path runs on the published tag's commit and stream, only after success."""
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    on_triggers = parsed.get("on", parsed.get(True, {}))
+    published = "${{ github.event.workflow_run.head_branch || '' }}"
+    assert on_triggers["workflow_run"] == {
+        "workflows": ["publish-release"],
+        "types": ["completed"],
+    }
+    plan_job = parsed["jobs"]["plan"]
+    assert plan_job["if"] == (
+        "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'"
+    )
+    assert parsed["jobs"]["build"]["if"] == (
+        "needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null"
+    )
+    for job in ("plan", "build"):
+        checkout = next(
+            s for s in parsed["jobs"][job]["steps"] if s.get("name") == "Checkout Repository"
+        )
+        assert checkout["with"]["ref"] == "${{ github.event.workflow_run.head_sha || github.sha }}"
+    build_step = next(
+        s
+        for s in parsed["jobs"]["build"]["steps"]
+        if s.get("name") == "Download Release Assets and Build Module"
+    )
+    assert build_step["env"]["PUBLISHED_TAG"] == published
+    assert "matching = [m for m in matching if m[1] == published]" in build_step["run"]
 
 
 def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():

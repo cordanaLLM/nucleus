@@ -1,19 +1,17 @@
 ---
 name: openzfs-module
 # Pull request module checks run in build-matrix.yml against the same-SHA headers artifact
-# because a stream-version bump pull request has no published GitHub Release yet.
+# because a stream-version bump pull request has no published GitHub Release yet. For the same
+# reason this workflow does not run on a push to main: a merged bump has no release until
+# publish-release.yml publishes it, so it runs when that workflow succeeds, against the commit
+# and stream of the tag it published, and weekly against every stream's newest release.
 on:
   workflow_dispatch:
   schedule:
     - cron: "23 6 * * 1"
-  push:
-    branches: [main]
-    paths:
-      - "versions.json"
-      - "versions.schema.json"
-      - "keys/**"
-      - "scripts/check-openzfs-module.sh"
-      - ".github/workflows/openzfs-module.yml"
+  workflow_run:
+    workflows: [publish-release]
+    types: [completed]
 
 # A newer push to the same pull request supersedes this run. Every other event gets a group
 # of its own (run_id), so a run for main, a schedule or a dispatch is never cancelled.
@@ -26,6 +24,7 @@ permissions:
 
 jobs:
   plan:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: Plan OpenZFS Module Build Matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -49,6 +48,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
@@ -58,13 +58,16 @@ jobs:
       - name: Compute Matrix
         id: plan
         shell: bash
+        env:
+          PUBLISHED_TAG: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
-          python3 scripts/module_stream_matrix.py --module=openzfs
+          python3 scripts/module_stream_matrix.py --module=openzfs --release-tag="${PUBLISHED_TAG}"
 
   build:
     name: Build OpenZFS Module (${{ matrix.stream }})
     needs: plan
+    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
@@ -101,6 +104,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
@@ -110,6 +114,7 @@ jobs:
         env:
           STREAM: ${{ matrix.stream }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISHED_TAG: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -144,6 +149,9 @@ jobs:
               if m:
                   matching.append((int(m.group(1)), tag, rel))
 
+          published = os.environ.get("PUBLISHED_TAG", "")
+          if published:
+              matching = [m for m in matching if m[1] == published]
           if not matching:
               raise SystemExit(f"No release tag found matching prefix {prefix}<N>")
 
