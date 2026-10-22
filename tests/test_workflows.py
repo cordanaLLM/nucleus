@@ -1925,16 +1925,23 @@ def test_every_compiling_job_is_in_the_kernel_pool():
     assert not _compiles({"steps": [{"run": "scripts/build_kernel.sh --dry-run"}]})
 
 
+def _scan_queue_ok(job: dict) -> bool:
+    return job.get("concurrency") == {
+        "group": "nucleus-scan-${{ github.job }}",
+        "queue": "max",
+        "cancel-in-progress": False,
+    }
+
+
 def test_security_scanners_queue_per_scanner():
     """Security scanners declare dedicated repository-wide FIFO queues per scanner."""
-    wf = yaml.safe_load((WORKFLOWS_DIR / "security-scans.yml").read_text(encoding="utf-8"))
     for job_id in ("semgrep", "trivy", "gitleaks"):
-        assert job_id in wf["jobs"], f"job {job_id} not in security-scans.yml"
-        conc = wf["jobs"][job_id].get("concurrency")
-        assert isinstance(conc, dict), f"job {job_id} missing concurrency block"
-        assert conc["group"] == "nucleus-scan-${{ github.job }}"
-        assert conc["queue"] == "max"
-        assert conc["cancel-in-progress"] is False
+        assert _scan_queue_ok(_load_job("security-scans.yml", job_id)), job_id
+    good = _load_job("security-scans.yml", "semgrep")
+    for key, value in (("queue", "single"), ("cancel-in-progress", True), ("group", "scan")):
+        bad = json.loads(json.dumps(good))
+        bad["concurrency"][key] = value
+        assert not _scan_queue_ok(bad), key
 
 
 def test_actionlint_ignores_queue_only_where_used():
