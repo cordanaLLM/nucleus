@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -219,7 +220,15 @@ def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
     ):
         assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
     dl = steps["Download Kernel Build Artifact"]
-    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert re.fullmatch(r"actions/download-artifact@[0-9a-f]{40}", dl["uses"])
+    other_dls = [
+        s["uses"]
+        for j_name, j in bm.get("jobs", {}).items()
+        if j_name != "nvidia-open-module" and isinstance(j, dict)
+        for s in j.get("steps", [])
+        if isinstance(s, dict) and s.get("uses", "").startswith("actions/download-artifact@")
+    ]
+    assert other_dls and all(u == dl["uses"] for u in other_dls)
     assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
     build_run = steps["Build NVIDIA Open Module"]["run"]
     assert "api.github.com" not in build_run
