@@ -183,6 +183,39 @@ def test_openzfs_workflow_verifies_the_release_with_cosign():
     assert '--certificate-oidc-issuer "https://token.actions.githubusercontent.com"' in run_script
 
 
+def test_build_container_installs_git_before_checkout():
+    """Ensure the build container installs git before checkout.
+
+    Also asserts that select_module_release runs after checkout.
+    """
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["build"]["steps"]
+    checkout_index = next(i for i, s in enumerate(steps) if s.get("name") == "Checkout Repository")
+
+    git_installed = False
+    for step in steps[:checkout_index]:
+        run_script = step.get("run", "")
+        if "apt-get install" in run_script:
+            words = [tok for tok in re.split(r"[\s\\]+", run_script) if tok]
+            if "git" in words:
+                git_installed = True
+                break
+
+    assert git_installed, (
+        "Expected build container to install 'git' via apt-get install before 'Checkout Repository'"
+    )
+
+    select_step_index = next(
+        (i for i, s in enumerate(steps) if "select_module_release" in s.get("run", "")),
+        None,
+    )
+    assert select_step_index is not None, "Step running select_module_release not found"
+    assert select_step_index > checkout_index, (
+        f"Expected select_module_release (step {select_step_index}) to come after "
+        f"Checkout Repository (step {checkout_index})"
+    )
+
+
 @needs_dpkg
 def test_check_openzfs_module_print_plan(tmp_path: Path):
     """Ensure --print-plan states url, sha, KR, range and exits 0."""

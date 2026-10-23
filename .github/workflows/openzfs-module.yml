@@ -100,7 +100,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential autoconf automake libtool gawk uuid-dev libblkid-dev libudev-dev \
             libssl-dev zlib1g-dev libaio-dev libattr1-dev libelf-dev python3 ca-certificates \
-            curl gpg gpgv kmod gettext-base
+            curl gpg gpgv kmod git gettext-base
 
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
