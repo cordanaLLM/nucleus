@@ -958,9 +958,11 @@ def _security_gate_job():
 
 
 def test_security_scans_aggregate_contract():
-    """Ensure one always() job in security-scans.yml needs every scan job."""
+    """Ensure one !cancelled() job in security-scans.yml needs every scan job."""
     jobs, gate = _security_gate_job()
-    assert str(gate["if"]).strip() == "always()", "the gate must report on every run"
+    assert str(gate["if"]).strip() == "${{ !cancelled() }}", (
+        "the gate must report on every run that a newer push did not cancel"
+    )
     assert "continue-on-error" not in gate, "an advisory gate can never fail"
     scans = sorted(name for name in jobs if name != "security-gate")
     assert sorted(gate["needs"]) == scans, "the gate must need every other job of the workflow"
@@ -2014,3 +2016,140 @@ def test_build_matrix_module_step_requires_exactly_one_headers_deb(
     assert res_two.returncode == 1
     assert "found 2:" in res_two.stderr
     assert deb1.name in res_two.stderr and deb2.name in res_two.stderr
+
+
+KERNEL_SLOT_PATTERN = re.compile(
+    r"nucleus-kernel-slot-\$\{\{ fromJSON\('(\[[0-9,]+\])'\)\[strategy\.job-index\] \}\}"
+)
+EXPECTED_KERNEL_SLOT_TABLE_STR = "[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]"
+
+KERNEL_POOL_JOBS = [
+    ("build-matrix.yml", "build"),
+    ("build-matrix.yml", "reproducibility"),
+    ("build-matrix.yml", "openzfs-module"),
+    ("build-matrix.yml", "nvidia-open-module"),
+    ("nvidia-open-module.yml", "build"),
+    ("openzfs-module.yml", "build"),
+    ("package-lifecycle.yml", "lifecycle"),
+    ("verify-requirements.yml", "resolve"),
+    ("release-build.yml", "build"),
+]
+
+
+def _kernel_slot_ok(job: dict) -> bool:
+    conc = job.get("concurrency")
+    if not isinstance(conc, dict):
+        return False
+    if conc.get("queue") != "max":
+        return False
+    if conc.get("cancel-in-progress") is not False:
+        return False
+    group = conc.get("group", "")
+    m = KERNEL_SLOT_PATTERN.fullmatch(group)
+    if not m:
+        return False
+    table_str = m.group(1)
+    if table_str != EXPECTED_KERNEL_SLOT_TABLE_STR:
+        return False
+    if set(json.loads(table_str)) != set(range(6)):
+        return False
+    return True
+
+
+def _load_job(wf_filename: str, job_id: str) -> dict:
+    wf = yaml.safe_load((WORKFLOWS_DIR / wf_filename).read_text(encoding="utf-8"))
+    assert job_id in wf["jobs"], f"{job_id} not found in {wf_filename}"
+    return wf["jobs"][job_id]
+
+
+def test_kernel_jobs_share_six_repository_wide_slots():
+    """Every kernel and module job takes one of the six repository-wide slots."""
+    for wf_filename, job_id in KERNEL_POOL_JOBS:
+        assert _kernel_slot_ok(_load_job(wf_filename, job_id)), f"{wf_filename} job {job_id}"
+    build = _load_job("build-matrix.yml", "build")
+    legs = len(build["strategy"]["matrix"]["stream"]) * len(build["strategy"]["matrix"]["arch"])
+    assert len(json.loads(EXPECTED_KERNEL_SLOT_TABLE_STR)) >= legs
+
+
+def test_kernel_slot_check_refuses_mutations():
+    """A slot that cancels, keeps no queue or uses another table is refused."""
+    build = _load_job("build-matrix.yml", "build")
+    mutations = (
+        ("queue", "single"),
+        ("cancel-in-progress", True),
+        ("group", build["concurrency"]["group"].replace("5]", "6]", 1)),
+    )
+    for key, value in mutations:
+        bad = json.loads(json.dumps(build))
+        bad["concurrency"][key] = value
+        assert not _kernel_slot_ok(bad), key
+    del build["concurrency"]
+    assert not _kernel_slot_ok(build)
+
+
+def _compiles(job: dict) -> bool:
+    for step in job.get("steps", []):
+        run = step.get("run", "") if isinstance(step, dict) else ""
+        if "check-openzfs-module.sh" in run or "check-nvidia-open-module.sh" in run:
+            return True
+        lines = [line for line in run.splitlines() if "build_kernel.sh" in line]
+        if any("--dry-run" not in line for line in lines):
+            return True
+    return False
+
+
+def test_every_compiling_job_is_in_the_kernel_pool():
+    """A job that compiles a kernel or a module outside the pool is refused."""
+    for wf_path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+        for job_id, job in wf.get("jobs", {}).items():
+            if isinstance(job, dict) and _compiles(job):
+                assert (wf_path.name, job_id) in KERNEL_POOL_JOBS, f"{wf_path.name} job {job_id}"
+    assert _compiles({"steps": [{"run": "scripts/build_kernel.sh --stream lts"}]})
+    assert not _compiles({"steps": [{"run": "scripts/build_kernel.sh --dry-run"}]})
+
+
+def _scan_queue_ok(job: dict) -> bool:
+    return job.get("concurrency") == {
+        "group": "nucleus-scan-${{ github.job }}",
+        "queue": "max",
+        "cancel-in-progress": False,
+    }
+
+
+def test_security_scanners_queue_per_scanner():
+    """Security scanners declare dedicated repository-wide FIFO queues per scanner."""
+    for job_id in ("semgrep", "trivy", "gitleaks"):
+        assert _scan_queue_ok(_load_job("security-scans.yml", job_id)), job_id
+    good = _load_job("security-scans.yml", "semgrep")
+    for key, value in (("queue", "single"), ("cancel-in-progress", True), ("group", "scan")):
+        bad = json.loads(json.dumps(good))
+        bad["concurrency"][key] = value
+        assert not _scan_queue_ok(bad), key
+
+
+def test_actionlint_ignores_queue_only_where_used():
+    """actionlint config ignores queue error only on workflows that declare queue."""
+    config_path = REPO_ROOT / ".github" / "actionlint.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    paths = config.get("paths", {})
+    assert paths, "actionlint.yaml missing paths block"
+
+    covered_workflows = set()
+    for pat, cfg in paths.items():
+        assert cfg.get("ignore") == ['unexpected key "queue" for "concurrency" section'], (
+            f"unexpected ignore pattern for path {pat}"
+        )
+        m = re.fullmatch(r"\*\*/\.github/workflows/\{([^}]+)\}\.yml", pat)
+        if m:
+            for name in m.group(1).split(","):
+                covered_workflows.add(f"{name.strip()}.yml")
+        else:
+            covered_workflows.add(Path(pat).name)
+
+    workflows_with_queue = {
+        wf.name for wf in WORKFLOWS_DIR.glob("*.yml") if "queue:" in wf.read_text(encoding="utf-8")
+    }
+    assert workflows_with_queue == covered_workflows, (
+        f"Mismatch between workflows using queue ({workflows_with_queue}) and covered ({covered_workflows})"
+    )

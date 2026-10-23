@@ -6,3 +6,11 @@
 self-hosted-runner:
   labels:
     - ubuntu-26.04
+
+# actionlint v1.7.12 does not know the documented concurrency key `queue` (upstream issue
+# rhysd/actionlint#657). Ignored only for that message, only in the workflows that use it;
+# delete once actionlint accepts it.
+paths:
+  "**/.github/workflows/{build-matrix,nvidia-open-module,openzfs-module,package-lifecycle,verify-requirements,release-build,security-scans}.yml":
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

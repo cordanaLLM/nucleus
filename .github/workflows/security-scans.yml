@@ -58,6 +58,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     # Semgrep runs from its publisher's image, named by release and digest, so the scanner
     # changes only with a commit here. The update bot moves both parts together.
     container:
@@ -89,6 +94,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -116,6 +126,11 @@ jobs:
     name: Gitleaks History Scan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -151,13 +166,15 @@ jobs:
   # One check that stands for every scan above. Semgrep and Trivy are skipped on pull
   # requests that touch no code path, and GitHub reports a skipped job as successful, so
   # neither can be a required check on its own. This job needs all of them and runs on every
-  # event (if: always()). The change detector and Gitleaks run on every event and must
+  # event that is not cancelled (if: !cancelled()): a run superseded by a newer push must not
+  # hold a hosted runner slot and its concurrency group for a gate nobody reads. The change
+  # detector and Gitleaks run on every event and must
   # succeed. Semgrep and Trivy may be skipped only when the detector succeeded and decided
   # that this pull request touches no code; every other result fails the gate.
   security-gate:
     name: Security Scan Gate
     needs: [changes, semgrep, trivy, gitleaks]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
