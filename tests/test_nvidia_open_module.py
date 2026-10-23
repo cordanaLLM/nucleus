@@ -229,6 +229,39 @@ def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
     assert build_checkout["with"]["fetch-depth"] == 0
 
 
+def test_build_container_installs_git_before_checkout():
+    """Ensure the build container installs git before checkout.
+
+    Also asserts that select_module_release runs after checkout.
+    """
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["build"]["steps"]
+    checkout_index = next(i for i, s in enumerate(steps) if s.get("name") == "Checkout Repository")
+
+    git_installed = False
+    for step in steps[:checkout_index]:
+        run_script = step.get("run", "")
+        if "apt-get install" in run_script:
+            words = [tok for tok in re.split(r"[\s\\]+", run_script) if tok]
+            if "git" in words:
+                git_installed = True
+                break
+
+    assert git_installed, (
+        "Expected build container to install 'git' via apt-get install before 'Checkout Repository'"
+    )
+
+    select_step_index = next(
+        (i for i, s in enumerate(steps) if "select_module_release" in s.get("run", "")),
+        None,
+    )
+    assert select_step_index is not None, "Step running select_module_release not found"
+    assert select_step_index > checkout_index, (
+        f"Expected select_module_release (step {select_step_index}) to come after "
+        f"Checkout Repository (step {checkout_index})"
+    )
+
+
 def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
     """Ensure build-matrix.yml runs NVIDIA Open module check against the build job's headers artifact."""
     bm_path = REPO_ROOT / ".github" / "workflows" / "build-matrix.yml"
