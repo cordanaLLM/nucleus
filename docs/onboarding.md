@@ -91,7 +91,7 @@ Verify the target kernel streams:
 
 - `bleeding`: Linux 7.3-rc7, from the signed tag
 - `mainstream`: Linux 7.2.11
-- `lts`: Linux 6.18.56
+- `lts`: Linux 6.18.58
 - `realtime`: Linux 7.2.11 with the in-tree `PREEMPT_RT`
 
 ---

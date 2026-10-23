@@ -37,15 +37,15 @@
       }
     },
     "lts": {
-      "version": "6.18.56",
-      "tag": "v6.18.56",
+      "version": "6.18.58",
+      "tag": "v6.18.58",
       "status": "longterm",
       "description": "Long-term support stream for enterprise Kubernetes nodes, OpenZFS 2.3, and CNPG.",
       "source": {
         "kind": "tarball",
-        "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.56.tar.xz",
-        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.56.tar.sign",
-        "sha256": "4633bbda2ab95eaf2a7af4041236451d6759c72e6946265531af4b3aacefbf89",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.58.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.58.tar.sign",
+        "sha256": "069b19f9032c4dac8149ae4b6520c35debca0f42a9f6d52ee55ba6ca9b818013",
         "signers": [
           "647F28654894E3BD457199BE38DBBDC86092693E"
         ]

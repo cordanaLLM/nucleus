@@ -1,19 +1,17 @@
 ---
 name: openzfs-module
 # Pull request module checks run in build-matrix.yml against the same-SHA headers artifact
-# because a stream-version bump pull request has no published GitHub Release yet.
+# because a stream-version bump pull request has no published GitHub Release yet. For the same
+# reason this workflow does not run on a push to main: a merged bump has no release until
+# publish-release.yml publishes it, so it runs when that workflow succeeds, against the commit
+# and stream of the tag it published, and weekly against every stream's newest release.
 on:
   workflow_dispatch:
   schedule:
     - cron: "23 6 * * 1"
-  push:
-    branches: [main]
-    paths:
-      - "versions.json"
-      - "versions.schema.json"
-      - "keys/**"
-      - "scripts/check-openzfs-module.sh"
-      - ".github/workflows/openzfs-module.yml"
+  workflow_run:
+    workflows: [publish-release]
+    types: [completed]
 
 # A newer push to the same pull request supersedes this run. Every other event gets a group
 # of its own (run_id), so a run for main, a schedule or a dispatch is never cancelled.
@@ -26,6 +24,8 @@ permissions:
 
 jobs:
   plan:
+    # head_sha is checked out below: only this repository's own release commit may run here.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
     name: Plan OpenZFS Module Build Matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -46,25 +46,29 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Compute Matrix
         id: plan
         shell: bash
+        env:
+          PUBLISHED_TAG: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
-          python3 scripts/module_stream_matrix.py --module=openzfs
+          python3 scripts/module_stream_matrix.py --module=openzfs --release-tag="${PUBLISHED_TAG}"
 
   build:
     name: Build OpenZFS Module (${{ matrix.stream }})
     needs: plan
+    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
@@ -105,25 +109,37 @@ jobs:
             curl gpg gpgv kmod gettext-base
 
       - name: Checkout Repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Download Release Assets and Build Module
         shell: bash
         env:
           STREAM: ${{ matrix.stream }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISHED_TAG: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          # find_bump_time reads the versions.json history with git; the container runs as root on a
+          # checkout owned by the runner's user, which git refuses without this setting.
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="${GITHUB_WORKSPACE}"
           python3 - <<'PY'
           import json
           import os
-          import re
+          import sys
           import urllib.request
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          from select_lifecycle_releases import find_bump_time
+          from select_module_release import select_module_release
 
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ.get("GH_TOKEN", "")
@@ -133,7 +149,6 @@ jobs:
               v = json.load(f)
           version = v["streams"][stream]["version"]
           tag_ver = version.replace("~", "-")
-          prefix = f"v{tag_ver}-{stream}-lusoris"
 
           req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases?per_page=100")
           if token:
@@ -144,18 +159,28 @@ jobs:
           with urllib.request.urlopen(req, timeout=60) as resp:
               releases = json.load(resp)
 
-          matching = []
-          for rel in releases:
-              tag = rel.get("tag_name", "")
-              m = re.match(rf"^v{re.escape(tag_ver)}-{re.escape(stream)}-lusoris(\d+)$", tag)
-              if m:
-                  matching.append((int(m.group(1)), tag, rel))
+          published = os.environ.get("PUBLISHED_TAG", "")
+          now = datetime.now(UTC)
+          try:
+              bump_time = find_bump_time(stream, version, Path("."), now)
+              best_tag, lines = select_module_release(
+                  stream, tag_ver, releases, published, bump_time, now
+              )
+          except (ValueError, RuntimeError) as exc:
+              raise SystemExit(f"Refused: {exc}")
 
-          if not matching:
-              raise SystemExit(f"No release tag found matching prefix {prefix}<N>")
+          for line in lines:
+              print(line)
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary and lines:
+              with open(step_summary, "a", encoding="utf-8") as f:
+                  f.write(f"### Stream `{stream}`\n")
+                  for line in lines:
+                      f.write(f"{line}\n")
 
-          matching.sort(key=lambda x: x[0], reverse=True)
-          best_rev, best_tag, best_rel = matching[0]
+          best_rel = next((r for r in releases if r.get("tag_name") == best_tag), None)
+          if not best_rel:
+              raise SystemExit(f"Refused: release object for {best_tag} not found")
           print(f"Selected release tag: {best_tag}")
 
           os.makedirs("release_assets", exist_ok=True)
