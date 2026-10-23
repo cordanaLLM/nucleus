@@ -135,9 +135,30 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
 
       - name: Install the Build Toolchain
         env:
@@ -145,10 +166,17 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${WITH_QEMU}" == "true" ]]; then
-            bash ./scripts/install-build-toolchain.sh --with-qemu
+            bash ./scripts/install-build-toolchain.sh --with-qemu --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           else
-            bash ./scripts/install-build-toolchain.sh
+            bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           fi
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
 
       # The hosted runners keep a larger scratch disk at /mnt; the build goes wherever there is
       # more room, and a runner without enough anywhere fails here rather than an hour in.
@@ -201,7 +229,7 @@ jobs:
 
       - name: Keep the Build Log
         if: failure() && steps.disk.outputs.work_dir != ''
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-log-${{ matrix.stream }}-${{ matrix.arch }}
           path: ${{ steps.disk.outputs.work_dir }}/${{ matrix.stream }}-${{ matrix.arch }}/build.log
@@ -399,7 +427,7 @@ jobs:
 
       - name: Upload Build Artifacts
         if: env.DRY_RUN != 'true'
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kernel-${{ matrix.stream }}-${{ matrix.arch }}
           path: |
@@ -448,14 +476,42 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
 
       - name: Install the Build Toolchain
         run: |
           set -euo pipefail
-          bash ./scripts/install-build-toolchain.sh
+          bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
 
       - name: State the Comparison
         if: env.DRY_RUN == 'true'
@@ -514,7 +570,7 @@ jobs:
 
       - name: Keep Both Builds for Inspection
         if: failure() && steps.disk.outputs.work_dir != ''
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reproducibility-${{ github.run_id }}
           path: repro/
@@ -544,7 +600,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build docker/Dockerfile.builder
@@ -585,12 +641,12 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -654,13 +710,13 @@ jobs:
 
       - name: Checkout Repository
         if: env.DRY_RUN != 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Download Kernel Build Artifact
         if: env.DRY_RUN != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: kernel-${{ matrix.stream }}-x86_64
 
@@ -726,13 +782,13 @@ jobs:
 
       - name: Checkout Repository
         if: env.DRY_RUN != 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Download Kernel Build Artifact
         if: env.DRY_RUN != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: kernel-${{ matrix.stream }}-x86_64
 

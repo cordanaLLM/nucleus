@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -178,20 +179,52 @@ def test_nvidia_open_workflow_shape():
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
     assert "pull_request" not in on_triggers
-    assert "push" in on_triggers
-
-    # Filtered paths
-    expected_paths = [
-        "versions.json",
-        "versions.schema.json",
-        "scripts/check-nvidia-open-module.sh",
-        ".github/workflows/nvidia-open-module.yml",
-    ]
-    assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
-    assert on_triggers["push"]["branches"] == ["main"]
+    # A merged stream bump has no release until publish-release.yml publishes it, so the
+    # release path runs after that workflow succeeds, never on the push that merged the bump.
+    assert "push" not in on_triggers
 
     plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
     assert "python3 scripts/module_stream_matrix.py --module=nvidia_open" in plan_step["run"]
+    assert '--release-tag="${PUBLISHED_TAG}"' in plan_step["run"]
+    assert plan_step["env"]["PUBLISHED_TAG"] == "${{ github.event.workflow_run.head_branch || '' }}"
+
+
+def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
+    """The release path runs on the published tag's commit and stream, only after success."""
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    on_triggers = parsed.get("on", parsed.get(True, {}))
+    published = "${{ github.event.workflow_run.head_branch || '' }}"
+    assert on_triggers["workflow_run"] == {
+        "workflows": ["publish-release"],
+        "types": ["completed"],
+    }
+    plan_job = parsed["jobs"]["plan"]
+    assert plan_job["if"] == (
+        "github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success'"
+        " && github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    assert parsed["jobs"]["build"]["if"] == (
+        "needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null"
+        " && (github.event_name != 'workflow_run'"
+        " || github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    for job in ("plan", "build"):
+        checkout = next(
+            s for s in parsed["jobs"][job]["steps"] if s.get("name") == "Checkout Repository"
+        )
+        assert checkout["with"]["ref"] == "${{ github.event.workflow_run.head_sha || github.sha }}"
+    build_step = next(
+        s
+        for s in parsed["jobs"]["build"]["steps"]
+        if s.get("name") == "Download Release Assets and Build Module"
+    )
+    assert build_step["env"]["PUBLISHED_TAG"] == published
+    assert "from select_module_release import select_module_release" in build_step["run"]
+    assert "No release tag found matching prefix" not in build_step["run"]
+    build_checkout = next(
+        s for s in parsed["jobs"]["build"]["steps"] if s.get("name") == "Checkout Repository"
+    )
+    assert build_checkout["with"]["fetch-depth"] == 0
 
 
 def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
@@ -219,7 +252,15 @@ def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
     ):
         assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
     dl = steps["Download Kernel Build Artifact"]
-    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert re.fullmatch(r"actions/download-artifact@[0-9a-f]{40}", dl["uses"])
+    other_dls = [
+        s["uses"]
+        for j_name, j in bm.get("jobs", {}).items()
+        if j_name != "nvidia-open-module" and isinstance(j, dict)
+        for s in j.get("steps", [])
+        if isinstance(s, dict) and s.get("uses", "").startswith("actions/download-artifact@")
+    ]
+    assert other_dls and all(u == dl["uses"] for u in other_dls)
     assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
     build_run = steps["Build NVIDIA Open Module"]["run"]
     assert "api.github.com" not in build_run

@@ -97,21 +97,14 @@ def test_openzfs_workflow_shape():
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
     assert "pull_request" not in on_triggers
-    assert "push" in on_triggers
-
-    # Filtered paths
-    expected_paths = [
-        "versions.json",
-        "versions.schema.json",
-        "keys/**",
-        "scripts/check-openzfs-module.sh",
-        ".github/workflows/openzfs-module.yml",
-    ]
-    assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
-    assert on_triggers["push"]["branches"] == ["main"]
+    # A merged stream bump has no release until publish-release.yml publishes it, so the
+    # release path runs after that workflow succeeds, never on the push that merged the bump.
+    assert "push" not in on_triggers
 
     plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
     assert "python3 scripts/module_stream_matrix.py --module=openzfs" in plan_step["run"]
+    assert '--release-tag="${PUBLISHED_TAG}"' in plan_step["run"]
+    assert plan_step["env"]["PUBLISHED_TAG"] == "${{ github.event.workflow_run.head_branch || '' }}"
 
     # Container image digest equals release-build.yml
     release_build_workflow = REPO_ROOT / ".github" / "workflows" / "release-build.yml"
@@ -135,6 +128,44 @@ def test_openzfs_workflow_shape():
     for stream in ("lts", "mainstream", "realtime", "bleeding"):
         assert f"stream: {stream}" not in build_job_text
         assert f"- {stream}" not in build_job_text
+
+
+def test_openzfs_workflow_runs_after_a_successful_publish_release():
+    """The release path runs on the published tag's commit and stream, only after success."""
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    on_triggers = parsed.get("on", parsed.get(True, {}))
+    published = "${{ github.event.workflow_run.head_branch || '' }}"
+    assert on_triggers["workflow_run"] == {
+        "workflows": ["publish-release"],
+        "types": ["completed"],
+    }
+    plan_job = parsed["jobs"]["plan"]
+    assert plan_job["if"] == (
+        "github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success'"
+        " && github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    assert parsed["jobs"]["build"]["if"] == (
+        "needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null"
+        " && (github.event_name != 'workflow_run'"
+        " || github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    for job in ("plan", "build"):
+        checkout = next(
+            s for s in parsed["jobs"][job]["steps"] if s.get("name") == "Checkout Repository"
+        )
+        assert checkout["with"]["ref"] == "${{ github.event.workflow_run.head_sha || github.sha }}"
+    build_step = next(
+        s
+        for s in parsed["jobs"]["build"]["steps"]
+        if s.get("name") == "Download Release Assets and Build Module"
+    )
+    assert build_step["env"]["PUBLISHED_TAG"] == published
+    assert "from select_module_release import select_module_release" in build_step["run"]
+    assert "No release tag found matching prefix" not in build_step["run"]
+    build_checkout = next(
+        s for s in parsed["jobs"]["build"]["steps"] if s.get("name") == "Checkout Repository"
+    )
+    assert build_checkout["with"]["fetch-depth"] == 0
 
 
 def test_openzfs_workflow_verifies_the_release_with_cosign():
@@ -329,7 +360,15 @@ def test_build_matrix_runs_openzfs_module_against_same_sha_headers():
     ):
         assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
     dl = steps["Download Kernel Build Artifact"]
-    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert re.fullmatch(r"actions/download-artifact@[0-9a-f]{40}", dl["uses"])
+    other_dls = [
+        s["uses"]
+        for j_name, j in bm.get("jobs", {}).items()
+        if j_name != "openzfs-module" and isinstance(j, dict)
+        for s in j.get("steps", [])
+        if isinstance(s, dict) and s.get("uses", "").startswith("actions/download-artifact@")
+    ]
+    assert other_dls and all(u == dl["uses"] for u in other_dls)
     assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
     build_run = steps["Build OpenZFS Module"]["run"]
     assert "api.github.com" not in build_run
@@ -446,3 +485,65 @@ def test_module_stream_matrix_refuses_more_streams_than_its_bound(tmp_path: Path
     )
     assert res.returncode != 0
     assert "more than 32" in res.stderr
+
+
+def _matrix_for_release_tag(tmp_path: Path, module: str, tag: str) -> subprocess.CompletedProcess:
+    """Run module_stream_matrix.py with --release-tag against the repository's versions.json."""
+    return subprocess.run(
+        [
+            "python3",
+            str(REPO_ROOT / "scripts" / "module_stream_matrix.py"),
+            f"--module={module}",
+            f"--versions={REPO_ROOT / 'versions.json'}",
+            f"--release-tag={tag}",
+            f"--github-output={tmp_path / 'github_output'}",
+            f"--step-summary={tmp_path / 'step_summary.md'}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _pinned_tag(stream: str) -> str:
+    version = json.loads((REPO_ROOT / "versions.json").read_text(encoding="utf-8"))["streams"][
+        stream
+    ]["version"]
+    return f"v{version.replace('~', '-')}-{stream}-lusoris1"
+
+
+def test_module_stream_matrix_release_tag_keeps_only_its_stream(tmp_path: Path):
+    """Positive: a published release tag of an in-range stream leaves that stream alone."""
+    res = _matrix_for_release_tag(tmp_path, "openzfs", _pinned_tag("mainstream"))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == 'matrix={"stream": ["mainstream"]}'
+    assert "only `mainstream` is checked" in (tmp_path / "step_summary.md").read_text("utf-8")
+
+
+def test_module_stream_matrix_release_tag_outside_the_module_builds_nothing(tmp_path: Path):
+    """Boundary: a release of a stream outside the module's range yields an empty matrix."""
+    res = _matrix_for_release_tag(tmp_path, "openzfs", _pinned_tag("bleeding"))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == 'matrix={"stream": []}'
+    summary = (tmp_path / "step_summary.md").read_text("utf-8")
+    assert "`bleeding` is not a target of this module; nothing to build" in summary
+
+
+@pytest.mark.parametrize(
+    ("tag", "message"),
+    [
+        ("v0.0.1-mainstream-lusoris1", "is not the mainstream version"),
+        ("v7.2.11-nosuch-lusoris1", "names unknown stream 'nosuch'"),
+        ("v7.2.11-mainstream-lusoris0", "is not v<version>-<stream>-lusoris<N>"),
+        ("v7.2.11-mainstream-lusoris10000", "is not v<version>-<stream>-lusoris<N>"),
+        ("refs/heads/main", "is not v<version>-<stream>-lusoris<N>"),
+    ],
+)
+def test_module_stream_matrix_refuses_a_tag_that_is_not_a_pinned_release(
+    tmp_path: Path, tag: str, message: str
+):
+    """Negative: a malformed tag, an unknown stream or another version is refused, not widened."""
+    res = _matrix_for_release_tag(tmp_path, "openzfs", tag)
+    assert res.returncode != 0
+    assert message in res.stderr
+    assert not (tmp_path / "github_output").exists()

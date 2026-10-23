@@ -1,6 +1,7 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
 import json
+import math
 import os
 import re
 import shutil
@@ -105,6 +106,7 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert '--revision="${REVISION}"' in build["run"]
     assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
     assert BUILD_IMAGE.fullmatch(build["env"]["BUILD_IMAGE"]) and '"${BUILD_IMAGE}"' in build["run"]
+    assert "-e ARCH=x86_64" in build["run"]
     assert "install-build-toolchain.sh --with-qemu" in build["run"]
     assert "-e GITHUB_TOKEN" not in build["run"] and "ACTIONS_ID_TOKEN" not in build["run"]
     gate = steps[names.index("Gate the Kernel Artifacts")]
@@ -259,6 +261,65 @@ def test_required_checks_waits_longer_than_every_build_wave():
     assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
 
 
+def _measured_spans() -> tuple[list[int], int]:
+    """Measured pull request build-matrix spans and the hosted runner job limit, in minutes."""
+    fixture = json.loads(
+        (REPO_ROOT / "tests" / "data" / "required-checks-spans.json").read_text(encoding="utf-8")
+    )
+    return [entry["span_seconds"] for entry in fixture["runs"]], fixture["hosted_job_limit_minutes"]
+
+
+def _deadline_problems(
+    wait: int, job_minutes: int, spans: list[int], limit_minutes: int
+) -> list[str]:
+    """Pure check of aggregator wait and job timeout against spans and runner limits."""
+    problems: list[str] = []
+    if wait < math.ceil(max(spans) * 1.25):
+        problems.append("deadline below measured worst span + 25%")
+    if job_minutes * 60 <= wait:
+        problems.append("job killed before the gate's deadline")
+    if job_minutes > limit_minutes:
+        problems.append("job bound over the hosted runner limit")
+    return problems
+
+
+def test_required_checks_deadline_covers_every_measured_build_span():
+    """Aggregator timeout must cover all measured PR build-matrix spans with headroom."""
+    job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]["required-checks"]
+    run = job["steps"][-1]["run"]
+    wait = int(re.search(r"--timeout (\d+)", run)[1])
+    job_minutes = job["timeout-minutes"]
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == []
+
+
+@pytest.mark.parametrize(
+    ("wait", "job_minutes", "expected_message"),
+    [
+        (11400, 200, "deadline below measured worst span + 25%"),
+        (19800, 330, "job killed before the gate's deadline"),
+        (19800, 370, "job bound over the hosted runner limit"),
+    ],
+)
+def test_deadline_problems_planted_refusals(wait: int, job_minutes: int, expected_message: str):
+    """Planted invalid deadlines must be refused with the exact expected diagnostic."""
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == [expected_message]
+
+
+def test_deadline_problems_boundary():
+    """Wait at exactly ceil(max * 1.25) passes; one second less triggers rule a."""
+    spans, limit_minutes = _measured_spans()
+    boundary_wait = math.ceil(max(spans) * 1.25)
+    job_minutes = boundary_wait // 60 + 1
+    assert _deadline_problems(boundary_wait, job_minutes, spans, limit_minutes) == []
+    assert _deadline_problems(boundary_wait - 1, job_minutes, spans, limit_minutes) == [
+        "deadline below measured worst span + 25%"
+    ]
+
+
 def _container_run_shells() -> dict[tuple[str, str, str], str | None]:
     """The shell each run step of each container job resolves to, keyed by workflow, job, step."""
     shells: dict[tuple[str, str, str], str | None] = {}
@@ -346,6 +407,10 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     )
     assert order.index("Refuse a boot whose console stays silent") < order.index(
         "Stage Artifacts and Checksums"
+    )
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
     )
     restore = steps["Restore the Compiler Cache"]
     save = steps["Save the Compiler Cache"]
@@ -452,6 +517,55 @@ def test_every_ubuntu_26_04_container_is_pinned_to_one_digest():
     assert "@sha256:" in image
     for name in ("build-matrix.yml", "release-build.yml", "ci.yml", "verify-requirements.yml"):
         assert name in users, name
+
+
+def test_renovate_custom_manager_matches_workflow_image_env_pins():
+    """Renovate customManager regexes match workflow *_IMAGE: env pins and extract image, tag, and digest."""
+    renovate = json.loads((REPO_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    manager = next(
+        m
+        for m in renovate.get("customManagers", [])
+        if m.get("customType") == "regex"
+        and m.get("datasourceTemplate") == "docker"
+        and any("_IMAGE:" in pat for pat in m.get("matchStrings", []))
+    )
+    assert manager.get("managerFilePatterns") == ["/^\\.github\\/workflows\\/.*\\.ya?ml$/"]
+
+    patterns = [
+        re.compile(re.sub(r"\?<([a-zA-Z0-9_]+)>", r"?P<\1>", pat))
+        for pat in manager.get("matchStrings", [])
+    ]
+    assert patterns
+
+    matched_lines = 0
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for line in wf.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("#") or "_IMAGE: " not in line:
+                continue
+            matched = False
+            for pat in patterns:
+                m = pat.search(line)
+                if m:
+                    matched = True
+                    assert m.group("depName") == "ubuntu", f"unexpected depName in {wf.name}"
+                    assert m.group("currentValue") == "26.04", (
+                        f"unexpected currentValue in {wf.name}"
+                    )
+                    digest = m.group("currentDigest")
+                    assert re.fullmatch(r"sha256:[a-f0-9]{64}", digest), (
+                        f"invalid digest in {wf.name}"
+                    )
+                    break
+            assert matched, f"No matchString in customManager matched: {line!r} in {wf.name}"
+            matched_lines += 1
+
+    assert matched_lines >= 3, (
+        f"Expected at least 3 _IMAGE: lines in workflows, got {matched_lines}"
+    )
+
+    # Negative case: a line without a digest does not match
+    no_digest_line = "BUILD_IMAGE: ubuntu:26.04"
+    assert not any(pat.search(no_digest_line) for pat in patterns)
 
 
 def test_no_run_block_interpolates_event_data():
@@ -1319,6 +1433,7 @@ def test_package_lifecycle_workflow_contract():
     assert "pull_request" in on, "pull_request trigger required"
     assert on["pull_request"]["paths"] == [
         "scripts/package_lifecycle.py",
+        "scripts/select_lifecycle_releases.py",
         ".github/workflows/package-lifecycle.yml",
     ]
     assert "schedule" in on, "schedule trigger required"
@@ -1627,7 +1742,134 @@ def test_reproducibility_builds_one_leg_twice_with_one_key_and_compares():
     delete = steps["Delete the Module Signing Key"]
     assert delete["if"].startswith("always()") and 'rm -rf "${KEY_DIR}"' in delete["run"]
     names = [step.get("name", "") for step in job["steps"]]
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
+    )
     assert names.index("Build Twice and Compare") < names.index("Delete the Module Signing Key")
+
+
+def _toolchain_cache_problems(steps: list[dict]) -> list[str]:
+    problems = []
+    names = [s.get("name", "") for s in steps]
+    step_map = {s.get("name", ""): s for s in steps}
+    if "Restore the Toolchain Package Cache" not in step_map:
+        problems.append("missing restore step")
+    if "Save the Toolchain Package Cache" not in step_map:
+        problems.append("missing save step")
+    if "Install the Build Toolchain" not in step_map:
+        problems.append("missing install step")
+    if not problems:
+        r_idx = names.index("Restore the Toolchain Package Cache")
+        i_idx = names.index("Install the Build Toolchain")
+        s_idx = names.index("Save the Toolchain Package Cache")
+        if not (r_idx < i_idx < s_idx):
+            problems.append("wrong step order")
+        r_step = step_map["Restore the Toolchain Package Cache"]
+        s_step = step_map["Save the Toolchain Package Cache"]
+        r_key = r_step.get("with", {}).get("key", "")
+        s_key = s_step.get("with", {}).get("key", "")
+        if "run_id" in r_key:
+            problems.append("restore key contains run_id")
+        if r_key != s_key:
+            problems.append("restore and save keys do not match")
+        if "steps.restore_apt_cache.outputs.cache-hit != 'true'" not in s_step.get("if", ""):
+            problems.append("missing cache-hit guard on save")
+        # actions/cache puts the compression method into the cache version; without zstd at
+        # restore time the restore looks for a gzip entry that the save never writes.
+        compressor = step_map.get("Install the Cache Compressor", {})
+        if (
+            "zstd" not in compressor.get("run", "")
+            or names.index("Install the Cache Compressor") > r_idx
+        ):
+            problems.append("zstd not installed before restore")
+    return problems
+
+
+_COMPRESSOR = {"name": "Install the Cache Compressor", "run": "apt-get install -y zstd"}
+
+
+def test_build_matrix_toolchain_cache_structure():
+    assert _toolchain_cache_problems(_build_matrix()["steps"]) == []
+    assert _toolchain_cache_problems(_reproducibility_job()["steps"]) == []
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected_problem"),
+    [
+        (
+            [
+                _COMPRESSOR,
+                {
+                    "name": "Restore the Toolchain Package Cache",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+            ],
+            "restore key contains run_id",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-b"},
+                },
+            ],
+            "restore and save keys do not match",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "always()",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "missing cache-hit guard on save",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "wrong step order",
+        ),
+        (
+            [
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "zstd not installed before restore",
+        ),
+    ],
+)
+def test_toolchain_cache_problems_planted_refusals(steps, expected_problem):
+    problems = _toolchain_cache_problems(steps)
+    assert expected_problem in problems
 
 
 def test_required_checks_waits_longer_than_the_reproducibility_job():

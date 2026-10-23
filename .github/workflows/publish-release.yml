@@ -58,13 +58,13 @@ jobs:
       contents: write
     steps:
       - name: Download Release Artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: output
 
       - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
           make_latest: ${{ needs.build.outputs.make_latest }}
@@ -84,7 +84,7 @@ jobs:
             output/*.provenance.sigstore.json
 
       - name: Dispatch Downstream Notification to imago
-        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ secrets.KERNEL_FORGE_TOKEN }}
           repository: cordanaLLM/imago

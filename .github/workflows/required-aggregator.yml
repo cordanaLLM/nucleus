@@ -8,9 +8,10 @@
 # verify-tool-release, which release-please.yml runs only on the push that creates a release
 # (or on a dispatch naming a tag), so every other push to main skips it. A failure of any of
 # them still fails this gate.
-# The wait covers build-matrix.yml on a pull request that touches the build path: it runs its
-# twelve legs six at a time, in two waves of at most 90 minutes each (arm64); the longest
-# measured leg took 40 minutes (run 36507112520).
+# The wait covers build-matrix.yml on a pull request that touches the build path: measured
+# spans reach 13397 s (run 39626121442), where queue under shared runners dominates.
+# 19800 s (330 min) gives ~1.48x headroom over the worst measured span, and the job bound of
+# 340 min stays under the 6 h hosted limit.
 # Branch protection: require the "required-checks" status check.
 
 name: required-aggregator
@@ -35,7 +36,7 @@ jobs:
     name: required-checks
     runs-on: ubuntu-24.04
     # The gate's own --timeout plus ten minutes for the checkout and the last poll.
-    timeout-minutes: 200
+    timeout-minutes: 340
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -50,7 +51,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Require every other check run to succeed
@@ -60,6 +61,6 @@ jobs:
           REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           python3 scripts/required_checks_gate.py --repo "${REPO}" --ref "${REF}"
-          --self required-checks --interval 20 --timeout 11400
+          --self required-checks --interval 20 --timeout 19800
           --allow-skip "Semgrep SAST" --allow-skip "Trivy Filesystem CVE Scan"
           --allow-skip "verify-tool-release"

@@ -88,6 +88,7 @@
         "tools/figures/mkdocs_hook.py",
         "tools/figures/astro.mjs",
         "tools/figures/serve.mjs",
+        "tools/figures/eslint.figures.mjs",
         "tools/figures/README.md",
         ".devcontainer/devcontainer.json",
         ".devcontainer/Dockerfile.praetor"
@@ -104,6 +105,16 @@
       ],
       "matchStrings": [
         "\"(?<depName>(?:registry\\.k8s\\.io|docker\\.io|quay\\.io|ghcr\\.io)[^:\"]+):(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "[A-Za-z0-9_]*_IMAGE:\\s+(?<depName>[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "datasourceTemplate": "docker"
     },
