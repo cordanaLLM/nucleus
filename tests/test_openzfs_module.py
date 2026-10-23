@@ -131,8 +131,10 @@ def test_openzfs_workflow_shape():
 
 
 def test_openzfs_workflow_runs_after_a_successful_publish_release():
-    """The release path runs on the published tag's commit and stream, only after success."""
-    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    """The release path runs at the default branch tip for the tag's stream, only after success."""
+    workflow_text = WORKFLOW_FILE.read_text(encoding="utf-8")
+    assert "workflow_run.head_sha" not in workflow_text
+    parsed = yaml.safe_load(workflow_text)
     on_triggers = parsed.get("on", parsed.get(True, {}))
     published = "${{ github.event.workflow_run.head_branch || '' }}"
     assert on_triggers["workflow_run"] == {
@@ -153,7 +155,7 @@ def test_openzfs_workflow_runs_after_a_successful_publish_release():
         checkout = next(
             s for s in parsed["jobs"][job]["steps"] if s.get("name") == "Checkout Repository"
         )
-        assert checkout["with"]["ref"] == "${{ github.event.workflow_run.head_sha || github.sha }}"
+        assert "ref" not in checkout["with"]
     build_step = next(
         s
         for s in parsed["jobs"]["build"]["steps"]

@@ -714,10 +714,11 @@ release publishes. On pull requests that touch the build path, `build-matrix.yml
 same run's `Build Kernel (<stream> / x86_64)` job, so a stream-version bump pull request is checked
 before its GitHub Release exists. `openzfs-module.yml` proves the published release assets: it runs
 weekly and on `workflow_dispatch` against every stream's newest release, and after each successful
-`publish-release.yml` run against the tag that run published, at the tag's commit and for the tag's
-stream only (`scripts/module_stream_matrix.py --release-tag`). It does not run on a push to `main`:
-a merged stream bump has no release until `publish-release.yml` publishes one, so that run could
-only fail.
+`publish-release.yml` run against the tag that run published, at the default branch's tip and for
+the tag's stream only; a tag that is not the stream's pinned version is refused, and the run never
+checks out the triggering run's commit (`scripts/module_stream_matrix.py --release-tag`). It does
+not run on a push to `main`: a merged stream bump has no release until `publish-release.yml`
+publishes one, so that run could only fail.
 
 - **What is pinned.** `modules.openzfs` in `versions.json` names the OpenZFS version, its
   tarball and detached signature, the tarball's `sha256`, the accepted signer
@@ -749,7 +750,7 @@ only fail.
 
 ### 5.7 NVIDIA Open GPU Kernel Modules Build (`.github/workflows/nvidia-open-module.yml`)
 
-NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream images builds on the open-source kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`). On pull requests that touch the build path, `build-matrix.yml` runs `Build NVIDIA Open Module (<stream>)` against the `linux-headers-*_amd64.deb` artifact from the same run's `Build Kernel (<stream> / x86_64)` job. `nvidia-open-module.yml` checks that the pinned release of NVIDIA open-gpu-kernel-modules compiles cleanly against the published `linux-headers-<kernelrelease>` package for streams `bleeding` and `mainstream` on x86_64: it runs weekly and on `workflow_dispatch` against each stream's newest release, and after each successful `publish-release.yml` run against the tag that run published, at the tag's commit and for the tag's stream only; a tag of a stream the module does not target builds nothing and says so in the step summary. It does not run on a push to `main`, because a merged stream bump has no release until `publish-release.yml` publishes one.
+NVIDIA GPU acceleration (such as Blackwell B200 and RTX 5090) in downstream images builds on the open-source kernel modules (`nvidia.ko`, `nvidia-uvm.ko`, `nvidia-modeset.ko`, `nvidia-drm.ko`). On pull requests that touch the build path, `build-matrix.yml` runs `Build NVIDIA Open Module (<stream>)` against the `linux-headers-*_amd64.deb` artifact from the same run's `Build Kernel (<stream> / x86_64)` job. `nvidia-open-module.yml` checks that the pinned release of NVIDIA open-gpu-kernel-modules compiles cleanly against the published `linux-headers-<kernelrelease>` package for streams `bleeding` and `mainstream` on x86_64: it runs weekly and on `workflow_dispatch` against each stream's newest release, and after each successful `publish-release.yml` run against the tag that run published, at the default branch's tip and for the tag's stream only; a tag that is not the stream's pinned version is refused, and the run never checks out the triggering run's commit; a tag of a stream the module does not target builds nothing and says so in the step summary. It does not run on a push to `main`, because a merged stream bump has no release until `publish-release.yml` publishes one.
 
 - **What is pinned.** `modules.nvidia_open` in `versions.json` pins the driver version (`615.78.08`), source archive URL, `sha256` digest, and peeled git commit. NVIDIA upstream tags carry no GPG signature and no detached `.asc`, so the script proves the archive by its pinned SHA-256 digest and by the commit that `git get-tar-commit-id` reads from the archive header, which must equal the pinned commit.
 - **Which streams.** `scripts/module_stream_matrix.py --module=nvidia_open` selects streams `bleeding` and `mainstream` on `x86_64`, matching `modules.nvidia_open.streams`.

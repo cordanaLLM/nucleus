@@ -3,8 +3,9 @@ name: nvidia-open-module
 # Pull request module checks run in build-matrix.yml against the same-SHA headers artifact
 # because a stream-version bump pull request has no published GitHub Release yet. For the same
 # reason this workflow does not run on a push to main: a merged bump has no release until
-# publish-release.yml publishes it, so it runs when that workflow succeeds, against the commit
-# and stream of the tag it published, and weekly against every stream's newest release.
+# publish-release.yml publishes it, so it runs when that workflow succeeds, at the default
+# branch's tip, for the stream of the tag it published (a tag that is not the pinned version is
+# refused), and weekly against every stream's newest release.
 on:
   workflow_dispatch:
   schedule:
@@ -24,7 +25,8 @@ permissions:
 
 jobs:
   plan:
-    # head_sha is checked out below: only this repository's own release commit may run here.
+    # Only this repository's own publish-release run triggers this; the checkout is the default
+    # branch, never the triggering run's commit.
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
     name: Plan NVIDIA Open Module Build Matrix
     runs-on: ubuntu-24.04
@@ -49,7 +51,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -105,7 +106,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
