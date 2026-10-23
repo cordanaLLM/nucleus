@@ -243,7 +243,8 @@ and `build-matrix.yml` and `package-lifecycle.yml` (expiring on
 although nothing can merge through them. The last two build a matrix that a plan job computes
 (`build-matrix.yml` runs `Build OpenZFS Module (<stream>)` and `Build NVIDIA Open Module (<stream>)`
 against the same-SHA x86_64 headers artifacts, while `openzfs-module.yml` and `nvidia-open-module.yml`
-run on `push` to `main`, `schedule` and `workflow_dispatch` against published releases),
+run after a successful `publish-release.yml` run, on `schedule` and on `workflow_dispatch` against
+published releases),
 and no job of theirs is a required check; their exceptions say so, and
 `tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
 `.github/rulesets/main.json` requires. All four close with cordanaLLM/praetor#1368.
