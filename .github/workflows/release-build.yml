@@ -111,7 +111,7 @@ jobs:
         env:
           STREAM: ${{ steps.meta.outputs.stream }}
           REVISION: ${{ steps.meta.outputs.rev }}
-          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+          BUILD_IMAGE: ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
         run: |
           set -euo pipefail
           make build-kernel STREAM="${STREAM}" ARCH=x86_64 DRY_RUN=true
@@ -168,7 +168,7 @@ jobs:
           STREAM: ${{ steps.meta.outputs.stream }}
           RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
           KERNELRELEASE: ${{ steps.gate.outputs.kernelrelease }}
-          BUILD_IMAGE: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+          BUILD_IMAGE: ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
         run: |
           set -euo pipefail
           mounts=(-v "${GITHUB_WORKSPACE}:/forge:ro" -v "${GITHUB_WORKSPACE}/output:/forge/output")
