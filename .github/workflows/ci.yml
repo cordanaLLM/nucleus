@@ -20,7 +20,7 @@ env:
   # .config/archetypes/ must match this commit's copies and .standards.lock must pin
   # them. Bump it as described in docs/repository-governance.md; versions.json pins
   # kernel streams, not tools.
-  PRAETOR_REF: "18c50fc7476aeb92011a409bc6b71351a9ded3cf"
+  PRAETOR_REF: "7b38b3bceecad41c9e8aa71851432d0dcaa7c0b1"
 
 jobs:
   lint-and-test:
