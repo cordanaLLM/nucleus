@@ -7,6 +7,10 @@ Reads ``versions.json``, evaluates the compatibility rule for the requested modu
 (``linux_minimum``..``linux_maximum`` major.minor range or explicit ``streams`` list),
 writes the markdown compatibility report to ``GITHUB_STEP_SUMMARY`` when set, and
 writes ``matrix={"stream": [...]}`` to ``GITHUB_OUTPUT`` when set (and stdout).
+
+With ``--release-tag v<version>-<stream>-lusoris<N>`` the matrix holds only the tag's stream
+(or nothing, when that stream is outside the module's range): a run started by a published
+release checks that release and no other stream's.
 """
 
 from __future__ import annotations
@@ -22,6 +26,9 @@ from typing import Any
 
 _MAJ_MIN = re.compile(r"^(\d+)\.(\d+)")
 _MAX_STREAMS = 32
+_RELEASE_TAG = re.compile(
+    r"^v(?P<version>[0-9][0-9A-Za-z.-]*)-(?P<stream>[a-z][a-z0-9]*)-lusoris[1-9][0-9]{0,3}$"
+)
 
 
 def _unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -162,6 +169,35 @@ def compute_module_matrix(
     return {"stream": streams}, summary
 
 
+def restrict_to_release_tag(
+    versions: Mapping[str, Any],
+    matrix: dict[str, list[str]],
+    summary: str,
+    tag: str,
+) -> tuple[dict[str, list[str]], str]:
+    """Keep only the stream a release tag names; refuse a tag that is not the stream's version."""
+    match = _RELEASE_TAG.match(tag)
+    if not match:
+        raise ValueError(f"release tag {tag!r} is not v<version>-<stream>-lusoris<N>")
+    stream = match.group("stream")
+    streams_map = versions.get("streams")
+    if not isinstance(streams_map, dict) or stream not in streams_map:
+        raise ValueError(f"release tag {tag!r} names unknown stream {stream!r}")
+    pinned = str(streams_map[stream].get("version", "")).replace("~", "-")
+    if match.group("version") != pinned:
+        raise ValueError(
+            f"release tag {tag!r} is not the {stream} version {pinned!r} in versions.json"
+        )
+    if stream in matrix["stream"]:
+        note = f"\n#### Release Tag\n- `{tag}`: only `{stream}` is checked\n"
+        return {"stream": [stream]}, summary + note
+    note = (
+        f"\n#### Release Tag\n- `{tag}`: `{stream}` is not a target of this module;"
+        " nothing to build\n"
+    )
+    return {"stream": []}, summary + note
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument(
@@ -174,6 +210,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("versions.json"),
         help="Path to versions.json manifest (default: versions.json)",
+    )
+    parser.add_argument(
+        "--release-tag",
+        default="",
+        help="Keep only the stream of this release tag (v<version>-<stream>-lusoris<N>)",
     )
     parser.add_argument(
         "--github-output",
@@ -197,6 +238,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not isinstance(versions, dict):
             raise ValueError("versions.json is not a JSON object")
         matrix, summary = compute_module_matrix(versions, args.module)
+        if args.release_tag:
+            matrix, summary = restrict_to_release_tag(versions, matrix, summary, args.release_tag)
     except (OSError, ValueError) as exc:
         print(f"module_stream_matrix: {exc}", file=sys.stderr)
         return 1

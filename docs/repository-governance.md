@@ -181,6 +181,28 @@ produce that:
 - A workflow change that renames a required job: `make test` fails until `make ruleset` has
   re-rendered the file.
 
+### Hosted runner share
+
+The cordanaLLM organisation has 20 hosted runner job slots, shared by every repository in it. On
+2026-10-22 at 10:02Z nucleus held 18 of them: 11 kernel legs from four `build-matrix` runs and 7
+required-checks pollers. `strategy.max-parallel` caps one run only, so four pull requests at once
+filled the organisation and the other repositories waited.
+
+Every job that compiles a kernel or a module (`build-matrix`, `nvidia-open-module`,
+`openzfs-module`, `package-lifecycle`, `verify-requirements`, `release-build`) takes one of six
+repository-wide slots, `nucleus-kernel-slot-0` to `nucleus-kernel-slot-5`, picked from its
+`strategy.job-index`. A job-level concurrency group runs one job at a time, so at most six kernel
+jobs of nucleus run at once across all workflows and runs; the others wait in their slot's queue in
+order (`queue: max`, `cancel-in-progress: false`). The scanners in `security-scans` (Semgrep,
+Trivy, Gitleaks) queue the same way, one group per scanner. A new push to a pull request still
+cancels the run of its old head (the workflow-level `cancel-in-progress` on `pull_request`).
+`tests/test_workflows.py` refuses a kernel job outside the pool.
+
+The cost is wall time: with several kernel pull requests open, a run can wait in the queue long
+enough to reach the required-checks deadline of 330 minutes, which then fails on time, not on a
+check. actionlint 1.7.12 does not know the `queue` key yet, so `.github/actionlint.yaml` ignores
+that one message in exactly the workflows that use it.
+
 ### Applying the ruleset
 
 The ruleset is applied after the pull request that commits `.github/rulesets/main.json` has
@@ -243,7 +265,8 @@ and `build-matrix.yml` and `package-lifecycle.yml` (expiring on
 although nothing can merge through them. The last two build a matrix that a plan job computes
 (`build-matrix.yml` runs `Build OpenZFS Module (<stream>)` and `Build NVIDIA Open Module (<stream>)`
 against the same-SHA x86_64 headers artifacts, while `openzfs-module.yml` and `nvidia-open-module.yml`
-run on `push` to `main`, `schedule` and `workflow_dispatch` against published releases),
+run after a successful `publish-release.yml` run, on `schedule` and on `workflow_dispatch` against
+published releases),
 and no job of theirs is a required check; their exceptions say so, and
 `tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
 `.github/rulesets/main.json` requires. All four close with cordanaLLM/praetor#1368.

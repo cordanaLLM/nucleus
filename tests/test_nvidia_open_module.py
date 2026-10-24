@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -178,20 +179,87 @@ def test_nvidia_open_workflow_shape():
     assert "workflow_dispatch" in on_triggers
     assert "schedule" in on_triggers
     assert "pull_request" not in on_triggers
-    assert "push" in on_triggers
-
-    # Filtered paths
-    expected_paths = [
-        "versions.json",
-        "versions.schema.json",
-        "scripts/check-nvidia-open-module.sh",
-        ".github/workflows/nvidia-open-module.yml",
-    ]
-    assert sorted(on_triggers["push"]["paths"]) == sorted(expected_paths)
-    assert on_triggers["push"]["branches"] == ["main"]
+    # A merged stream bump has no release until publish-release.yml publishes it, so the
+    # release path runs after that workflow succeeds, never on the push that merged the bump.
+    assert "push" not in on_triggers
 
     plan_step = next(s for s in parsed["jobs"]["plan"]["steps"] if s.get("id") == "plan")
     assert "python3 scripts/module_stream_matrix.py --module=nvidia_open" in plan_step["run"]
+    assert '--release-tag="${PUBLISHED_TAG}"' in plan_step["run"]
+    assert plan_step["env"]["PUBLISHED_TAG"] == "${{ github.event.workflow_run.head_branch || '' }}"
+
+
+def test_nvidia_open_workflow_runs_after_a_successful_publish_release():
+    """The release path runs at the default branch tip for the tag's stream, only after success."""
+    workflow_text = WORKFLOW_FILE.read_text(encoding="utf-8")
+    assert "workflow_run.head_sha" not in workflow_text
+    parsed = yaml.safe_load(workflow_text)
+    on_triggers = parsed.get("on", parsed.get(True, {}))
+    published = "${{ github.event.workflow_run.head_branch || '' }}"
+    assert on_triggers["workflow_run"] == {
+        "workflows": ["publish-release"],
+        "types": ["completed"],
+    }
+    plan_job = parsed["jobs"]["plan"]
+    assert plan_job["if"] == (
+        "github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success'"
+        " && github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    assert parsed["jobs"]["build"]["if"] == (
+        "needs.plan.result == 'success' && fromJSON(needs.plan.outputs.matrix).stream[0] != null"
+        " && (github.event_name != 'workflow_run'"
+        " || github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    for job in ("plan", "build"):
+        checkout = next(
+            s for s in parsed["jobs"][job]["steps"] if s.get("name") == "Checkout Repository"
+        )
+        assert "ref" not in checkout["with"]
+    build_step = next(
+        s
+        for s in parsed["jobs"]["build"]["steps"]
+        if s.get("name") == "Download Release Assets and Build Module"
+    )
+    assert build_step["env"]["PUBLISHED_TAG"] == published
+    assert "from select_module_release import select_module_release" in build_step["run"]
+    assert "No release tag found matching prefix" not in build_step["run"]
+    build_checkout = next(
+        s for s in parsed["jobs"]["build"]["steps"] if s.get("name") == "Checkout Repository"
+    )
+    assert build_checkout["with"]["fetch-depth"] == 0
+
+
+def test_build_container_installs_git_before_checkout():
+    """Ensure the build container installs git before checkout.
+
+    Also asserts that select_module_release runs after checkout.
+    """
+    parsed = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    steps = parsed["jobs"]["build"]["steps"]
+    checkout_index = next(i for i, s in enumerate(steps) if s.get("name") == "Checkout Repository")
+
+    git_installed = False
+    for step in steps[:checkout_index]:
+        run_script = step.get("run", "")
+        if "apt-get install" in run_script:
+            words = [tok for tok in re.split(r"[\s\\]+", run_script) if tok]
+            if "git" in words:
+                git_installed = True
+                break
+
+    assert git_installed, (
+        "Expected build container to install 'git' via apt-get install before 'Checkout Repository'"
+    )
+
+    select_step_index = next(
+        (i for i, s in enumerate(steps) if "select_module_release" in s.get("run", "")),
+        None,
+    )
+    assert select_step_index is not None, "Step running select_module_release not found"
+    assert select_step_index > checkout_index, (
+        f"Expected select_module_release (step {select_step_index}) to come after "
+        f"Checkout Repository (step {checkout_index})"
+    )
 
 
 def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
@@ -219,7 +287,15 @@ def test_build_matrix_runs_nvidia_open_module_against_same_sha_headers():
     ):
         assert steps[step_name]["if"] == "env.DRY_RUN != 'true'"
     dl = steps["Download Kernel Build Artifact"]
-    assert dl["uses"] == "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    assert re.fullmatch(r"actions/download-artifact@[0-9a-f]{40}", dl["uses"])
+    other_dls = [
+        s["uses"]
+        for j_name, j in bm.get("jobs", {}).items()
+        if j_name != "nvidia-open-module" and isinstance(j, dict)
+        for s in j.get("steps", [])
+        if isinstance(s, dict) and s.get("uses", "").startswith("actions/download-artifact@")
+    ]
+    assert other_dls and all(u == dl["uses"] for u in other_dls)
     assert dl["with"]["name"] == "kernel-${{ matrix.stream }}-x86_64"
     build_run = steps["Build NVIDIA Open Module"]["run"]
     assert "api.github.com" not in build_run

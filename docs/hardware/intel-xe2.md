@@ -113,7 +113,7 @@ This pins the Battlemage PCI device IDs (`e20b`, `e20c`, `e20d`) exclusively to 
 
 ## 4. oneAPI Level Zero Compute Integration
 
-The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline semaphores for high-throughput, low-jitter compute queue dispatch. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.56) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
+The Level Zero interface utilizes the `xe` driver's DRM syncobj and timeline semaphores for high-throughput, low-jitter compute queue dispatch. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.58) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 
 ### User-Space Device Nodes
 

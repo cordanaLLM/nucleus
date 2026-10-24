@@ -42,6 +42,13 @@ jobs:
     name: Build, Gate, Attest, and Sign Release
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
@@ -56,20 +63,20 @@ jobs:
       prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@f325610c9f50a54015d37c8d16cb3b0e2c8f4de0 # v0.18.0
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
 
       - name: Resolve Stream and Version
         id: meta
@@ -116,7 +123,8 @@ jobs:
             mounts+=(-v /mnt/nucleus-build:/work/mnt)
           fi
           docker run --rm "${mounts[@]}" -w /forge \
-            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" "${BUILD_IMAGE}" bash -c '
+            -e STREAM -e REVISION -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            -e ARCH=x86_64 "${BUILD_IMAGE}" bash -c '
               set -euo pipefail
               bash ./scripts/install-build-toolchain.sh --with-qemu
               candidates=(/work/temp)
@@ -176,7 +184,7 @@ jobs:
 
       - name: Keep the Build Record and Boot Log
         if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-records
           path: records/
@@ -248,7 +256,7 @@ jobs:
           echo "artifact-name=kernel-release-${{ steps.meta.outputs.release_tag }}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload Release Artifacts
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.package.outputs.artifact-name }}
           path: output/

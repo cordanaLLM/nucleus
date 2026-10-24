@@ -91,7 +91,7 @@ Verify the target kernel streams:
 
 - `bleeding`: Linux 7.3-rc7, from the signed tag
 - `mainstream`: Linux 7.2.11
-- `lts`: Linux 6.18.56
+- `lts`: Linux 6.18.58
 - `realtime`: Linux 7.2.11 with the in-tree `PREEMPT_RT`
 
 ---
@@ -103,6 +103,7 @@ Verify the target kernel streams:
 Run it in `ubuntu:26.04` with `scripts/install-build-toolchain.sh`, the toolchain the workflows
 use; a leg needs 8 to 16 GiB of disk, depending on the architecture
 (`scripts/probe-build-space.sh`, and `disk_gib` in `build-matrix.yml`).
+The installer reads target architecture from `ARCH` to install only the cross compiler needed for that build, while `--all-arches` (or leaving `ARCH` unset) installs all cross compilers.
 
 ```bash
 # State the fetch, the resolution, the make command and the expected kernel release:
