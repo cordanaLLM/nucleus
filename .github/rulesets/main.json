@@ -72,9 +72,6 @@
             "context": "Documentation Governance"
           },
           {
-            "context": "required-checks"
-          },
-          {
             "context": "Detect Security Scan Paths"
           },
           {
@@ -82,6 +79,9 @@
           },
           {
             "context": "Security Scan Gate"
+          },
+          {
+            "context": "required-checks"
           }
         ],
         "strict_required_status_checks_policy": true

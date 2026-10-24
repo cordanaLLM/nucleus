@@ -101,7 +101,7 @@ requires eleven checks:
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `REUSE lint` | `licence.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`), and every push to `main`, where it checks the merged pull request whose merge commit the push is and fails when none is |
-| `required-checks` | `required-aggregator.yml` | every pull request |
+| `required-checks` | `required-aggregator.yml` | commit status posted on every push to `main`, `workflow_run` completion, and 10-minute sweep |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
 | `Security Scan Gate` | `security-scans.yml` | every pull request; fails unless every scan job succeeded or the change detector excluded it |
 
@@ -112,61 +112,98 @@ succeeded and found no code path; on a push, on a schedule, or when the detector
 skipped scan fails the gate. `Detect Security Scan Paths` and `Gitleaks History Scan` run on
 every event and must succeed.
 
-`required-checks` runs `scripts/required_checks_gate.py`. It waits until every other check run
-on the head commit has completed, then requires each to have concluded `success`. The newest
-run of a check name stands for it, since `Validate PR Milestone & Metadata` runs once per pull
-request edit. A skipped check passes only when its name is listed with `--allow-skip`. The
-list holds `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan
-Gate judges, and `verify-tool-release`, which `release-please.yml` runs only on the push to
-`main` that creates a release, or on a dispatch that names a tag. Every other push to `main`
-skips it, and main commit 3392531 went red on that skip. `tests/test_gates_refuse_skipped.py`
-fails when the list differs from the detector-gated jobs in `security-scans.yml` plus the
-release-gated jobs in `release-please.yml`, and when a listed check that failed or was
-cancelled passes. The gate also fails when it finds no other check
-run, or when the others are still running after 330 minutes. Before this, the aggregator
-accepted `skipped` from any check.
+`required-checks` is a commit status posted by the `evaluate` job (`Evaluate required checks`,
+`timeout-minutes: 5`) of `required-aggregator.yml` via `scripts/required_checks_gate.py --once
+--post-status`. Job discovery cannot derive a commit status, so `.standards.yaml` declares it under
+`overrides.branch_protection.status_contexts` (praetor's declared status contexts, added by
+cordanaLLM/praetor#1510), and `make ruleset` writes it into `.github/rulesets/main.json`. The
+ruleset requires the context `required-checks` with no integration pin, so a commit status with
+that context satisfies it. The
+workflow used to poll on an Ubuntu runner for up to 330 minutes (`--interval 20 --timeout 19800`),
+which held runners of the organisation's single free-plan hosted runner pool while builds queued
+(measured 2026-10-22 at 03:56Z: five `required-aggregator` jobs had been polling in progress since 00:56Z while 32
+kernel build jobs sat queued). GitHub's `check_suite` and `check_run` events do not trigger for
+suites created by GitHub Actions, so `required-aggregator.yml` instead triggers on `push` to `main`, `workflow_run`
+(`types: [completed]`) for every other workflow in `.github/workflows` except reusable-only
+`release-build.yml`, a 10-minute `schedule` sweep (`*/10 * * * *`) for the age bound and any
+non-Actions check. It has no `workflow_dispatch` trigger: a dispatched run executes the
+branch's own copy of the gate with `statuses: write`, so a branch could post its own `success`.
+A `workflow_run` run always executes the default branch's copy.
 
-Two forge behaviours shape the wait. A job that `needs` another one registers its check run
-only when it is queued, so `Security Scan Gate` and `Verify Requirements Against the Resolved
-KConfig` appear minutes after the rest; the gate passes only after two consecutive polls see the
-same check names with none pending. And the forge has left a finished check run at
-`in_progress` (the Gitleaks run on `e685ec1`, 2026-10-11, held the aggregator for its whole
-timeout); a run that carries a conclusion and a completion time counts as completed whatever
-its status says, and its conclusion is judged like any other. Both are tested in
-`tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
+During the bootstrap the workflow keeps its `pull_request` trigger and the old `required-checks`
+polling job, restricted to `pull_request` runs and to `checks: read`; the evaluating job skips
+`pull_request` runs. The evaluator only runs from the default branch's copy, so it cannot post
+the status for the pull request that adds it; the poller lands that pull request, and the
+follow-up pull request (#274) removes the poller and the trigger and lands on the status the
+evaluator posts. `test_required_aggregator_contract` refuses a job that posts statuses on a
+pull request run. A commit
+status carries no integration, so a writer who adds a workflow of their own to a branch can
+still post one; the ruleset's review and signature rules, not the status, stop that branch. On each trigger the job runs once, posts the
+`required-checks` commit status (`pending`, `success`, or `failure` with a description truncated
+to at most 140 characters), and exits 0 whenever the status was posted so a failing pull request
+never paints the default branch's rollup red through `workflow_run`. If fetching or posting fails,
+the script attempts to post `pending` (`evaluation failed: ...`) and exits 1. On the scheduled
+sweep, `--only-if-pending` skips any commit whose newest `required-checks` status is already
+`success` or `failure`.
 
-The 330 minutes are a wall-clock deadline measured from the gate's start, not a number of
-polls, so slow `gh api` calls count against it, and each call is killed after 60 seconds
-(`--fetch-timeout`). A failed or hung call is retried on the next poll. At the deadline the gate
-fails and names what it waited for: the check runs still pending, or the last `gh api` error
-when no poll succeeded. The job's own `timeout-minutes` of 340 is the second bound, staying
-under GitHub's 6-hour (360-minute) hosted runner execution limit. A check that never finishes,
-a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
+In `--once` mode, `decide()` inspects both workflow runs and check runs for the commit SHA.
+Workflow runs of `required-aggregator.yml` are excluded (`--exclude-workflow`), and for each
+workflow path the highest run ID stands for it. While any workflow run is not `completed`, the
+decision is `pending` unless its `created_at` age exceeds `--bound 19800`, in which case it is
+`failure` (`deadline of 19800s passed; still running: ...`). Once all workflow runs have
+completed, `decide()` evaluates the check runs, ignoring its own check-run names (`--ignore-check
+"Evaluate required checks"` and legacy `--ignore-check required-checks`). Any remaining pending
+check run (such as a non-Actions status check) yields `pending` for the scheduled sweep to
+re-evaluate. Otherwise every check run must have concluded `success`, and the newest run of
+every workflow must have concluded `success`, `skipped` or `neutral`: a `startup_failure`
+creates no check run, and a cancelled run never registers the jobs that waited on others. The newest run of a check
+name stands for it, since `Validate PR Milestone & Metadata` runs once per pull request edit.
+A skipped check passes only when its name is listed with `--allow-skip`. The list holds
+`Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan Gate judges, and
+`verify-tool-release`, which `release-please.yml` runs only on the push to `main` that creates a
+release, or on a dispatch that names a tag. Every other push to `main` skips it, and main commit
+3392531 went red on that skip. `tests/test_gates_refuse_skipped.py` fails when the list differs
+from the detector-gated jobs in `security-scans.yml` plus the release-gated jobs in
+`release-please.yml`, and when a listed check that failed or was cancelled passes. The gate also
+fails when it finds no other check run. `tests/test_required_checks_once.py` tests `decide()`
+across positive, negative, pending, boundary (`bound` vs `bound + 1` s), never-finishing build,
+excluded workflow, ignored check-name, and non-Actions pending cases, plus end-to-end
+`--once --post-status` invocations against a stubbed `gh`.
+
+`scripts/required_checks_gate.py` also retains its standalone polling wait mode for CLI callers,
+where two forge behaviours are handled and tested in `tests/test_gates_refuse_skipped.py`. A job
+that `needs` another one registers its check run only when queued, so wait mode passes only after
+two consecutive polls see the same check names with none pending. And the forge has left a
+finished check run at `in_progress` (the Gitleaks run on `e685ec1`, 2026-10-11); `finished()`
+counts a run with both a conclusion and a `completed_at` timestamp as completed in both modes.
 
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
 Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Against the
-Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
-for them and requires their success like any other check run. `build-matrix.yml` works the
+Resolved KConfig` report on the pull requests they concern, and there `required-checks`
+evaluates them and requires their success like any other check run. `build-matrix.yml` works the
 same way: a pull request that touches a file the build runs or reads (the paths its
 `pull_request` trigger lists: the build and module scripts, `kconfig/`, `keys/`, `versions.json`,
 `versions.schema.json`, the builder image and the workflow itself) compiles, gates and boots all
 twelve legs, then builds the OpenZFS and NVIDIA open kernel modules against the x86_64 headers
-packages produced in that same run, and `required-checks` waits for them. The organisation's
+packages produced in that same run, and `required-checks` evaluates them. The organisation's
 hosted runners are one pool for every repository, so the matrix runs at most six legs at once
 (`max-parallel`), and at most half of them, which `tests/test_workflows.py` checks; on 2026-10-17
 two runs of all twelve legs left other repositories' jobs queued. While kernel execution takes 54
 to 3002 seconds per leg, queue delay under shared-runner saturation dominates the total elapsed
 time. Across 10 measured runs in `tests/data/required-checks-spans.json`, pull request build-matrix
-spans reached 13397 s (run 39626121442). The gate waits 19800 s (330 minutes, giving ~1.48x
-headroom over the worst span), and the job bound of 340 minutes stays below the 6-hour (360-minute)
-hosted runner execution limit. `test_required_checks_deadline_covers_every_measured_build_span` in
-`tests/test_workflows.py` asserts that the workflow deadline covers every measured run span with at
-least 25% margin. One build runs per branch: a pull request run and a dispatch on its branch share
+spans reached 13397 s (run 39626121442). The `--bound` of 19800 s (330 minutes, giving ~1.48x
+headroom over the worst span) covers both waves, while the `evaluate` job's `timeout-minutes: 5`
+never holds a runner while waiting. `test_required_checks_deadline_covers_every_measured_build_span`,
+`test_evaluate_job_never_holds_a_runner_while_waiting`, and
+`test_required_aggregator_workflow_run_lists_every_other_workflow` in `tests/test_workflows.py`
+assert that `--bound` covers every measured run span with at least 25% margin, the evaluator
+job timeout stays at most 10 minutes, and `workflow_run.workflows` lists every other workflow.
+One build runs per branch: a pull request run and a dispatch on its branch share
 a concurrency group, so a second run waits for the first. A new push to the pull request cancels
 the build still running for its branch, a dispatched one included; a scheduled run, or a dispatch
 on a branch without a pull request, is never cancelled. `tests/test_workflows.py` fails when the
-trigger, its paths, the cap, the group or the wait change.
+trigger, its paths, the cap, the group or the bound change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:
