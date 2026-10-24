@@ -30,6 +30,18 @@ def test_workflows_count():
     assert len(workflows) == 18, f"Expected exactly 18 workflows, found {len(workflows)}"
 
 
+def _top_level_write_scopes(parsed: dict) -> list[str]:
+    """Return top-level permissions scopes granting write access."""
+    if not isinstance(parsed, dict):
+        return []
+    perms = parsed.get("permissions")
+    if perms == "write-all":
+        return ["write-all"]
+    if isinstance(perms, dict):
+        return [scope for scope, access in perms.items() if access == "write"]
+    return []
+
+
 def test_workflows_least_privilege_permissions():
     """Ensure all workflows declare explicit top-level least-privilege permissions."""
     for wf in WORKFLOWS_DIR.glob("*.yml"):
@@ -44,6 +56,28 @@ def test_workflows_least_privilege_permissions():
             assert perms["contents"] in ("read", "write"), (
                 f"Workflow {wf.name} invalid contents permission"
             )
+        write_scopes = _top_level_write_scopes(parsed)
+        assert not write_scopes, (
+            f"Workflow {wf.name} top-level permission scope(s) {', '.join(write_scopes)} set to 'write'; "
+            "Scorecard TokenPermissions scores top-level write"
+        )
+
+
+def test_top_level_write_scopes_planted():
+    """Ensure _top_level_write_scopes detects planted top-level write permissions."""
+    aggregator = WORKFLOWS_DIR / "required-aggregator.yml"
+    parsed = yaml.safe_load(aggregator.read_text(encoding="utf-8"))
+    assert _top_level_write_scopes(parsed) == [], (
+        "required-aggregator.yml must not declare top-level write scopes"
+    )
+    parsed["permissions"]["statuses"] = "write"
+    assert _top_level_write_scopes(parsed) == ["statuses"], (
+        "planted statuses: write must be reported as a top-level write scope"
+    )
+    parsed["permissions"] = "write-all"
+    assert _top_level_write_scopes(parsed) == ["write-all"], (
+        "planted write-all must be reported as a top-level write scope"
+    )
 
 
 def _release_build_steps():
@@ -950,7 +984,8 @@ def test_required_aggregator_contract():
     assert not {"pull_request", "pull_request_target", "workflow_dispatch"} & set(on), (
         "a pull request or dispatched run executes the branch's own gate with statuses: write"
     )
-    assert parsed["permissions"]["statuses"] == "write"
+    assert parsed["permissions"] == {"contents": "read"}
+    assert parsed["jobs"]["evaluate"]["permissions"]["statuses"] == "write"
     # Evaluations are queued per SHA, so closely spaced workflow_run completions never cancel
     # an active status evaluation.
     concurrency = parsed["concurrency"]
