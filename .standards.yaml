@@ -99,13 +99,3 @@ exceptions:
     category: D
     entered: "2026-10-18"
     expires: "2027-02-15"
-  - rule: release-token
-    path: .github/workflows/release-please.yml
-    reason: >-
-      Category C, 10 days from 2026-10-22 (UTC), derived from aegis-os-bump-red-release-token-20261019.
-      release-please still takes the workflow token: the plurano-release GitHub App is installed on the
-      organisation, but no app id or private key reaches this repository yet (operator card
-      nucleus-release-app-setup). The step moves to an actions/create-github-app-token step once they do.
-    category: C
-    entered: "2026-10-22"
-    expires: "2026-11-01"
