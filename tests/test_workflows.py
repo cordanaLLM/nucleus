@@ -245,20 +245,29 @@ def test_build_matrix_runs_one_build_per_branch():
     assert group == "build-matrix-${{ github.head_ref || github.ref_name }}"
 
 
+def _evaluate_job() -> dict:
+    return yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]["evaluate"]
+
+
 def test_required_checks_waits_longer_than_every_build_wave():
     strategy = _build_matrix()["strategy"]
     count = len(strategy["matrix"]["stream"]) * len(strategy["matrix"]["arch"])
     waves = (count + strategy["max-parallel"] - 1) // strategy["max-parallel"]
     legs = waves * max(entry["timeout"] for entry in strategy["matrix"]["include"])
-    job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
-        "jobs"
-    ]["required-checks"]
+    job = _evaluate_job()
     run = job["steps"][-1]["run"]
-    wait = int(re.search(r"--timeout (\d+)", run)[1])
-    assert wait > legs * 60, (
-        f"the gate gives up at {wait} s, before {waves} waves ({legs} minutes) end"
+    bound = int(re.search(r"--bound (\d+)", run)[1])
+    assert bound > legs * 60, (
+        f"the gate gives up at {bound} s, before {waves} waves ({legs} minutes) end"
     )
-    assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
+
+
+def test_evaluate_job_never_holds_a_runner_while_waiting():
+    """The one-shot evaluator posts a commit status and exits; it never waits on a runner."""
+    job = _evaluate_job()
+    assert job["timeout-minutes"] <= 10, "evaluate job must never hold a runner while waiting"
 
 
 def _measured_spans() -> tuple[list[int], int]:
@@ -269,53 +278,41 @@ def _measured_spans() -> tuple[list[int], int]:
     return [entry["span_seconds"] for entry in fixture["runs"]], fixture["hosted_job_limit_minutes"]
 
 
-def _deadline_problems(
-    wait: int, job_minutes: int, spans: list[int], limit_minutes: int
-) -> list[str]:
-    """Pure check of aggregator wait and job timeout against spans and runner limits."""
+def _deadline_problems(bound: int, spans: list[int]) -> list[str]:
+    """Pure check of aggregator bound against measured build-matrix spans."""
     problems: list[str] = []
-    if wait < math.ceil(max(spans) * 1.25):
+    if bound < math.ceil(max(spans) * 1.25):
         problems.append("deadline below measured worst span + 25%")
-    if job_minutes * 60 <= wait:
-        problems.append("job killed before the gate's deadline")
-    if job_minutes > limit_minutes:
-        problems.append("job bound over the hosted runner limit")
     return problems
 
 
 def test_required_checks_deadline_covers_every_measured_build_span():
-    """Aggregator timeout must cover all measured PR build-matrix spans with headroom."""
-    job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
-        "jobs"
-    ]["required-checks"]
+    """Aggregator bound must cover all measured PR build-matrix spans with headroom."""
+    job = _evaluate_job()
     run = job["steps"][-1]["run"]
-    wait = int(re.search(r"--timeout (\d+)", run)[1])
-    job_minutes = job["timeout-minutes"]
-    spans, limit_minutes = _measured_spans()
-    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == []
+    bound = int(re.search(r"--bound (\d+)", run)[1])
+    spans, _ = _measured_spans()
+    assert _deadline_problems(bound, spans) == []
 
 
 @pytest.mark.parametrize(
-    ("wait", "job_minutes", "expected_message"),
+    ("bound", "expected_message"),
     [
-        (11400, 200, "deadline below measured worst span + 25%"),
-        (19800, 330, "job killed before the gate's deadline"),
-        (19800, 370, "job bound over the hosted runner limit"),
+        (11400, "deadline below measured worst span + 25%"),
     ],
 )
-def test_deadline_problems_planted_refusals(wait: int, job_minutes: int, expected_message: str):
+def test_deadline_problems_planted_refusals(bound: int, expected_message: str):
     """Planted invalid deadlines must be refused with the exact expected diagnostic."""
-    spans, limit_minutes = _measured_spans()
-    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == [expected_message]
+    spans, _ = _measured_spans()
+    assert _deadline_problems(bound, spans) == [expected_message]
 
 
 def test_deadline_problems_boundary():
-    """Wait at exactly ceil(max * 1.25) passes; one second less triggers rule a."""
-    spans, limit_minutes = _measured_spans()
-    boundary_wait = math.ceil(max(spans) * 1.25)
-    job_minutes = boundary_wait // 60 + 1
-    assert _deadline_problems(boundary_wait, job_minutes, spans, limit_minutes) == []
-    assert _deadline_problems(boundary_wait - 1, job_minutes, spans, limit_minutes) == [
+    """Bound at exactly ceil(max * 1.25) passes; one second less triggers rule a."""
+    spans, _ = _measured_spans()
+    boundary_bound = math.ceil(max(spans) * 1.25)
+    assert _deadline_problems(boundary_bound, spans) == []
+    assert _deadline_problems(boundary_bound - 1, spans) == [
         "deadline below measured worst span + 25%"
     ]
 
@@ -940,15 +937,81 @@ def test_verify_requirements_resolves_every_leg_from_its_verified_source():
 
 
 def test_required_aggregator_contract():
-    """Ensure required-aggregator.yml defines the required-checks job."""
+    """Ensure required-aggregator.yml defines the evaluate job and posts required-checks."""
     aggregator = WORKFLOWS_DIR / "required-aggregator.yml"
     assert aggregator.exists(), "required-aggregator.yml must exist"
     content = aggregator.read_text(encoding="utf-8")
     parsed = yaml.safe_load(content)
     assert "jobs" in parsed
-    assert "required-checks" in parsed["jobs"], (
-        "required-aggregator must define job 'required-checks'"
+    assert "evaluate" in parsed["jobs"], "required-aggregator must define job 'evaluate'"
+    run = parsed["jobs"]["evaluate"]["steps"][-1]["run"]
+    assert "--post-status" in run and "--self required-checks" in run
+    on = parsed.get("on", parsed.get(True, {}))
+    assert not {"pull_request_target", "workflow_dispatch"} & set(on), (
+        "a dispatched run executes the branch's own gate with statuses: write"
     )
+    assert _status_poster_problems(parsed) == []
+    # Self-exclusion: the evaluator never waits on this workflow or the poller, and the poller
+    # accepts the evaluator's skip on a pull request run.
+    for flag in (
+        "--exclude-workflow .github/workflows/required-aggregator.yml",
+        '--ignore-check "Evaluate required checks"',
+        "--ignore-check required-checks",
+    ):
+        assert flag in run, flag
+    poller = parsed["jobs"]["required-checks"]["steps"][-1]["run"]
+    assert '--allow-skip "Evaluate required checks"' in poller
+    # Evaluations are queued per SHA, so closely spaced workflow_run completions never cancel
+    # an active status evaluation; only a superseded pull request poller is cancelled.
+    concurrency = parsed["concurrency"]
+    assert concurrency["cancel-in-progress"] == CANCEL_ON_PULL_REQUEST
+    assert "github.event.workflow_run.head_sha" in concurrency["group"]
+
+
+EVALUATE_SKIPS_PULL_REQUEST = "github.event_name != 'pull_request'"
+POLLER_ONLY_ON_PULL_REQUEST = "github.event_name == 'pull_request'"
+
+
+def _status_poster_problems(parsed: dict) -> list[str]:
+    """Only the evaluate job may post statuses, and it never runs on a pull request (bootstrap)."""
+    problems = []
+    if "statuses" in (parsed.get("permissions") or {}):
+        problems.append("workflow-level statuses permission")
+    for name, job in parsed["jobs"].items():
+        posts = (job.get("permissions") or {}).get("statuses") == "write"
+        if name == "evaluate":
+            if not posts or job.get("if") != EVALUATE_SKIPS_PULL_REQUEST:
+                problems.append("evaluate must post statuses and skip pull_request runs")
+        elif posts or job.get("if") != POLLER_ONLY_ON_PULL_REQUEST:
+            problems.append(f"{name} must run on pull_request only, without statuses")
+    return problems
+
+
+def test_status_poster_problems_planted():
+    """A pull_request job with statuses: write, or an evaluator that runs on pull_request, is refused."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    parsed["jobs"]["required-checks"]["permissions"]["statuses"] = "write"
+    assert _status_poster_problems(parsed) == [
+        "required-checks must run on pull_request only, without statuses"
+    ]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    del parsed["jobs"]["evaluate"]["if"]
+    assert _status_poster_problems(parsed) == [
+        "evaluate must post statuses and skip pull_request runs"
+    ]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    parsed["permissions"]["statuses"] = "write"
+    assert _status_poster_problems(parsed) == ["workflow-level statuses permission"]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    del parsed["jobs"]["evaluate"]["permissions"]["statuses"]
+    assert _status_poster_problems(parsed) == [
+        "evaluate must post statuses and skip pull_request runs"
+    ]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    del parsed["jobs"]["required-checks"]["if"]
+    assert _status_poster_problems(parsed) == [
+        "required-checks must run on pull_request only, without statuses"
+    ]
 
 
 def _security_gate_job():
@@ -1082,6 +1145,32 @@ def _checks_reported_on_every_pull_request():
     return reported
 
 
+def _posted_commit_statuses():
+    """Commit status contexts a workflow posts through required_checks_gate.py --post-status."""
+    posted = set()
+    for workflow in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].values():
+            for step in job.get("steps") or []:
+                run = step.get("run", "")
+                match = re.search(r"--self\s+(\S+)", run)
+                if "required_checks_gate.py" in run and "--post-status" in run and match:
+                    posted.add(match[1])
+    return posted
+
+
+def _declared_status_contexts():
+    standards = yaml.safe_load((REPO_ROOT / ".standards.yaml").read_text(encoding="utf-8"))
+    protection = (standards.get("overrides") or {}).get("branch_protection") or {}
+    return set(protection.get("status_contexts") or [])
+
+
+def test_declared_status_contexts_are_posted_by_a_workflow():
+    """A declared commit status no workflow posts would block every merge."""
+    declared = _declared_status_contexts()
+    assert declared, ".standards.yaml must declare the required-checks commit status"
+    assert declared <= _posted_commit_statuses()
+
+
 def test_ruleset_requires_exactly_the_checks_every_pull_request_reports():
     """A required check that no pull request reports would block every merge.
 
@@ -1095,7 +1184,7 @@ def test_ruleset_requires_exactly_the_checks_every_pull_request_reports():
     rules = [rule for rule in ruleset["rules"] if rule["type"] == "required_status_checks"]
     assert len(rules) == 1, "the ruleset must carry one required_status_checks rule"
     required = [check["context"] for check in rules[0]["parameters"]["required_status_checks"]]
-    reported = _checks_reported_on_every_pull_request()
+    reported = _checks_reported_on_every_pull_request() | _declared_status_contexts()
     never_reported = sorted(set(required) - reported)
     assert not never_reported, f"required checks no pull request reports: {never_reported}"
     not_required = sorted(reported - set(required))
@@ -1622,6 +1711,10 @@ def test_every_pull_request_job_stops_on_a_draft():
         types = (triggers["pull_request"] or {}).get("types", [])
         assert {"opened", "synchronize", "reopened", "ready_for_review"} <= set(types), path.name
         for name, job in parsed["jobs"].items():
+            # The bootstrap evaluator's condition excludes pull_request, so none starts it.
+            if path.name == "required-aggregator.yml" and name == "evaluate":
+                assert job["if"] == EVALUATE_SKIPS_PULL_REQUEST
+                continue
             first = job["steps"][0]
             assert first["name"] == DRAFT_STEP, f"{path.name}: {name}"
             assert first["if"] == "github.event.pull_request.draft == true", f"{path.name}: {name}"
@@ -1906,11 +1999,9 @@ def test_toolchain_cache_problems_planted_refusals(steps, expected_problem):
 
 
 def test_required_checks_waits_longer_than_the_reproducibility_job():
-    run = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
-        "jobs"
-    ]["required-checks"]["steps"][-1]["run"]
-    wait = int(re.search(r"--timeout (\d+)", run)[1])
-    assert wait > _reproducibility_job()["timeout-minutes"] * 60
+    run = _evaluate_job()["steps"][-1]["run"]
+    bound = int(re.search(r"--bound (\d+)", run)[1])
+    assert bound > _reproducibility_job()["timeout-minutes"] * 60
 
 
 def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
@@ -2184,3 +2275,69 @@ def test_actionlint_ignores_queue_only_where_used():
     assert workflows_with_queue == covered_workflows, (
         f"Mismatch between workflows using queue ({workflows_with_queue}) and covered ({covered_workflows})"
     )
+
+
+def _expected_workflow_run_names() -> set[str]:
+    """Every workflow `name:` except required-aggregator.yml and workflow_call-only workflows."""
+    expected: set[str] = set()
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        if path.name == "required-aggregator.yml":
+            continue
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+        on = parsed.get(True, parsed.get("on"))
+        if isinstance(on, str):
+            triggers = {on}
+        elif isinstance(on, list):
+            triggers = set(on)
+        elif isinstance(on, dict):
+            triggers = set(on.keys())
+        else:
+            triggers = set()
+        if triggers == {"workflow_call"}:
+            continue
+        expected.add(parsed["name"])
+    return expected
+
+
+def _workflow_run_list_problems(configured: list[str], expected: set[str]) -> list[str]:
+    """Compare the aggregator's workflow_run.workflows list against the expected workflow names."""
+    problems: list[str] = []
+    seen = set(configured)
+    if len(configured) != len(seen):
+        problems.append("duplicate workflow names in workflow_run.workflows")
+    missing = sorted(expected - seen)
+    if missing:
+        problems.append(f"missing from workflow_run.workflows: {', '.join(missing)}")
+    extra = sorted(seen - expected)
+    if extra:
+        problems.append(f"unexpected in workflow_run.workflows: {', '.join(extra)}")
+    return problems
+
+
+def test_required_aggregator_workflow_run_lists_every_other_workflow():
+    """workflow_run.workflows must list every other non-reusable-only workflow so none is missed."""
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    on = parsed.get(True, parsed.get("on"))
+    wf_run = on["workflow_run"]
+    assert wf_run["types"] == ["completed"]
+    configured = wf_run["workflows"]
+    expected = _expected_workflow_run_names()
+    assert _workflow_run_list_problems(configured, expected) == []
+
+
+def test_workflow_run_list_problems_planted_missing_and_extra():
+    """A list missing one workflow name or carrying an unknown name is refused by the helper."""
+    expected = _expected_workflow_run_names()
+    missing_one = sorted(expected)[:-1]
+    dropped = sorted(expected)[-1]
+    assert _workflow_run_list_problems(missing_one, expected) == [
+        f"missing from workflow_run.workflows: {dropped}"
+    ]
+    with_extra = [*sorted(expected), "nonexistent-workflow"]
+    assert _workflow_run_list_problems(with_extra, expected) == [
+        "unexpected in workflow_run.workflows: nonexistent-workflow"
+    ]
+    with_dup = [*sorted(expected), dropped]
+    assert _workflow_run_list_problems(with_dup, expected) == [
+        "duplicate workflow names in workflow_run.workflows"
+    ]

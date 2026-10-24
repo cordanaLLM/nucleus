@@ -40,6 +40,10 @@ overrides:
     review_mode: single_maintainer
     # Declared at its live value; the forge default is the stricter one.
     require_extra_approval_for_unattributed_changes: true
+    # required-aggregator.yml posts "required-checks" as a commit status from push to main,
+    # workflow_run and schedule events; job discovery cannot derive it.
+    status_contexts:
+      - required-checks
 # licence.yml already runs the REUSE lint job the ruleset requires; the hosted reuse.yml
 # would add a second job of that name, which the ruleset refuses as a duplicate context.
 adoption:
