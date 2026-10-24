@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.5.0...nucleus-v0.5.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ci:** build module checks against the same run's headers on pull requests ([#249](https://github.com/cordanaLLM/nucleus/issues/249)) ([0dc98e4](https://github.com/cordanaLLM/nucleus/commit/0dc98e45e5aab6356ed8ff1af05301c95eead474)), closes [#248](https://github.com/cordanaLLM/nucleus/issues/248)
+* **ci:** build scheduled module checks against the newest published release ([f396b70](https://github.com/cordanaLLM/nucleus/commit/f396b703085aac0a78c460128f045465b434ee3f)), closes [#252](https://github.com/cordanaLLM/nucleus/issues/252)
+* **ci:** check out the default branch in the release-triggered module checks ([#266](https://github.com/cordanaLLM/nucleus/issues/266)) ([0687960](https://github.com/cordanaLLM/nucleus/commit/0687960a7e22aef4e6cf627115e758a480690e98)), closes [#265](https://github.com/cordanaLLM/nucleus/issues/265)
+* **ci:** install git in the OpenZFS module build container ([#268](https://github.com/cordanaLLM/nucleus/issues/268)) ([da43025](https://github.com/cordanaLLM/nucleus/commit/da4302530cf76bcf20693360dad1e0becbd988d3)), closes [#267](https://github.com/cordanaLLM/nucleus/issues/267)
+* **ci:** run the module release checks after publish-release ([f396b70](https://github.com/cordanaLLM/nucleus/commit/f396b703085aac0a78c460128f045465b434ee3f))
+* **ci:** run the module release checks after publish-release ([#253](https://github.com/cordanaLLM/nucleus/issues/253)) ([f396b70](https://github.com/cordanaLLM/nucleus/commit/f396b703085aac0a78c460128f045465b434ee3f))
+* **deps:** bump certifi to 2026.10.19 for PYSEC-2026-4320 ([#245](https://github.com/cordanaLLM/nucleus/issues/245)) ([cbe9e90](https://github.com/cordanaLLM/nucleus/commit/cbe9e90443a4d1922be875d87809fbcfbff2c38e)), closes [#244](https://github.com/cordanaLLM/nucleus/issues/244)
+* **deps:** let renovate bump image env pins and unpin test SHAs ([#259](https://github.com/cordanaLLM/nucleus/issues/259)) ([3d3628f](https://github.com/cordanaLLM/nucleus/commit/3d3628f924d6306f7955cf8b1ebfcc14979f3d4e))
+* **lifecycle:** substitute the last published version for 7 days after a bump ([#262](https://github.com/cordanaLLM/nucleus/issues/262)) ([79df301](https://github.com/cordanaLLM/nucleus/commit/79df3016c024dc0f36d246ed05064bf7fc8b87db))
+
 ## [0.5.0](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.4.0...nucleus-v0.5.0) (2026-10-21)
 
 
