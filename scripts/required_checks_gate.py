@@ -154,6 +154,9 @@ def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str
     return problems
 
 
+PASSING_WORKFLOW_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
+
+
 def decide(
     check_runs: list[dict],
     workflow_runs: list[dict],
@@ -183,7 +186,13 @@ def decide(
     waiting = pending(checks, self_name)
     if waiting:
         return "pending", _truncate(f"waiting on {len(waiting)}: {', '.join(waiting)}")
-    problems = evaluate(checks, self_name, set(allow_skip))
+    # A workflow can fail with no failing check run: startup_failure creates none, and a
+    # cancelled run never registers the jobs its needs: would have started.
+    problems = evaluate(checks, self_name, set(allow_skip)) + [
+        f"{r['name']}: {r.get('conclusion')}"
+        for r in wf_latest
+        if r.get("conclusion") not in PASSING_WORKFLOW_CONCLUSIONS
+    ]
     if problems:
         extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
         return "failure", _truncate(f"{problems[0]}{extra}")

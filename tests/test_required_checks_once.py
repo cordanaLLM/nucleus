@@ -78,7 +78,7 @@ def test_decide_negative_planted_failing_build_check_run():
         checks, wfs, "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
     )
     assert state == "failure"
-    assert desc == "Compile Kernel (mainstream / x86_64): failure"
+    assert desc == "Compile Kernel (mainstream / x86_64): failure (+1 more)"
 
 
 @pytest.mark.parametrize(
@@ -108,6 +108,26 @@ def test_decide_negative_multiple_problems_summarises_count():
     )
     assert state == "failure"
     assert desc == "Alpha Check: failure (+2 more)"
+
+
+@pytest.mark.parametrize("conclusion", ["startup_failure", "cancelled", "failure", "timed_out"])
+def test_decide_negative_failed_workflow_run_without_failing_check_run(conclusion):
+    """A workflow that failed before its jobs reported fails the status on its own."""
+    wfs = [_wf("ci", ".github/workflows/ci.yml"), _wf("build-matrix", conclusion=conclusion)]
+    state, desc = gate.decide(
+        [_check("REUSE lint")], wfs, "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "failure"
+    assert desc == f"build-matrix: {conclusion}"
+
+
+@pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+def test_decide_boundary_skipped_or_neutral_workflow_run_passes(conclusion):
+    wfs = [_wf("ci", ".github/workflows/ci.yml"), _wf("build-matrix", conclusion=conclusion)]
+    state, _ = gate.decide(
+        [_check("REUSE lint")], wfs, "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "success"
 
 
 def test_decide_pending_workflow_run_younger_than_bound():

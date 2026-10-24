@@ -947,9 +947,15 @@ def test_required_aggregator_contract():
     run = parsed["jobs"]["evaluate"]["steps"][-1]["run"]
     assert "--post-status" in run and "--self required-checks" in run
     on = parsed.get("on", parsed.get(True, {}))
-    assert "pull_request" not in on and "pull_request_target" not in on, (
-        "a pull request run executes the branch's own gate with statuses: write"
+    assert not {"pull_request", "pull_request_target", "workflow_dispatch"} & set(on), (
+        "a pull request or dispatched run executes the branch's own gate with statuses: write"
     )
+    assert parsed["permissions"]["statuses"] == "write"
+    # Evaluations are queued per SHA, so closely spaced workflow_run completions never cancel
+    # an active status evaluation.
+    concurrency = parsed["concurrency"]
+    assert concurrency["cancel-in-progress"] is False
+    assert "github.event.workflow_run.head_sha" in concurrency["group"]
 
 
 def _security_gate_job():
@@ -1772,17 +1778,8 @@ def test_pull_request_workflows_cancel_superseded_runs():
         group = " ".join(str(concurrency.get("group", "")).split())
         cancel = concurrency.get("cancel-in-progress")
         # True is safe only where every event other than a pull request gets a group of its own.
-        # required-aggregator.yml queues per-SHA evaluations (cancel-in-progress: false) so
-        # closely spaced workflow_run completions never cancel an active status evaluation.
-        event_aggregator = (
-            path.name == "required-aggregator.yml"
-            and cancel is False
-            and "github.event.workflow_run.head_sha" in group
-        )
         if not group or not (
-            cancel == CANCEL_ON_PULL_REQUEST
-            or (cancel is True and "github.run_id" in group)
-            or event_aggregator
+            cancel == CANCEL_ON_PULL_REQUEST or (cancel is True and "github.run_id" in group)
         ):
             missing.append(path.name)
     assert missing == [], (

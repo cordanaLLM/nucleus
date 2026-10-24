@@ -126,10 +126,12 @@ kernel build jobs sat queued). GitHub's `check_suite` and `check_run` events do 
 suites created by GitHub Actions, so `required-aggregator.yml` instead triggers on `push` to `main`, `workflow_run`
 (`types: [completed]`) for every other workflow in `.github/workflows` except reusable-only
 `release-build.yml`, a 10-minute `schedule` sweep (`*/10 * * * *`) for the age bound and any
-non-Actions check, and `workflow_dispatch`. It has no `pull_request` trigger: a `pull_request`
-run executes the pull request's own copy of the gate with `statuses: write`, so a branch could
-post its own `success`, and the job would become a check that job discovery derives and the
-ruleset must require. A `workflow_run` run always executes the default branch's copy. On each trigger the job runs once, posts the
+non-Actions check. It has no `pull_request` and no `workflow_dispatch` trigger: either run
+executes the branch's own copy of the gate with `statuses: write`, so a branch could post its
+own `success`, and a `pull_request` job would become a check that job discovery derives and the
+ruleset must require. A `workflow_run` run always executes the default branch's copy. A commit
+status carries no integration, so a writer who adds a workflow of their own to a branch can
+still post one; the ruleset's review and signature rules, not the status, stop that branch. On each trigger the job runs once, posts the
 `required-checks` commit status (`pending`, `success`, or `failure` with a description truncated
 to at most 140 characters), and exits 0 whenever the status was posted so a failing pull request
 never paints the default branch's rollup red through `workflow_run`. If fetching or posting fails,
@@ -145,7 +147,9 @@ decision is `pending` unless its `created_at` age exceeds `--bound 19800`, in wh
 completed, `decide()` evaluates the check runs, ignoring its own check-run names (`--ignore-check
 "Evaluate required checks"` and legacy `--ignore-check required-checks`). Any remaining pending
 check run (such as a non-Actions status check) yields `pending` for the scheduled sweep to
-re-evaluate. Otherwise every check run must have concluded `success`. The newest run of a check
+re-evaluate. Otherwise every check run must have concluded `success`, and the newest run of
+every workflow must have concluded `success`, `skipped` or `neutral`: a `startup_failure`
+creates no check run, and a cancelled run never registers the jobs that waited on others. The newest run of a check
 name stands for it, since `Validate PR Milestone & Metadata` runs once per pull request edit.
 A skipped check passes only when its name is listed with `--allow-skip`. The list holds
 `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan Gate judges, and

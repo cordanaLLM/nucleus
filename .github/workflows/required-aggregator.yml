@@ -12,7 +12,7 @@
 # (events-that-trigger-workflows.md), so this workflow is driven by push to main,
 # workflow_run (types: [completed], running on the default branch with statuses: write for every
 # other workflow except workflow_call-only release-build, up to three chained levels),
-# workflow_dispatch, and a 10-minute schedule sweep (--only-if-pending) for the deadline bound and
+# and a 10-minute schedule sweep (--only-if-pending) for the deadline bound and
 # any non-Actions checks. It has no pull_request trigger: a pull_request run executes the pull
 # request's own copy of the gate with statuses: write, which could post its own success, and its
 # job would become a derived required check. workflow_run always runs the default branch's copy.
@@ -52,7 +52,6 @@ on:
     types: [completed]
   schedule:
     - cron: "*/10 * * * *"
-  workflow_dispatch:
 
 concurrency:
   group: >-
@@ -113,7 +112,7 @@ jobs:
                 fi
               done
               ;;
-            push|workflow_dispatch)
+            push)
               printf '%s\n' "${HEAD_SHA}" > "${shas_file}"
               ;;
             *)
