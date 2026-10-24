@@ -101,7 +101,7 @@ requires eleven checks:
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `REUSE lint` | `licence.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`), and every push to `main`, where it checks the merged pull request whose merge commit the push is and fails when none is |
-| `required-checks` | `required-aggregator.yml` | commit status posted on every push to `main`, `workflow_run` completion, and 10-minute sweep; during the bootstrap also the poller's check run on every pull request |
+| `required-checks` | `required-aggregator.yml` | commit status posted on every push to `main`, `workflow_run` completion, and 10-minute sweep |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
 | `Security Scan Gate` | `security-scans.yml` | every pull request; fails unless every scan job succeeded or the change detector excluded it |
 
@@ -126,17 +126,10 @@ kernel build jobs sat queued). GitHub's `check_suite` and `check_run` events do 
 suites created by GitHub Actions, so `required-aggregator.yml` instead triggers on `push` to `main`, `workflow_run`
 (`types: [completed]`) for every other workflow in `.github/workflows` except reusable-only
 `release-build.yml`, a 10-minute `schedule` sweep (`*/10 * * * *`) for the age bound and any
-non-Actions check. It has no `workflow_dispatch` trigger: a dispatched run executes the
-branch's own copy of the gate with `statuses: write`, so a branch could post its own `success`.
-A `workflow_run` run always executes the default branch's copy.
-
-During the bootstrap the workflow keeps its `pull_request` trigger and the old `required-checks`
-polling job, restricted to `pull_request` runs and to `checks: read`; the evaluating job skips
-`pull_request` runs. The evaluator only runs from the default branch's copy, so it cannot post
-the status for the pull request that adds it; the poller lands that pull request, and the
-follow-up pull request (#274) removes the poller and the trigger and lands on the status the
-evaluator posts. `test_required_aggregator_contract` refuses a job that posts statuses on a
-pull request run. A commit
+non-Actions check. It has no `pull_request` and no `workflow_dispatch` trigger: either run
+executes the branch's own copy of the gate with `statuses: write`, so a branch could post its
+own `success`, and a `pull_request` job would become a check that job discovery derives and the
+ruleset must require. A `workflow_run` run always executes the default branch's copy. A commit
 status carries no integration, so a writer who adds a workflow of their own to a branch can
 still post one; the ruleset's review and signature rules, not the status, stop that branch. On each trigger the job runs once, posts the
 `required-checks` commit status (`pending`, `success`, or `failure` with a description truncated
