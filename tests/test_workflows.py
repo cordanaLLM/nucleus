@@ -951,6 +951,16 @@ def test_required_aggregator_contract():
         "a dispatched run executes the branch's own gate with statuses: write"
     )
     assert _status_poster_problems(parsed) == []
+    # Self-exclusion: the evaluator never waits on this workflow or the poller, and the poller
+    # accepts the evaluator's skip on a pull request run.
+    for flag in (
+        "--exclude-workflow .github/workflows/required-aggregator.yml",
+        '--ignore-check "Evaluate required checks"',
+        "--ignore-check required-checks",
+    ):
+        assert flag in run, flag
+    poller = parsed["jobs"]["required-checks"]["steps"][-1]["run"]
+    assert '--allow-skip "Evaluate required checks"' in poller
     # Evaluations are queued per SHA, so closely spaced workflow_run completions never cancel
     # an active status evaluation; only a superseded pull request poller is cancelled.
     concurrency = parsed["concurrency"]
@@ -992,6 +1002,16 @@ def test_status_poster_problems_planted():
     parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
     parsed["permissions"]["statuses"] = "write"
     assert _status_poster_problems(parsed) == ["workflow-level statuses permission"]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    del parsed["jobs"]["evaluate"]["permissions"]["statuses"]
+    assert _status_poster_problems(parsed) == [
+        "evaluate must post statuses and skip pull_request runs"
+    ]
+    parsed = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))
+    del parsed["jobs"]["required-checks"]["if"]
+    assert _status_poster_problems(parsed) == [
+        "required-checks must run on pull_request only, without statuses"
+    ]
 
 
 def _security_gate_job():
@@ -1691,8 +1711,9 @@ def test_every_pull_request_job_stops_on_a_draft():
         types = (triggers["pull_request"] or {}).get("types", [])
         assert {"opened", "synchronize", "reopened", "ready_for_review"} <= set(types), path.name
         for name, job in parsed["jobs"].items():
-            # A job whose condition excludes pull_request is never started by one.
-            if job.get("if") == EVALUATE_SKIPS_PULL_REQUEST:
+            # The bootstrap evaluator's condition excludes pull_request, so none starts it.
+            if path.name == "required-aggregator.yml" and name == "evaluate":
+                assert job["if"] == EVALUATE_SKIPS_PULL_REQUEST
                 continue
             first = job["steps"][0]
             assert first["name"] == DRAFT_STEP, f"{path.name}: {name}"

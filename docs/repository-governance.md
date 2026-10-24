@@ -101,7 +101,7 @@ requires eleven checks:
 | `CodeQL (python)`, `CodeQL (actions)` | `codeql.yml` | every pull request to `main` |
 | `REUSE lint` | `licence.yml` | every pull request to `main` |
 | `Validate PR Milestone & Metadata` | `pr-project-gate.yml` | every pull request (`opened`, `reopened`, `edited`, `labeled`, `unlabeled`, `synchronize`, `milestoned`), and every push to `main`, where it checks the merged pull request whose merge commit the push is and fails when none is |
-| `required-checks` | `required-aggregator.yml` | commit status posted on every push to `main`, `workflow_run` completion, and 10-minute sweep |
+| `required-checks` | `required-aggregator.yml` | commit status posted on every push to `main`, `workflow_run` completion, and 10-minute sweep; during the bootstrap also the poller's check run on every pull request |
 | `Detect Security Scan Paths`, `Gitleaks History Scan` | `security-scans.yml` | every pull request |
 | `Security Scan Gate` | `security-scans.yml` | every pull request; fails unless every scan job succeeded or the change detector excluded it |
 
