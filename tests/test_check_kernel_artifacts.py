@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import check_kernel_artifacts as gate  # noqa: E402
 
-STREAM, ARCH, VERSION, KV = "mainstream", "x86_64", "7.2.10", "7.2.10"
+STREAM, ARCH, VERSION, KV = "mainstream", "x86_64", "7.2.11", "7.2.11"
 KR = f"{KV}-lusoris1-{STREAM}"
 PKGVER = f"{VERSION}-lusoris1"
 CONFIG = b"CONFIG_X86_64=y\nCONFIG_DEBUG_INFO_BTF=y\n"
@@ -249,10 +249,10 @@ def test_an_architecture_without_a_known_image_check_is_refused():
     ("kernelrelease", "finding"),
     [
         (KR, None),
-        ("7.2.100-lusoris1-mainstream", "does not start with the mainstream kernel version 7.2.10"),
+        ("7.2.110-lusoris1-mainstream", "does not start with the mainstream kernel version 7.2.11"),
         ("6.18.56-lusoris1-mainstream", "does not start with"),
-        ("7.2.10-lusoris1-realtime", "does not end with the build's -lusoris1-mainstream"),
-        ("7.2.10", "does not end with"),
+        ("7.2.11-lusoris1-realtime", "does not end with the build's -lusoris1-mainstream"),
+        ("7.2.11", "does not end with"),
         ("not a release", "is not a kernel release string"),
     ],
 )

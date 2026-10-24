@@ -1,6 +1,7 @@
 """Test suite for GitHub Actions workflows validation and least-privilege permissions."""
 
 import json
+import math
 import os
 import re
 import shutil
@@ -105,6 +106,7 @@ def test_publish_release_builds_gates_and_records_what_it_built():
     assert '--revision="${REVISION}"' in build["run"]
     assert build["env"]["REVISION"] == "${{ steps.meta.outputs.rev }}"
     assert BUILD_IMAGE.fullmatch(build["env"]["BUILD_IMAGE"]) and '"${BUILD_IMAGE}"' in build["run"]
+    assert "-e ARCH=x86_64" in build["run"]
     assert "install-build-toolchain.sh --with-qemu" in build["run"]
     assert "-e GITHUB_TOKEN" not in build["run"] and "ACTIONS_ID_TOKEN" not in build["run"]
     gate = steps[names.index("Gate the Kernel Artifacts")]
@@ -169,6 +171,7 @@ BUILD_INPUTS = {
     "keys/**",
     "patches/**",
     "versions.json",
+    "versions.schema.json",
     "docker/Dockerfile.builder",
 }
 
@@ -207,7 +210,13 @@ def test_build_matrix_compiles_every_pull_request_that_touches_the_build_path():
     on = _on("build-matrix.yml")
     paths = set(on["pull_request"]["paths"])
     scripts = _build_path_scripts()
-    assert {"scripts/build_kernel.sh", "scripts/verify_kernel_requirement.py"} <= scripts
+    assert {
+        "scripts/build_kernel.sh",
+        "scripts/verify_kernel_requirement.py",
+        "scripts/module_stream_matrix.py",
+        "scripts/check-openzfs-module.sh",
+        "scripts/check-nvidia-open-module.sh",
+    } <= scripts
     expected = scripts | BUILD_INPUTS | {".github/workflows/build-matrix.yml"}
     assert paths == expected, (
         f"missing: {sorted(expected - paths)}, not on the build path: {sorted(paths - expected)}"
@@ -250,6 +259,65 @@ def test_required_checks_waits_longer_than_every_build_wave():
         f"the gate gives up at {wait} s, before {waves} waves ({legs} minutes) end"
     )
     assert job["timeout-minutes"] * 60 > wait, "the job is killed before the gate's own timeout"
+
+
+def _measured_spans() -> tuple[list[int], int]:
+    """Measured pull request build-matrix spans and the hosted runner job limit, in minutes."""
+    fixture = json.loads(
+        (REPO_ROOT / "tests" / "data" / "required-checks-spans.json").read_text(encoding="utf-8")
+    )
+    return [entry["span_seconds"] for entry in fixture["runs"]], fixture["hosted_job_limit_minutes"]
+
+
+def _deadline_problems(
+    wait: int, job_minutes: int, spans: list[int], limit_minutes: int
+) -> list[str]:
+    """Pure check of aggregator wait and job timeout against spans and runner limits."""
+    problems: list[str] = []
+    if wait < math.ceil(max(spans) * 1.25):
+        problems.append("deadline below measured worst span + 25%")
+    if job_minutes * 60 <= wait:
+        problems.append("job killed before the gate's deadline")
+    if job_minutes > limit_minutes:
+        problems.append("job bound over the hosted runner limit")
+    return problems
+
+
+def test_required_checks_deadline_covers_every_measured_build_span():
+    """Aggregator timeout must cover all measured PR build-matrix spans with headroom."""
+    job = yaml.safe_load((WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]["required-checks"]
+    run = job["steps"][-1]["run"]
+    wait = int(re.search(r"--timeout (\d+)", run)[1])
+    job_minutes = job["timeout-minutes"]
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == []
+
+
+@pytest.mark.parametrize(
+    ("wait", "job_minutes", "expected_message"),
+    [
+        (11400, 200, "deadline below measured worst span + 25%"),
+        (19800, 330, "job killed before the gate's deadline"),
+        (19800, 370, "job bound over the hosted runner limit"),
+    ],
+)
+def test_deadline_problems_planted_refusals(wait: int, job_minutes: int, expected_message: str):
+    """Planted invalid deadlines must be refused with the exact expected diagnostic."""
+    spans, limit_minutes = _measured_spans()
+    assert _deadline_problems(wait, job_minutes, spans, limit_minutes) == [expected_message]
+
+
+def test_deadline_problems_boundary():
+    """Wait at exactly ceil(max * 1.25) passes; one second less triggers rule a."""
+    spans, limit_minutes = _measured_spans()
+    boundary_wait = math.ceil(max(spans) * 1.25)
+    job_minutes = boundary_wait // 60 + 1
+    assert _deadline_problems(boundary_wait, job_minutes, spans, limit_minutes) == []
+    assert _deadline_problems(boundary_wait - 1, job_minutes, spans, limit_minutes) == [
+        "deadline below measured worst span + 25%"
+    ]
 
 
 def _container_run_shells() -> dict[tuple[str, str, str], str | None]:
@@ -339,6 +407,10 @@ def test_build_matrix_gates_boots_and_checksums_real_packages():
     )
     assert order.index("Refuse a boot whose console stays silent") < order.index(
         "Stage Artifacts and Checksums"
+    )
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
     )
     restore = steps["Restore the Compiler Cache"]
     save = steps["Save the Compiler Cache"]
@@ -445,6 +517,55 @@ def test_every_ubuntu_26_04_container_is_pinned_to_one_digest():
     assert "@sha256:" in image
     for name in ("build-matrix.yml", "release-build.yml", "ci.yml", "verify-requirements.yml"):
         assert name in users, name
+
+
+def test_renovate_custom_manager_matches_workflow_image_env_pins():
+    """Renovate customManager regexes match workflow *_IMAGE: env pins and extract image, tag, and digest."""
+    renovate = json.loads((REPO_ROOT / "renovate.json").read_text(encoding="utf-8"))
+    manager = next(
+        m
+        for m in renovate.get("customManagers", [])
+        if m.get("customType") == "regex"
+        and m.get("datasourceTemplate") == "docker"
+        and any("_IMAGE:" in pat for pat in m.get("matchStrings", []))
+    )
+    assert manager.get("managerFilePatterns") == ["/^\\.github\\/workflows\\/.*\\.ya?ml$/"]
+
+    patterns = [
+        re.compile(re.sub(r"\?<([a-zA-Z0-9_]+)>", r"?P<\1>", pat))
+        for pat in manager.get("matchStrings", [])
+    ]
+    assert patterns
+
+    matched_lines = 0
+    for wf in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for line in wf.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("#") or "_IMAGE: " not in line:
+                continue
+            matched = False
+            for pat in patterns:
+                m = pat.search(line)
+                if m:
+                    matched = True
+                    assert m.group("depName") == "ubuntu", f"unexpected depName in {wf.name}"
+                    assert m.group("currentValue") == "26.04", (
+                        f"unexpected currentValue in {wf.name}"
+                    )
+                    digest = m.group("currentDigest")
+                    assert re.fullmatch(r"sha256:[a-f0-9]{64}", digest), (
+                        f"invalid digest in {wf.name}"
+                    )
+                    break
+            assert matched, f"No matchString in customManager matched: {line!r} in {wf.name}"
+            matched_lines += 1
+
+    assert matched_lines >= 3, (
+        f"Expected at least 3 _IMAGE: lines in workflows, got {matched_lines}"
+    )
+
+    # Negative case: a line without a digest does not match
+    no_digest_line = "BUILD_IMAGE: ubuntu:26.04"
+    assert not any(pat.search(no_digest_line) for pat in patterns)
 
 
 def test_no_run_block_interpolates_event_data():
@@ -837,9 +958,11 @@ def _security_gate_job():
 
 
 def test_security_scans_aggregate_contract():
-    """Ensure one always() job in security-scans.yml needs every scan job."""
+    """Ensure one !cancelled() job in security-scans.yml needs every scan job."""
     jobs, gate = _security_gate_job()
-    assert str(gate["if"]).strip() == "always()", "the gate must report on every run"
+    assert str(gate["if"]).strip() == "${{ !cancelled() }}", (
+        "the gate must report on every run that a newer push did not cancel"
+    )
     assert "continue-on-error" not in gate, "an advisory gate can never fail"
     scans = sorted(name for name in jobs if name != "security-gate")
     assert sorted(gate["needs"]) == scans, "the gate must need every other job of the workflow"
@@ -1312,6 +1435,7 @@ def test_package_lifecycle_workflow_contract():
     assert "pull_request" in on, "pull_request trigger required"
     assert on["pull_request"]["paths"] == [
         "scripts/package_lifecycle.py",
+        "scripts/select_lifecycle_releases.py",
         ".github/workflows/package-lifecycle.yml",
     ]
     assert "schedule" in on, "schedule trigger required"
@@ -1651,7 +1775,134 @@ def test_reproducibility_builds_one_leg_twice_with_one_key_and_compares():
     delete = steps["Delete the Module Signing Key"]
     assert delete["if"].startswith("always()") and 'rm -rf "${KEY_DIR}"' in delete["run"]
     names = [step.get("name", "") for step in job["steps"]]
+    assert (
+        '--archive-dir="${GITHUB_WORKSPACE}/.apt-archives"'
+        in steps["Install the Build Toolchain"]["run"]
+    )
     assert names.index("Build Twice and Compare") < names.index("Delete the Module Signing Key")
+
+
+def _toolchain_cache_problems(steps: list[dict]) -> list[str]:
+    problems = []
+    names = [s.get("name", "") for s in steps]
+    step_map = {s.get("name", ""): s for s in steps}
+    if "Restore the Toolchain Package Cache" not in step_map:
+        problems.append("missing restore step")
+    if "Save the Toolchain Package Cache" not in step_map:
+        problems.append("missing save step")
+    if "Install the Build Toolchain" not in step_map:
+        problems.append("missing install step")
+    if not problems:
+        r_idx = names.index("Restore the Toolchain Package Cache")
+        i_idx = names.index("Install the Build Toolchain")
+        s_idx = names.index("Save the Toolchain Package Cache")
+        if not (r_idx < i_idx < s_idx):
+            problems.append("wrong step order")
+        r_step = step_map["Restore the Toolchain Package Cache"]
+        s_step = step_map["Save the Toolchain Package Cache"]
+        r_key = r_step.get("with", {}).get("key", "")
+        s_key = s_step.get("with", {}).get("key", "")
+        if "run_id" in r_key:
+            problems.append("restore key contains run_id")
+        if r_key != s_key:
+            problems.append("restore and save keys do not match")
+        if "steps.restore_apt_cache.outputs.cache-hit != 'true'" not in s_step.get("if", ""):
+            problems.append("missing cache-hit guard on save")
+        # actions/cache puts the compression method into the cache version; without zstd at
+        # restore time the restore looks for a gzip entry that the save never writes.
+        compressor = step_map.get("Install the Cache Compressor", {})
+        if (
+            "zstd" not in compressor.get("run", "")
+            or names.index("Install the Cache Compressor") > r_idx
+        ):
+            problems.append("zstd not installed before restore")
+    return problems
+
+
+_COMPRESSOR = {"name": "Install the Cache Compressor", "run": "apt-get install -y zstd"}
+
+
+def test_build_matrix_toolchain_cache_structure():
+    assert _toolchain_cache_problems(_build_matrix()["steps"]) == []
+    assert _toolchain_cache_problems(_reproducibility_job()["steps"]) == []
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected_problem"),
+    [
+        (
+            [
+                _COMPRESSOR,
+                {
+                    "name": "Restore the Toolchain Package Cache",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "apt-test-${{ github.run_id }}"},
+                },
+            ],
+            "restore key contains run_id",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-b"},
+                },
+            ],
+            "restore and save keys do not match",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "always()",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "missing cache-hit guard on save",
+        ),
+        (
+            [
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "wrong step order",
+        ),
+        (
+            [
+                {"name": "Restore the Toolchain Package Cache", "with": {"key": "key-a"}},
+                _COMPRESSOR,
+                {"name": "Install the Build Toolchain"},
+                {
+                    "name": "Save the Toolchain Package Cache",
+                    "if": "steps.restore_apt_cache.outputs.cache-hit != 'true'",
+                    "with": {"key": "key-a"},
+                },
+            ],
+            "zstd not installed before restore",
+        ),
+    ],
+)
+def test_toolchain_cache_problems_planted_refusals(steps, expected_problem):
+    problems = _toolchain_cache_problems(steps)
+    assert expected_problem in problems
 
 
 def test_required_checks_waits_longer_than_the_reproducibility_job():
@@ -1713,3 +1964,223 @@ def test_x86_64_boots_prove_bbr3_and_sched_ext_from_the_manifest_binding():
     assert judge_if < judge["run"].index("--require-scheduler=simple")
     assert "--require-congestion=planted-cc" in judge["run"]
     assert "--require-scheduler=planted-sched" in judge["run"]
+
+
+MODULE_JOBS = [
+    (
+        "openzfs-module",
+        "Build OpenZFS Module (${{ matrix.stream }})",
+        "openzfs",
+        "check-openzfs-module.sh",
+    ),
+    (
+        "nvidia-open-module",
+        "Build NVIDIA Open Module (${{ matrix.stream }})",
+        "nvidia_open",
+        "check-nvidia-open-module.sh",
+    ),
+]
+
+
+def _build_matrix_jobs():
+    return yaml.safe_load((WORKFLOWS_DIR / "build-matrix.yml").read_text(encoding="utf-8"))["jobs"]
+
+
+@pytest.mark.parametrize(("job_id", "expected_name", "mod_key", "script_name"), MODULE_JOBS)
+def test_build_matrix_builds_modules_from_same_sha_headers(
+    job_id, expected_name, mod_key, script_name
+):
+    """PR module checks run in build-matrix.yml against the x86_64 headers artifact from build."""
+    jobs = _build_matrix_jobs()
+    assert "plan-modules" in jobs
+    job = jobs[job_id]
+    assert job["name"] == expected_name
+    assert sorted(job["needs"]) == ["build", "plan-modules"]
+    assert job["permissions"] == {"contents": "read"}
+    assert job["steps"][0]["name"] == DRAFT_STEP
+    assert job["strategy"]["matrix"] == f"${{{{ fromJSON(needs.plan-modules.outputs.{mod_key}) }}}}"
+    assert job["env"]["DRY_RUN"] == "${{ github.event.inputs.dry_run == 'true' }}"
+    build_step = job["steps"][-1]
+    assert build_step["if"] == "env.DRY_RUN != 'true'"
+    assert f"./scripts/{script_name}" in build_step["run"]
+
+
+def _run_module_step(run: str, cwd: Path) -> subprocess.CompletedProcess:
+    env = {"PATH": os.environ["PATH"], "STREAM": "mainstream"}
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", run],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(("job_id", "expected_name", "mod_key", "script_name"), MODULE_JOBS)
+def test_build_matrix_module_step_requires_exactly_one_headers_deb(
+    tmp_path: Path, job_id, expected_name, mod_key, script_name
+):
+    """The module step refuses 0 and 2 headers packages and runs the check on exactly 1."""
+    run = _build_matrix_jobs()[job_id]["steps"][-1]["run"]
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    stub = scripts_dir / script_name
+    stub.write_text('#!/usr/bin/env bash\necho "invoked: $*"\n', encoding="utf-8")
+    stub.chmod(0o755)
+    out_dir = tmp_path / "output" / "mainstream-x86_64"
+    out_dir.mkdir(parents=True)
+
+    res_zero = _run_module_step(run, tmp_path)
+    assert res_zero.returncode == 1
+    assert "found 0: none" in res_zero.stderr
+
+    deb1 = out_dir / "linux-headers-7.2.10-lusoris1-mainstream_7.2.10-lusoris1_amd64.deb"
+    deb1.write_text("deb1", encoding="utf-8")
+    res_one = _run_module_step(run, tmp_path)
+    assert res_one.returncode == 0, res_one.stderr
+    assert f"--headers-deb=output/mainstream-x86_64/{deb1.name}" in res_one.stdout
+
+    deb2 = out_dir / "linux-headers-7.2.11-lusoris1-mainstream_7.2.11-lusoris1_amd64.deb"
+    deb2.write_text("deb2", encoding="utf-8")
+    res_two = _run_module_step(run, tmp_path)
+    assert res_two.returncode == 1
+    assert "found 2:" in res_two.stderr
+    assert deb1.name in res_two.stderr and deb2.name in res_two.stderr
+
+
+KERNEL_SLOT_PATTERN = re.compile(
+    r"nucleus-kernel-slot-\$\{\{ fromJSON\('(\[[0-9,]+\])'\)\[strategy\.job-index\] \}\}"
+)
+EXPECTED_KERNEL_SLOT_TABLE_STR = "[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]"
+
+KERNEL_POOL_JOBS = [
+    ("build-matrix.yml", "build"),
+    ("build-matrix.yml", "reproducibility"),
+    ("build-matrix.yml", "openzfs-module"),
+    ("build-matrix.yml", "nvidia-open-module"),
+    ("nvidia-open-module.yml", "build"),
+    ("openzfs-module.yml", "build"),
+    ("package-lifecycle.yml", "lifecycle"),
+    ("verify-requirements.yml", "resolve"),
+    ("release-build.yml", "build"),
+]
+
+
+def _kernel_slot_ok(job: dict) -> bool:
+    conc = job.get("concurrency")
+    if not isinstance(conc, dict):
+        return False
+    if conc.get("queue") != "max":
+        return False
+    if conc.get("cancel-in-progress") is not False:
+        return False
+    group = conc.get("group", "")
+    m = KERNEL_SLOT_PATTERN.fullmatch(group)
+    if not m:
+        return False
+    table_str = m.group(1)
+    if table_str != EXPECTED_KERNEL_SLOT_TABLE_STR:
+        return False
+    if set(json.loads(table_str)) != set(range(6)):
+        return False
+    return True
+
+
+def _load_job(wf_filename: str, job_id: str) -> dict:
+    wf = yaml.safe_load((WORKFLOWS_DIR / wf_filename).read_text(encoding="utf-8"))
+    assert job_id in wf["jobs"], f"{job_id} not found in {wf_filename}"
+    return wf["jobs"][job_id]
+
+
+def test_kernel_jobs_share_six_repository_wide_slots():
+    """Every kernel and module job takes one of the six repository-wide slots."""
+    for wf_filename, job_id in KERNEL_POOL_JOBS:
+        assert _kernel_slot_ok(_load_job(wf_filename, job_id)), f"{wf_filename} job {job_id}"
+    build = _load_job("build-matrix.yml", "build")
+    legs = len(build["strategy"]["matrix"]["stream"]) * len(build["strategy"]["matrix"]["arch"])
+    assert len(json.loads(EXPECTED_KERNEL_SLOT_TABLE_STR)) >= legs
+
+
+def test_kernel_slot_check_refuses_mutations():
+    """A slot that cancels, keeps no queue or uses another table is refused."""
+    build = _load_job("build-matrix.yml", "build")
+    mutations = (
+        ("queue", "single"),
+        ("cancel-in-progress", True),
+        ("group", build["concurrency"]["group"].replace("5]", "6]", 1)),
+    )
+    for key, value in mutations:
+        bad = json.loads(json.dumps(build))
+        bad["concurrency"][key] = value
+        assert not _kernel_slot_ok(bad), key
+    del build["concurrency"]
+    assert not _kernel_slot_ok(build)
+
+
+def _compiles(job: dict) -> bool:
+    for step in job.get("steps", []):
+        run = step.get("run", "") if isinstance(step, dict) else ""
+        if "check-openzfs-module.sh" in run or "check-nvidia-open-module.sh" in run:
+            return True
+        lines = [line for line in run.splitlines() if "build_kernel.sh" in line]
+        if any("--dry-run" not in line for line in lines):
+            return True
+    return False
+
+
+def test_every_compiling_job_is_in_the_kernel_pool():
+    """A job that compiles a kernel or a module outside the pool is refused."""
+    for wf_path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        wf = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+        for job_id, job in wf.get("jobs", {}).items():
+            if isinstance(job, dict) and _compiles(job):
+                assert (wf_path.name, job_id) in KERNEL_POOL_JOBS, f"{wf_path.name} job {job_id}"
+    assert _compiles({"steps": [{"run": "scripts/build_kernel.sh --stream lts"}]})
+    assert not _compiles({"steps": [{"run": "scripts/build_kernel.sh --dry-run"}]})
+
+
+def _scan_queue_ok(job: dict) -> bool:
+    return job.get("concurrency") == {
+        "group": "nucleus-scan-${{ github.job }}",
+        "queue": "max",
+        "cancel-in-progress": False,
+    }
+
+
+def test_security_scanners_queue_per_scanner():
+    """Security scanners declare dedicated repository-wide FIFO queues per scanner."""
+    for job_id in ("semgrep", "trivy", "gitleaks"):
+        assert _scan_queue_ok(_load_job("security-scans.yml", job_id)), job_id
+    good = _load_job("security-scans.yml", "semgrep")
+    for key, value in (("queue", "single"), ("cancel-in-progress", True), ("group", "scan")):
+        bad = json.loads(json.dumps(good))
+        bad["concurrency"][key] = value
+        assert not _scan_queue_ok(bad), key
+
+
+def test_actionlint_ignores_queue_only_where_used():
+    """actionlint config ignores queue error only on workflows that declare queue."""
+    config_path = REPO_ROOT / ".github" / "actionlint.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    paths = config.get("paths", {})
+    assert paths, "actionlint.yaml missing paths block"
+
+    covered_workflows = set()
+    for pat, cfg in paths.items():
+        assert cfg.get("ignore") == ['unexpected key "queue" for "concurrency" section'], (
+            f"unexpected ignore pattern for path {pat}"
+        )
+        m = re.fullmatch(r"\*\*/\.github/workflows/\{([^}]+)\}\.yml", pat)
+        if m:
+            for name in m.group(1).split(","):
+                covered_workflows.add(f"{name.strip()}.yml")
+        else:
+            covered_workflows.add(Path(pat).name)
+
+    workflows_with_queue = {
+        wf.name for wf in WORKFLOWS_DIR.glob("*.yml") if "queue:" in wf.read_text(encoding="utf-8")
+    }
+    assert workflows_with_queue == covered_workflows, (
+        f"Mismatch between workflows using queue ({workflows_with_queue}) and covered ({covered_workflows})"
+    )

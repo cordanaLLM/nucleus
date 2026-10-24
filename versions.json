@@ -22,45 +22,45 @@
       }
     },
     "mainstream": {
-      "version": "7.2.10",
-      "tag": "v7.2.10",
+      "version": "7.2.11",
+      "tag": "v7.2.11",
       "status": "stable",
       "description": "Production stable stream for Intel Battlemage Xe2 (xe) and AMD Radeon for ROCm (amdgpu with KFD).",
       "source": {
         "kind": "tarball",
-        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.xz",
-        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.sign",
-        "sha256": "2feaa70453e91f541be6a5c9078d8168e081af45a3d9718054850538cff2ebf3",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.11.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.11.tar.sign",
+        "sha256": "fd0fc479f983a8c05313f13e9c36330fe6651cf725396748c40d5cd93fa1e6a4",
         "signers": [
           "647F28654894E3BD457199BE38DBBDC86092693E"
         ]
       }
     },
     "lts": {
-      "version": "6.18.56",
-      "tag": "v6.18.56",
+      "version": "6.18.58",
+      "tag": "v6.18.58",
       "status": "longterm",
       "description": "Long-term support stream for enterprise Kubernetes nodes, OpenZFS 2.3, and CNPG.",
       "source": {
         "kind": "tarball",
-        "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.56.tar.xz",
-        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.56.tar.sign",
-        "sha256": "4633bbda2ab95eaf2a7af4041236451d6759c72e6946265531af4b3aacefbf89",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.58.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.58.tar.sign",
+        "sha256": "069b19f9032c4dac8149ae4b6520c35debca0f42a9f6d52ee55ba6ca9b818013",
         "signers": [
           "647F28654894E3BD457199BE38DBBDC86092693E"
         ]
       }
     },
     "realtime": {
-      "version": "7.2.10",
-      "tag": "v7.2.10",
+      "version": "7.2.11",
+      "tag": "v7.2.11",
       "status": "preempt_rt",
       "description": "Full PREEMPT_RT deterministic low-latency stream for edge and real-time workloads, built from the mainline stable release with the in-tree PREEMPT_RT option.",
       "source": {
         "kind": "tarball",
-        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.xz",
-        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.10.tar.sign",
-        "sha256": "2feaa70453e91f541be6a5c9078d8168e081af45a3d9718054850538cff2ebf3",
+        "url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.11.tar.xz",
+        "signature_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.11.tar.sign",
+        "sha256": "fd0fc479f983a8c05313f13e9c36330fe6651cf725396748c40d5cd93fa1e6a4",
         "signers": [
           "647F28654894E3BD457199BE38DBBDC86092693E"
         ]

@@ -36,8 +36,8 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -58,6 +58,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     # Semgrep runs from its publisher's image, named by release and digest, so the scanner
     # changes only with a commit here. The update bot moves both parts together.
     container:
@@ -76,7 +81,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run Semgrep Security Rules
         # The container default, named: the one command needs no bash features.
         shell: sh
@@ -89,6 +94,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'schedule' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -103,7 +113,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -116,6 +126,11 @@ jobs:
     name: Gitleaks History Scan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # One repository-wide queue per scanner: at most three scan jobs of nucleus run at once.
+    concurrency:
+      group: nucleus-scan-${{ github.job }}
+      queue: max
+      cancel-in-progress: false
     steps:
       - name: Stop on a draft pull request
         if: github.event.pull_request.draft == true
@@ -130,7 +145,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       # gitleaks-action requires a paid license for organization-owned repositories;
@@ -151,13 +166,15 @@ jobs:
   # One check that stands for every scan above. Semgrep and Trivy are skipped on pull
   # requests that touch no code path, and GitHub reports a skipped job as successful, so
   # neither can be a required check on its own. This job needs all of them and runs on every
-  # event (if: always()). The change detector and Gitleaks run on every event and must
+  # event that is not cancelled (if: !cancelled()): a run superseded by a newer push must not
+  # hold a hosted runner slot and its concurrency group for a gate nobody reads. The change
+  # detector and Gitleaks run on every event and must
   # succeed. Semgrep and Trivy may be skipped only when the detector succeeded and decided
   # that this pull request touches no code; every other result fails the gate.
   security-gate:
     name: Security Scan Gate
     needs: [changes, semgrep, trivy, gitleaks]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

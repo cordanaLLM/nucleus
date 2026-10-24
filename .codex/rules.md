@@ -112,7 +112,7 @@ make verify-all
 
 > Authoritative operating guide for all autonomous engineering agents and human contributors in `cordanaLLM/nucleus`.
 >
-> **Read [`docs/principles.md`](docs/principles.md) before changing this repository.** It defines the authority classes, Holzmann Power of 10 adaptations, and architectural contracts for kernel compilation and packaging.
+> **Read [`docs/principles.md`](../docs/principles.md) before changing this repository.** It defines the authority classes, Holzmann Power of 10 adaptations, and architectural contracts for kernel compilation and packaging.
 
 ---
 
@@ -121,9 +121,9 @@ make verify-all
 These rules apply to ALL agents, ALL tools, and ALL commits — without exception:
 
 1. **Read `docs/principles.md` First**: Defines authority classes, Holzmann Power of 10 adaptations, and kernel packaging contracts.
-2. **Single Source of Truth (`versions.json`)**: Never hardcode kernel tarball URLs, release tags, or architecture targets in shell build scripts or CI workflows. All versions must originate exclusively from [`versions.json`](versions.json).
+2. **Single Source of Truth (`versions.json`)**: Never hardcode kernel tarball URLs, release tags, or architecture targets in shell build scripts or CI workflows. All versions must originate exclusively from [`versions.json`](../versions.json).
 3. **Trunk-Based PR Merge Flow**: Direct commits to `main` are strictly prohibited. Always create a short-lived branch (`feat/*`, `fix/*`, `chore/*`), run all local quality gates (`make lint`, `make test`), push, and open a PR with `gh pr create`.
-4. **Docs & Code Synchrony**: Every user-discoverable change (new stream, configuration variable, or build script modification) must be reflected in documentation ([README.md](README.md) and [`docs/`](docs/)) in the **exact same commit/PR**.
+4. **Docs & Code Synchrony**: Every user-discoverable change (new stream, configuration variable, or build script modification) must be reflected in documentation ([README.md](../README.md) and [`docs/`](../docs/)) in the **exact same commit/PR**.
 5. **NASA/JPL Power of 10 Compliance**: All shell build and automation functions must be $\le$ 60 lines, enforce `set -euo pipefail`, check return codes, and pass ShellCheck with zero warnings.
 6. **Privacy & Zero-Leak Invariant**: Never commit private RFC 1918 IP addresses (`10.x`, `192.168.x`, `172.16-31.x`) or local workstation home paths. Use standard documentation placeholders (`192.0.2.x`, `kernel.example.com`).
 7. **All Documentation in English**: All commit messages, code comments, documentation, and agent reports must be written in a neutral, professional English register.
@@ -134,7 +134,7 @@ These rules apply to ALL agents, ALL tools, and ALL commits — without exceptio
 
 This repository compiles kernels: four streams for three architectures, each build opened by an
 artifact gate before anything is checksummed, and every x86_64 kernel booted under QEMU before it
-is kept ([ADR-0009](docs/adr/0009-kernel-compilation-and-artifact-gate.md)). What it does not do
+is kept ([ADR-0009](../docs/adr/0009-kernel-compilation-and-artifact-gate.md)). What it does not do
 yet is said in the table as plainly as what it does.
 
 | Stage | State |
@@ -153,7 +153,7 @@ yet is said in the table as plainly as what it does.
 | `scripts/publish_release.sh` | real: `SHA256SUMS` over exactly the files in `OUTPUT_DIR`; **refuses** an empty directory, a zero-byte file, a file that is not a publishable artifact, a directory without a package, and a `sha256sum` failure, writing nothing (issue #31) |
 | `publish-release.yml` | real, caller workflow for reusable `release-build.yml`: preflight token check, invokes `release-build.yml` where build, gate, boot, UKI staging (x86_64), SBOMs, SLSA Build Level 3 provenance attestation and keyless cosign signing run in an isolated job, then downloads artifacts, publishes the GitHub Release (including the x86_64 UKI) and dispatches notification to imago. Has released all four streams; the manifest's `kernel.release` is the recorded kernel release, `config_digest` the resolved configuration's digest, `revision` the tag's commit; imago's verifier accepts a release assembled this way locally and refuses one flipped bit |
 | `supply-chain.yml` and `scripts/verify-release.sh` | real: after every successful `publish-release` run, and on dispatch for a kernel release tag, downloads the release and verifies it as a consumer does: cosign bundle against the release workflow's identity at the tag (evaluating `scripts/release_signer_identity.py` to accept `publish-release.yml` for the 20 legacy tags and `release-build.yml` for SLSA L3 tags), `sha256sum --check --strict`, no unlisted asset, the manifest's tag, signer identity and `SHA256SUMS` digest; signs nothing |
-| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures in `ubuntu:26.04` (pinned by digest, the one every workflow uses), arm64 natively on `ubuntu-24.04-arm`, riscv64 cross-compiled; disk probe, compiler cache, gate, multi-arch boot smoke, UKI build check on x86_64 and arm64, checksums; job permissions `contents: read`. Run 36507112520 compiled and gated all twelve legs, booted the four x86_64 kernels, and built the arm64 headers packages natively. An earlier run lost a riscv64 leg to a race in the uutils `install -D` that Ubuntu 26.04 ships; the build now uses GNU `install` (`gnuinstall`). Job `reproducibility` builds `mainstream`/x86_64 twice, fresh tree, no compiler cache, one generated `--module-key`; `verify-reproducibility.sh` refuses any byte difference (#77) |
+| `.github/workflows/build-matrix.yml` | real: 4 streams x 3 architectures in `ubuntu:26.04` (pinned by digest, the one every workflow uses), arm64 natively on `ubuntu-24.04-arm`, riscv64 cross-compiled; disk probe, compiler cache, gate, multi-arch boot smoke, UKI build check on x86_64 and arm64, checksums, and out-of-tree OpenZFS (`Build OpenZFS Module (<stream>)`) and NVIDIA open (`Build NVIDIA Open Module (<stream>)`) module builds against each stream's newly built x86_64 headers package (`scripts/module_stream_matrix.py`, `scripts/check-openzfs-module.sh`, `scripts/check-nvidia-open-module.sh`); job permissions `contents: read`. Run 36507112520 compiled and gated all twelve legs, booted the four x86_64 kernels, and built the arm64 headers packages natively. An earlier run lost a riscv64 leg to a race in the uutils `install -D` that Ubuntu 26.04 ships; the build now uses GNU `install` (`gnuinstall`). Job `reproducibility` builds `mainstream`/x86_64 twice, fresh tree, no compiler cache, one generated `--module-key`; `verify-reproducibility.sh` refuses any byte difference (#77) |
 | downstream dispatch to `cordanaLLM/imago` | real on this side: every release sent `kernel_release_published` (stream, version, tag) with the `KERNEL_FORGE_TOKEN` secret, a fine-grained token limited to `cordanaLLM/imago` that expires after 366 days. imago's receiving `sync-kernel-manifest` fails at job setup on a dead action pin (cordanaLLM/imago#47), so no release has been pinned there yet |
 
 The production path used to `touch` two empty `.deb` files and exit 0, so the matrix
@@ -193,7 +193,7 @@ image on every pull request.
 - **Inbound**: requirement documents of shape `aegis.p01-nucleus.kernel-requirement.v1`, declared in
   `versions.json` under `downstream.requirements`, each bound to the streams its consumer uses:
   imago's `kernel/requirement.json` to all four, Aegis-OS's `build/kernel-requirement.json` to
-  `realtime`. The policy is [ADR-0007](docs/adr/0007-document-driven-kernel-requirements.md).
+  `realtime`. The policy is [ADR-0007](../docs/adr/0007-document-driven-kernel-requirements.md).
   - `scripts/fetch-kernel-requirements.sh` reads each document at one commit. A
     `kernel_requirements_updated` dispatch pins its own row to the dispatched commit, and the
     verifier proves the dispatched SHA-256 before parsing and the correlation id before the
@@ -228,7 +228,7 @@ which is the second reason the production path refuses rather than fabricates.
 
 Key capabilities:
 
-- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc7), `mainstream` (7.2.10), `lts` (6.18.56), and `realtime` (7.2.10 with in-tree `PREEMPT_RT`).
+- **Multi-Stream Releases**: Curates and compiles `bleeding` (7.3-rc7), `mainstream` (7.2.11), `lts` (6.18.58), and `realtime` (7.2.11 with in-tree `PREEMPT_RT`).
 - **Multi-Architecture Matrix**: Native compilation for `x86_64`, `arm64`, and `riscv64`.
 - **Hardened KConfig Fragments**: Minimalist, modular kernel configuration fragments prioritizing security (KSPP), performance (`mq-deadline`, BBRv3), and container agility (`crun`, sched-ext, eBPF).
 - **Automated Downstream Sync**: Automated GitHub Actions workflows dispatching new release notifications downstream to `imago`.
@@ -261,7 +261,7 @@ reason.
 
 ## 4. Hard Rules
 
-1. **Single Source of Truth**: All kernel streams, tags, URLs, and architectures originate exclusively from [`versions.json`](versions.json).
+1. **Single Source of Truth**: All kernel streams, tags, URLs, and architectures originate exclusively from [`versions.json`](../versions.json).
 2. **Never `git push --force` to `main`**.
 3. **Never commit directly to `main`**.
 4. **Never merge without `make lint` + `make test` green**.
@@ -270,6 +270,6 @@ reason.
 7. **Every user-discoverable surface ships human-readable documentation** under `docs/` in the same PR.
 8. **Power of 10 compliance**: Shell functions $\le$ 60 lines, `set -euo pipefail`, bounded loops, zero linter warnings.
 9. **Privacy & Zero-Leak invariant**: Zero private RFC 1918 IPs, zero `/home/*` workstation paths.
-10. **AGENTS.md is the only hand-edited agent context**: `CLAUDE.md`, `.codex/rules.md`, `.cursor/rules/hiss-invariants.mdc`, `.gemini/GEMINI.md`, `.github/copilot-instructions.md` and `.windsurfrules` are compiled from it. After every change to AGENTS.md, run `make context` and commit the regenerated files with it; the `praetorctl compile-context --verify` step in CI fails otherwise. Never edit the Text Register block by hand: it is rendered from `.standards.yaml`. The praetor pin, profile, review mode and branch ruleset are described in [`docs/repository-governance.md`](docs/repository-governance.md).
+10. **AGENTS.md is the only hand-edited agent context**: `CLAUDE.md`, `.codex/rules.md`, `.cursor/rules/hiss-invariants.mdc`, `.gemini/GEMINI.md`, `.github/copilot-instructions.md` and `.windsurfrules` are compiled from it. After every change to AGENTS.md, run `make context` and commit the regenerated files with it; the `praetorctl compile-context --verify` step in CI fails otherwise. Never edit the Text Register block by hand: it is rendered from `.standards.yaml`. The praetor pin, profile, review mode and branch ruleset are described in [`docs/repository-governance.md`](../docs/repository-governance.md).
 
 <!-- caveman:on -->

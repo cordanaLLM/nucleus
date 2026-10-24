@@ -123,7 +123,7 @@ skips it, and main commit 3392531 went red on that skip. `tests/test_gates_refus
 fails when the list differs from the detector-gated jobs in `security-scans.yml` plus the
 release-gated jobs in `release-please.yml`, and when a listed check that failed or was
 cancelled passes. The gate also fails when it finds no other check
-run, or when the others are still running after 190 minutes. Before this, the aggregator
+run, or when the others are still running after 330 minutes. Before this, the aggregator
 accepted `skipped` from any check.
 
 Two forge behaviours shape the wait. A job that `needs` another one registers its check run
@@ -135,12 +135,13 @@ timeout); a run that carries a conclusion and a completion time counts as comple
 its status says, and its conclusion is judged like any other. Both are tested in
 `tests/test_gates_refuse_skipped.py` against a stubbed `gh`.
 
-The 190 minutes are a wall-clock deadline measured from the gate's start, not a number of
+The 330 minutes are a wall-clock deadline measured from the gate's start, not a number of
 polls, so slow `gh api` calls count against it, and each call is killed after 60 seconds
 (`--fetch-timeout`). A failed or hung call is retried on the next poll. At the deadline the gate
 fails and names what it waited for: the check runs still pending, or the last `gh api` error
-when no poll succeeded. The job's own `timeout-minutes` of 200 is the second bound. A check
-that never finishes, a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
+when no poll succeeded. The job's own `timeout-minutes` of 340 is the second bound, staying
+under GitHub's 6-hour (360-minute) hosted runner execution limit. A check that never finishes,
+a slow `gh`, a hung `gh` and a failing `gh` are each tested against a stub.
 
 `verify-requirements.yml` runs on pull requests only when they touch the paths its trigger
 lists, so none of its jobs is a required check on its own: `Verify Downstream Kernel
@@ -148,19 +149,24 @@ Requirements`, the `Resolve KConfig (<stream>)` legs and `Verify Requirements Ag
 Resolved KConfig` report on the pull requests they concern, and there `required-checks` waits
 for them and requires their success like any other check run. `build-matrix.yml` works the
 same way: a pull request that touches a file the build runs or reads (the paths its
-`pull_request` trigger lists: the build scripts, `kconfig/`, `keys/`, `versions.json`, the
-builder image and the workflow itself) compiles, gates and boots all twelve legs, and
-`required-checks` waits for them. The organisation's hosted runners are one pool for every
-repository, so the matrix runs at most six legs at once (`max-parallel`), and at most half of
-them, which `tests/test_workflows.py` checks; on 2026-10-17 two runs of all twelve legs left
-other repositories' jobs queued. Twelve legs six at a time take two waves, and the arm64 leg
-may run for 90 minutes (the longest measured leg took 40, run 36507112520): that is why the
-gate waits 190 minutes. One build runs per branch: a pull request run and a dispatch on its
-branch share a concurrency group, so a second run waits for the first. A new push to the pull
-request cancels the build still running for its branch, a dispatched one included; a scheduled
-run, or a dispatch on a branch without a pull request, is never cancelled.
-`tests/test_workflows.py` fails when the trigger, its paths, the cap, the group or the wait
-change.
+`pull_request` trigger lists: the build and module scripts, `kconfig/`, `keys/`, `versions.json`,
+`versions.schema.json`, the builder image and the workflow itself) compiles, gates and boots all
+twelve legs, then builds the OpenZFS and NVIDIA open kernel modules against the x86_64 headers
+packages produced in that same run, and `required-checks` waits for them. The organisation's
+hosted runners are one pool for every repository, so the matrix runs at most six legs at once
+(`max-parallel`), and at most half of them, which `tests/test_workflows.py` checks; on 2026-10-17
+two runs of all twelve legs left other repositories' jobs queued. While kernel execution takes 54
+to 3002 seconds per leg, queue delay under shared-runner saturation dominates the total elapsed
+time. Across 10 measured runs in `tests/data/required-checks-spans.json`, pull request build-matrix
+spans reached 13397 s (run 39626121442). The gate waits 19800 s (330 minutes, giving ~1.48x
+headroom over the worst span), and the job bound of 340 minutes stays below the 6-hour (360-minute)
+hosted runner execution limit. `test_required_checks_deadline_covers_every_measured_build_span` in
+`tests/test_workflows.py` asserts that the workflow deadline covers every measured run span with at
+least 25% margin. One build runs per branch: a pull request run and a dispatch on its branch share
+a concurrency group, so a second run waits for the first. A new push to the pull request cancels
+the build still running for its branch, a dispatched one included; a scheduled run, or a dispatch
+on a branch without a pull request, is never cancelled. `tests/test_workflows.py` fails when the
+trigger, its paths, the cap, the group or the wait change.
 
 A required check that is never reported leaves a pull request waiting forever. Three cases
 produce that:
@@ -174,6 +180,28 @@ produce that:
   marker (#39).
 - A workflow change that renames a required job: `make test` fails until `make ruleset` has
   re-rendered the file.
+
+### Hosted runner share
+
+The cordanaLLM organisation has 20 hosted runner job slots, shared by every repository in it. On
+2026-10-22 at 10:02Z nucleus held 18 of them: 11 kernel legs from four `build-matrix` runs and 7
+required-checks pollers. `strategy.max-parallel` caps one run only, so four pull requests at once
+filled the organisation and the other repositories waited.
+
+Every job that compiles a kernel or a module (`build-matrix`, `nvidia-open-module`,
+`openzfs-module`, `package-lifecycle`, `verify-requirements`, `release-build`) takes one of six
+repository-wide slots, `nucleus-kernel-slot-0` to `nucleus-kernel-slot-5`, picked from its
+`strategy.job-index`. A job-level concurrency group runs one job at a time, so at most six kernel
+jobs of nucleus run at once across all workflows and runs; the others wait in their slot's queue in
+order (`queue: max`, `cancel-in-progress: false`). The scanners in `security-scans` (Semgrep,
+Trivy, Gitleaks) queue the same way, one group per scanner. A new push to a pull request still
+cancels the run of its old head (the workflow-level `cancel-in-progress` on `pull_request`).
+`tests/test_workflows.py` refuses a kernel job outside the pool.
+
+The cost is wall time: with several kernel pull requests open, a run can wait in the queue long
+enough to reach the required-checks deadline of 330 minutes, which then fails on time, not on a
+check. actionlint 1.7.12 does not know the `queue` key yet, so `.github/actionlint.yaml` ignores
+that one message in exactly the workflows that use it.
 
 ### Applying the ruleset
 
@@ -230,14 +258,18 @@ A draft pull request runs no gate. Every job a pull request starts begins with t
 until the pull request is marked ready for review. The `ready_for_review` event then starts the
 gates (praetor rule HISS-18, `docs/guides/workflow-triggers.md` in praetor).
 `test_every_pull_request_job_stops_on_a_draft` in `tests/test_workflows.py` refuses a workflow
-without that step or without the event. Five workflows are declared as HISS-18 exceptions in
+without that step or without the event. Four workflows are declared as HISS-18 exceptions in
 `.standards.yaml`: `security-scans.yml` and `verify-requirements.yml` (expiring on 2027-01-13),
-and `nvidia-open-module.yml`, `openzfs-module.yml` and `package-lifecycle.yml` (expiring on
+and `build-matrix.yml` and `package-lifecycle.yml` (expiring on
 2027-01-15). Their jobs that need another job are skipped on a draft, and the audit reports them
-although nothing can merge through them. The last three build a matrix that a plan job computes,
+although nothing can merge through them. The last two build a matrix that a plan job computes
+(`build-matrix.yml` runs `Build OpenZFS Module (<stream>)` and `Build NVIDIA Open Module (<stream>)`
+against the same-SHA x86_64 headers artifacts, while `openzfs-module.yml` and `nvidia-open-module.yml`
+run after a successful `publish-release.yml` run, on `schedule` and on `workflow_dispatch` against
+published releases),
 and no job of theirs is a required check; their exceptions say so, and
 `tests/test_hiss18_exceptions.py` refuses that claim for a workflow with a job the ruleset in
-`.github/rulesets/main.json` requires. All five close with cordanaLLM/praetor#1368.
+`.github/rulesets/main.json` requires. All four close with cordanaLLM/praetor#1368.
 
 ## 5. The praetor pin
 

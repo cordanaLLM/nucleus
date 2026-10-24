@@ -1,0 +1,56 @@
+{
+  "source": "Measured PR build-matrix runs (span = run created -> last job completed, seconds; module jobs included; queue under shared-runner saturation), measured 2026-10-22.",
+  "hosted_job_limit_minutes": 360,
+  "runs": [
+    {
+      "run": 39689399902,
+      "branch": "chore/lts-6.18.58",
+      "span_seconds": 6071
+    },
+    {
+      "run": 39689122509,
+      "branch": "chore/mainstream-realtime-7.2.11",
+      "span_seconds": 5976
+    },
+    {
+      "run": 39626121442,
+      "branch": "chore/lts-6.18.58",
+      "span_seconds": 13397
+    },
+    {
+      "run": 39625888253,
+      "branch": "chore/mainstream-realtime-7.2.11",
+      "span_seconds": 13032
+    },
+    {
+      "run": 39591932089,
+      "branch": "fix/module-checks-same-sha-headers",
+      "span_seconds": 12522
+    },
+    {
+      "run": 39592956687,
+      "branch": "planted/bump-without-release",
+      "span_seconds": 13132
+    },
+    {
+      "run": 39660815094,
+      "branch": "renovate/major-github-actions",
+      "span_seconds": 10317
+    },
+    {
+      "run": 39660784527,
+      "branch": "renovate/github-actions",
+      "span_seconds": 9523
+    },
+    {
+      "run": 39660752402,
+      "branch": "renovate/container-images",
+      "span_seconds": 9592
+    },
+    {
+      "run": 39588152880,
+      "branch": "renovate/major-github-actions",
+      "span_seconds": 12842
+    }
+  ]
+}

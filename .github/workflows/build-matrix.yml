@@ -25,12 +25,16 @@ on:
       - "scripts/package-uki.sh"
       - "scripts/check_uki.py"
       - "scripts/publish_release.sh"
+      - "scripts/module_stream_matrix.py"
+      - "scripts/check-openzfs-module.sh"
+      - "scripts/check-nvidia-open-module.sh"
       - "docker/Dockerfile.builder"
       - "kconfig/**"
       - "patches/**"
       - "scripts/check_patches_apply.py"
       - "keys/**"
       - "versions.json"
+      - "versions.schema.json"
       - ".github/workflows/build-matrix.yml"
   schedule:
     - cron: "0 2 * * 0"
@@ -69,6 +73,13 @@ jobs:
     # 36504114874 and 36507112520 measured a compile of 1029 to 1208 s on x86_64, 1023 to 1572 s
     # on riscv64 and 2087 to 2250 s on arm64; the longest whole leg took 40 minutes (arm64).
     timeout-minutes: ${{ matrix.timeout }}
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
     container:
@@ -131,9 +142,30 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
 
       - name: Install the Build Toolchain
         env:
@@ -141,10 +173,17 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${WITH_QEMU}" == "true" ]]; then
-            bash ./scripts/install-build-toolchain.sh --with-qemu
+            bash ./scripts/install-build-toolchain.sh --with-qemu --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           else
-            bash ./scripts/install-build-toolchain.sh
+            bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
           fi
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-${{ matrix.arch }}-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-${{ github.event.inputs.dry_run != 'true' }}
 
       # The hosted runners keep a larger scratch disk at /mnt; the build goes wherever there is
       # more room, and a runner without enough anywhere fails here rather than an hour in.
@@ -197,7 +236,7 @@ jobs:
 
       - name: Keep the Build Log
         if: failure() && steps.disk.outputs.work_dir != ''
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-log-${{ matrix.stream }}-${{ matrix.arch }}
           path: ${{ steps.disk.outputs.work_dir }}/${{ matrix.stream }}-${{ matrix.arch }}/build.log
@@ -395,7 +434,7 @@ jobs:
 
       - name: Upload Build Artifacts
         if: env.DRY_RUN != 'true'
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kernel-${{ matrix.stream }}-${{ matrix.arch }}
           path: |
@@ -415,6 +454,13 @@ jobs:
     name: Reproducible Build (mainstream / x86_64)
     runs-on: ubuntu-24.04
     timeout-minutes: 95
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
     container:
@@ -444,14 +490,42 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Run 39772302851 measured 38-60 min apt mirror stalls against archive.ubuntu.com.
+      # Restoring cached .deb packages into .apt-archives bypasses external download stalls
+      # while apt cryptographically validates packages against the freshly updated index.
+      # actions/cache folds the compression method into the cache version, and ubuntu:26.04 ships
+      # no zstd: a restore before zstd is installed would look for a gzip entry that the save,
+      # which runs after the toolchain install, never writes.
+      - name: Install the Cache Compressor
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
+          apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+            -o Acquire::http::Timeout=30 zstd
+
+      - name: Restore the Toolchain Package Cache
+        id: restore_apt_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
 
       - name: Install the Build Toolchain
         run: |
           set -euo pipefail
-          bash ./scripts/install-build-toolchain.sh
+          bash ./scripts/install-build-toolchain.sh --archive-dir="${GITHUB_WORKSPACE}/.apt-archives"
+
+      - name: Save the Toolchain Package Cache
+        if: steps.restore_apt_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .apt-archives
+          key: apt-x86_64-${{ runner.arch }}-${{ hashFiles('scripts/install-build-toolchain.sh') }}-qemu-false
 
       - name: State the Comparison
         if: env.DRY_RUN == 'true'
@@ -510,7 +584,7 @@ jobs:
 
       - name: Keep Both Builds for Inspection
         if: failure() && steps.disk.outputs.work_dir != ''
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reproducibility-${{ github.run_id }}
           path: repro/
@@ -540,7 +614,7 @@ jobs:
           echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build docker/Dockerfile.builder
@@ -553,3 +627,212 @@ jobs:
               command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 1; }
             done
             scripts/build_kernel.sh --stream=mainstream --arch=x86_64 --dry-run'
+
+  # Out-of-tree kernel module checks run in build-matrix.yml on pull requests against the
+  # same-SHA x86_64 headers package built above, because a version-bump pull request has no
+  # published GitHub Release yet.
+  plan-modules:
+    name: Plan Out-of-Tree Module Build Matrices
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      openzfs: ${{ steps.openzfs.outputs.matrix }}
+      nvidia_open: ${{ steps.nvidia_open.outputs.matrix }}
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Compute OpenZFS Module Matrix
+        id: openzfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/module_stream_matrix.py --module=openzfs
+
+      - name: Compute NVIDIA Open Module Matrix
+        id: nvidia_open
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/module_stream_matrix.py --module=nvidia_open
+
+  openzfs-module:
+    name: Build OpenZFS Module (${{ matrix.stream }})
+    needs: [build, plan-modules]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-modules.outputs.openzfs) }}
+    env:
+      STREAM: ${{ matrix.stream }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install Toolchain
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool gawk uuid-dev libblkid-dev libudev-dev \
+            libssl-dev zlib1g-dev libaio-dev libattr1-dev libelf-dev python3 ca-certificates \
+            curl gpg gpgv kmod gettext-base
+
+      - name: Checkout Repository
+        if: env.DRY_RUN != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Kernel Build Artifact
+        if: env.DRY_RUN != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: kernel-${{ matrix.stream }}-x86_64
+
+      - name: Build OpenZFS Module
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=("output/${STREAM}-x86_64"/linux-headers-*_amd64.deb)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "Refused: expected 1 linux-headers-*_amd64.deb in output/${STREAM}-x86_64/, found ${#debs[@]}: ${debs[*]:-none}" >&2
+            exit 1
+          fi
+          HEADERS_DEB="${debs[0]}"
+          ./scripts/check-openzfs-module.sh \
+            --headers-deb="${HEADERS_DEB}" \
+            --work="zfs-work-${STREAM}" \
+            --jobs=4
+
+  nvidia-open-module:
+    name: Build NVIDIA Open Module (${{ matrix.stream }})
+    needs: [build, plan-modules]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # One of six repository-wide kernel slots (docs/repository-governance.md): the organisation's
+    # 20 hosted job slots are shared by every repository, so nucleus compiles at most six jobs at
+    # once across all its workflows and runs; a seventh waits in the slot's queue.
+    concurrency:
+      group: nucleus-kernel-slot-${{ fromJSON('[0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5,0,1,2,3,4,5]')[strategy.job-index] }}
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    container:
+      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-modules.outputs.nvidia_open) }}
+    env:
+      STREAM: ${{ matrix.stream }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Stop on a draft pull request
+        if: github.event.pull_request.draft == true
+        shell: bash
+        env:
+          TITLE: Gate not run on a draft
+          MESSAGE: >-
+            The gate did not run because the pull request is a draft.
+            It runs when the pull request is marked ready for review.
+        run: |
+          echo "::error title=$TITLE::$MESSAGE"
+          echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Install Toolchain
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential libssl-dev libelf-dev python3 ca-certificates \
+            curl kmod git gettext-base
+
+      - name: Checkout Repository
+        if: env.DRY_RUN != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Kernel Build Artifact
+        if: env.DRY_RUN != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: kernel-${{ matrix.stream }}-x86_64
+
+      - name: Build NVIDIA Open Module
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=("output/${STREAM}-x86_64"/linux-headers-*_amd64.deb)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "Refused: expected 1 linux-headers-*_amd64.deb in output/${STREAM}-x86_64/, found ${#debs[@]}: ${debs[*]:-none}" >&2
+            exit 1
+          fi
+          HEADERS_DEB="${debs[0]}"
+          ./scripts/check-nvidia-open-module.sh \
+            --headers-deb="${HEADERS_DEB}" \
+            --work="nvidia-work-${STREAM}" \
+            --jobs=4
