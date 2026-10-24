@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 The Lusoris Authors
 # SPDX-License-Identifier: EUPL-1.2
-"""Wait for every other check run on a commit, then require each one to have succeeded.
+"""Evaluate every other check run on a commit, in one-shot status mode or polling wait mode.
 
 The aggregator used to accept ``skipped`` for every check, so a required job that was skipped
 by a wrong condition counted as passed. Here a check run passes only with conclusion
@@ -11,25 +11,15 @@ Scan Gate for Semgrep and Trivy) proves the skip was the detector's decision.
 
 Usage: required_checks_gate.py --repo <owner/name> --ref <sha> --self <check name>
                                [--allow-skip <check name>]... [--interval s] [--timeout s]
-                               [--fetch-timeout s]
+                               [--fetch-timeout s] [--once] [--bound s]
+                               [--exclude-workflow <path>]... [--ignore-check <name>]...
+                               [--now <iso8601>] [--post-status] [--target-url <url>]
+                               [--only-if-pending]
 
-Check runs are read with ``gh api`` (GH_TOKEN in the environment). A check name can have several
-runs on one commit (the metadata gate runs once per pull request edit); the newest run, the
-highest id, stands for the name, as in branch protection. The gate fails when a check
-run ended in anything else, when no check run besides its own exists, and when the others
-have not completed before the timeout.
-
-The timeout is a wall-clock deadline, not a number of polls: the time each ``gh api`` call takes
-counts against it, and each call is killed after ``--fetch-timeout`` seconds. A call that fails
-or hangs is retried on the next poll; when the deadline passes, the gate fails and names the
-check runs still pending, or the last error when no poll succeeded.
-
-A check run counts as completed when its status says so, or when it carries a conclusion and a
-completion time: the forge has left a finished run at ``in_progress`` before, and the gate then
-waited out its whole timeout on it. A job that ``needs`` another one registers its check run only
-when it is queued, so the gate passes only after two consecutive polls agree that nothing is
-pending and see the same check names.
-Exit status: 0 when every check run passed, 1 otherwise.
+With ``--once``, the script inspects the commit's workflow runs and check runs without waiting
+on a runner, decides ``(state, description)`` in ``{"pending", "success", "failure"}``, and with
+``--post-status`` posts a commit status under ``--self``. It exits 0 whenever the status was
+posted (or decided without ``--post-status``), and exits 1 only when fetching or posting failed.
 """
 
 from __future__ import annotations
@@ -39,10 +29,40 @@ import json
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
+
+STATUS_DESC_LIMIT = 140
 
 
 class FetchError(RuntimeError):
     """``gh api`` failed or did not answer in time."""
+
+
+def _truncate(text: str) -> str:
+    return text[:STATUS_DESC_LIMIT]
+
+
+def _parse_iso(value: str | datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _gh_api(api_args: list[str], timeout: float) -> str:
+    try:
+        return subprocess.run(
+            ["gh", "api", *api_args],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        raise FetchError(f"gh api did not answer within {timeout:g}s") from None
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip().splitlines()[-1:] or [""]
+        raise FetchError(f"gh api failed (exit {exc.returncode}): {detail[0]}") from None
 
 
 def fetch(repo: str, ref: str, timeout: float) -> list[dict]:
@@ -74,12 +94,38 @@ def _gh(repo: str, ref: str, timeout: float) -> str:
     ).stdout
 
 
+def fetch_workflow_runs(repo: str, ref: str, timeout: float) -> list[dict]:
+    """Every workflow run on the ref, all pages."""
+    out = _gh_api(
+        [
+            "--paginate",
+            f"repos/{repo}/actions/runs?head_sha={ref}&per_page=100",
+            "--jq",
+            ".workflow_runs[] | {id, name, path, status, conclusion, created_at, run_attempt}",
+        ],
+        timeout,
+    )
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
 def latest(runs: list[dict]) -> list[dict]:
     """The newest run of each check name; an earlier run of the same name is superseded."""
     newest: dict[str, dict] = {}
     for run in runs:
         if run["name"] not in newest or run["id"] > newest[run["name"]]["id"]:
             newest[run["name"]] = run
+    return list(newest.values())
+
+
+def latest_workflows(runs: list[dict], excluded: set[str]) -> list[dict]:
+    """The newest workflow run for each workflow path, dropping excluded paths."""
+    newest: dict[str, dict] = {}
+    for run in runs:
+        path = run.get("path") or run.get("name", "")
+        if path in excluded or run.get("name") in excluded:
+            continue
+        if path not in newest or run["id"] > newest[path]["id"]:
+            newest[path] = run
     return list(newest.values())
 
 
@@ -106,6 +152,143 @@ def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str
             continue
         problems.append(f"{run['name']}: {conclusion}")
     return problems
+
+
+def decide(
+    check_runs: list[dict],
+    workflow_runs: list[dict],
+    self_name: str,
+    allow_skip: set[str],
+    excluded: set[str],
+    bound: int,
+    now: str | datetime,
+    ignored: set[str] | frozenset[str] = frozenset(),
+) -> tuple[str, str]:
+    """Pure one-shot decision returning (state, description) for commit status posting."""
+    now_dt = _parse_iso(now)
+    wf_latest = latest_workflows(workflow_runs, set(excluded))
+    running = [r for r in wf_latest if r.get("status") != "completed"]
+    if running:
+        names = sorted(r["name"] for r in running)
+        expired = any(
+            (now_dt - _parse_iso(r["created_at"])).total_seconds() > bound for r in running
+        )
+        if expired:
+            return "failure", _truncate(
+                f"deadline of {bound}s passed; still running: {', '.join(names)}"
+            )
+        return "pending", _truncate(f"waiting on {len(names)}: {', '.join(names)}")
+    ignore = {self_name} | set(ignored)
+    checks = [r for r in latest(check_runs) if r["name"] not in ignore]
+    waiting = pending(checks, self_name)
+    if waiting:
+        return "pending", _truncate(f"waiting on {len(waiting)}: {', '.join(waiting)}")
+    problems = evaluate(checks, self_name, set(allow_skip))
+    if problems:
+        extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
+        return "failure", _truncate(f"{problems[0]}{extra}")
+    return "success", _truncate(f"{len(checks)} check runs passed")
+
+
+def status_is_settled(repo: str, ref: str, context: str, timeout: float) -> bool:
+    """Whether the newest commit status on ref for context is already success or failure."""
+    out = _gh_api(
+        [
+            "--paginate",
+            f"repos/{repo}/commits/{ref}/statuses?per_page=100",
+            "--jq",
+            ".[] | {id, context, state}",
+        ],
+        timeout,
+    )
+    entries = [json.loads(line) for line in out.splitlines() if line.strip()]
+    matching = [s for s in entries if s.get("context") == context]
+    if not matching:
+        return False
+    newest = max(matching, key=lambda s: s.get("id", 0))
+    return newest.get("state") in {"success", "failure"}
+
+
+def post_status(
+    repo: str,
+    ref: str,
+    state: str,
+    context: str,
+    description: str,
+    target_url: str,
+    timeout: float,
+) -> None:
+    """Post a commit status on ref for context, truncating description to 140 chars."""
+    api_args = [
+        "-X",
+        "POST",
+        f"repos/{repo}/statuses/{ref}",
+        "-f",
+        f"state={state}",
+        "-f",
+        f"context={context}",
+        "-f",
+        f"description={_truncate(description)}",
+    ]
+    if target_url:
+        api_args.extend(["-f", f"target_url={target_url}"])
+    _gh_api(api_args, timeout)
+
+
+def run_once(args: argparse.Namespace) -> int:
+    """Evaluate required checks once and optionally post the commit status."""
+    try:
+        if args.only_if_pending and status_is_settled(
+            args.repo, args.ref, args.self_name, args.fetch_timeout
+        ):
+            print(f"{args.ref}: {args.self_name} already settled; skipping")
+            return 0
+        wf_runs = fetch_workflow_runs(args.repo, args.ref, args.fetch_timeout)
+        check_runs = fetch(args.repo, args.ref, args.fetch_timeout)
+        now_dt = _parse_iso(args.now) if args.now else datetime.now(UTC)
+        state, description = decide(
+            check_runs,
+            wf_runs,
+            args.self_name,
+            set(args.allow_skip),
+            set(args.exclude_workflows),
+            args.bound,
+            now_dt,
+            set(args.ignore_checks),
+        )
+    except (FetchError, ValueError, KeyError) as exc:
+        description = _truncate(f"evaluation failed: {exc}")
+        print(f"::error::{description}", file=sys.stderr)
+        if args.post_status:
+            try:
+                post_status(
+                    args.repo,
+                    args.ref,
+                    "pending",
+                    args.self_name,
+                    description,
+                    args.target_url,
+                    args.fetch_timeout,
+                )
+            except FetchError as post_exc:
+                print(f"::error::post status failed: {post_exc}", file=sys.stderr)
+        return 1
+    print(f"{state}: {description}")
+    if args.post_status:
+        try:
+            post_status(
+                args.repo,
+                args.ref,
+                state,
+                args.self_name,
+                description,
+                args.target_url,
+                args.fetch_timeout,
+            )
+        except FetchError as exc:
+            print(f"::error::post status failed: {exc}", file=sys.stderr)
+            return 1
+    return 0
 
 
 def wait(args: argparse.Namespace) -> tuple[list[dict] | None, str]:
@@ -153,7 +336,7 @@ def _sleep_until(deadline: float, interval: int) -> bool:
     return time.monotonic() < deadline
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", required=True)
     parser.add_argument("--ref", required=True)
@@ -162,8 +345,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=int, default=20)
     parser.add_argument("--timeout", type=int, default=1500)
     parser.add_argument("--fetch-timeout", type=int, default=60)
-    args = parser.parse_args(argv)
+    parser.add_argument("--once", action="store_true")
+    parser.add_argument("--bound", type=int, default=19800)
+    parser.add_argument("--exclude-workflow", dest="exclude_workflows", action="append", default=[])
+    parser.add_argument("--ignore-check", dest="ignore_checks", action="append", default=[])
+    parser.add_argument("--now", default=None)
+    parser.add_argument("--post-status", action="store_true")
+    parser.add_argument("--target-url", default="")
+    parser.add_argument("--only-if-pending", action="store_true")
+    return parser
 
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    if args.once:
+        return run_once(args)
     runs, reason = wait(args)
     if runs is None:
         print(f"::error::deadline of {args.timeout}s passed; {reason}", file=sys.stderr)

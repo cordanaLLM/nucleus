@@ -262,7 +262,7 @@ def test_a_check_that_registers_after_the_others_finished_is_waited_for(tmp_path
 
 
 def test_the_aggregator_runs_the_gate_and_allows_only_detector_and_release_gated_skips():
-    job = _workflow("required-aggregator.yml")["jobs"]["required-checks"]
+    job = _workflow("required-aggregator.yml")["jobs"]["evaluate"]
     text = yaml.safe_dump(job)
     assert "allowed-conclusions" not in text, "no blanket list of accepted conclusions"
     run = next(
