@@ -1665,8 +1665,39 @@ def test_release_please_marks_tool_release_not_latest():
     assert edit_step["if"] == "${{ steps.release.outputs.release_created }}"
     assert "gh release edit" in edit_step["run"]
     assert "--latest=false" in edit_step["run"]
-    assert edit_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert edit_step["env"]["GH_TOKEN"] == "${{ steps.app-token.outputs.token }}"
     assert edit_step["env"]["TAG_NAME"] == "${{ steps.release.outputs.tag_name }}"
+
+
+def test_release_please_acts_through_the_release_app():
+    """nucleus-release-please-token: release-please uses the app token, never GITHUB_TOKEN."""
+    rp_text = (WORKFLOWS_DIR / "release-please.yml").read_text(encoding="utf-8")
+    job = yaml.safe_load(rp_text)["jobs"]["release-please"]
+    steps = job["steps"]
+    names = [s.get("name", "") for s in steps]
+    assert names[:3] == [
+        "Require the Release App Credentials",
+        "Create Release App Token",
+        "Run Release Please",
+    ]
+    require = steps[0]
+    assert require["env"] == {
+        "CLIENT_ID_SET": "${{ vars.RELEASE_APP_CLIENT_ID != '' }}",
+        "PRIVATE_KEY_SET": "${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}",
+    }
+    assert "exit 1" in require["run"]
+    token = steps[1]
+    assert token["uses"].startswith("actions/create-github-app-token@")
+    assert re.fullmatch(r"actions/create-github-app-token@[0-9a-f]{40}", token["uses"])
+    assert {k: v for k, v in token["with"].items() if k.startswith("permission-")} == {
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+    assert steps[2]["with"]["token"] == "${{ steps.app-token.outputs.token }}"
+    assert job["permissions"] == {"contents": "read"}
+    job_text = yaml.safe_dump(job)
+    assert "github.token" not in job_text
+    assert "GITHUB_TOKEN }}" not in job_text
 
 
 def test_release_please_verifies_tool_release():
