@@ -151,7 +151,15 @@ re-evaluate. Otherwise every check run must have concluded `success`, and the ne
 every workflow must have concluded `success`, `skipped` or `neutral`: a `startup_failure`
 creates no check run, and a cancelled run never registers the jobs that waited on others. The newest run of a check
 name stands for it, since `Validate PR Milestone & Metadata` runs once per pull request edit.
-A skipped check passes only when its name is listed with `--allow-skip`. The list holds
+Check runs whose check suite belongs to an older workflow run of the same path on the commit are
+dropped before that, so a superseded run's jobs count even when their names differ from the
+newer run's (`superseded_suites()`).
+A skipped check passes when its name is listed with `--allow-skip`, or when its check suite
+belongs to a workflow run whose event is `workflow_run` or `schedule` (`scheduled_suites()`).
+`nvidia-open-module.yml` and `openzfs-module.yml` run after `publish-release` and weekly, and
+their build job's `if:` skips it by design when the plan matrix is empty. Main commit da43025
+went red on that skip. The workflow run's own conclusion still gates, so a failed or cancelled
+downstream run still fails, and a skipped job in a `push` or `pull_request` run still fails. The list holds
 `Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan Gate judges, and
 `verify-tool-release`, which `release-please.yml` runs only on the push to `main` that creates a
 release, or on a dispatch that names a tag. Every other push to `main` skips it, and main commit
@@ -160,7 +168,7 @@ from the detector-gated jobs in `security-scans.yml` plus the release-gated jobs
 `release-please.yml`, and when a listed check that failed or was cancelled passes. The gate also
 fails when it finds no other check run. `tests/test_required_checks_once.py` tests `decide()`
 across positive, negative, pending, boundary (`bound` vs `bound + 1` s), never-finishing build,
-excluded workflow, ignored check-name, and non-Actions pending cases, plus end-to-end
+excluded workflow, ignored check-name, non-Actions pending, superseded-suite and downstream-skip cases, plus end-to-end
 `--once --post-status` invocations against a stubbed `gh`.
 
 `scripts/required_checks_gate.py` also retains its standalone polling wait mode for CLI callers,

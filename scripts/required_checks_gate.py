@@ -9,6 +9,13 @@ by a wrong condition counted as passed. Here a check run passes only with conclu
 change detector in the same run may exclude, and a separate required check (the Security
 Scan Gate for Semgrep and Trivy) proves the skip was the detector's decision.
 
+Check runs from superseded workflow runs (older runs of the same workflow path on the commit)
+are dropped so obsolete or renamed jobs from earlier attempts do not block the gate. A check
+run with conclusion ``skipped`` is also accepted when its check suite belongs to a
+downstream-triggered workflow (event ``workflow_run`` or ``schedule``): matrix jobs in those
+workflows skip by design via an ``if:`` condition when their plan matrix is empty, while the
+workflow run's own conclusion still gates.
+
 Usage: required_checks_gate.py --repo <owner/name> --ref <sha> --self <check name>
                                [--allow-skip <check name>]... [--interval s] [--timeout s]
                                [--fetch-timeout s] [--once] [--bound s]
@@ -85,7 +92,7 @@ def _gh(repo: str, ref: str, timeout: float) -> str:
             "--paginate",
             f"repos/{repo}/commits/{ref}/check-runs?per_page=100",
             "--jq",
-            ".check_runs[] | {id, name, status, conclusion, completed_at}",
+            ".check_runs[] | {id, name, status, conclusion, completed_at, check_suite: .check_suite.id}",
         ],
         capture_output=True,
         text=True,
@@ -101,7 +108,7 @@ def fetch_workflow_runs(repo: str, ref: str, timeout: float) -> list[dict]:
             "--paginate",
             f"repos/{repo}/actions/runs?head_sha={ref}&per_page=100",
             "--jq",
-            ".workflow_runs[] | {id, name, path, status, conclusion, created_at, run_attempt}",
+            ".workflow_runs[] | {id, name, path, status, conclusion, created_at, run_attempt, event, check_suite_id}",
         ],
         timeout,
     )
@@ -129,6 +136,35 @@ def latest_workflows(runs: list[dict], excluded: set[str]) -> list[dict]:
     return list(newest.values())
 
 
+DOWNSTREAM_EVENTS = frozenset({"workflow_run", "schedule"})
+
+
+def superseded_suites(workflow_runs: list[dict]) -> set[int]:
+    """Check suite IDs of workflow runs superseded by a newer run of the same path."""
+    newest: dict[str, dict] = {}
+    for run in workflow_runs:
+        path = run.get("path") or run.get("name", "")
+        if path not in newest or run["id"] > newest[path]["id"]:
+            newest[path] = run
+    superseded: set[int] = set()
+    for run in workflow_runs:
+        path = run.get("path") or run.get("name", "")
+        if run["id"] != newest[path]["id"]:
+            suite_id = run.get("check_suite_id")
+            if suite_id is not None:
+                superseded.add(suite_id)
+    return superseded
+
+
+def scheduled_suites(workflow_runs: list[dict]) -> set[int]:
+    """Check suite IDs of workflow runs triggered by downstream events."""
+    return {
+        run["check_suite_id"]
+        for run in workflow_runs
+        if run.get("event") in DOWNSTREAM_EVENTS and run.get("check_suite_id") is not None
+    }
+
+
 def finished(run: dict) -> bool:
     """Completed by status, or by a conclusion and completion time under a stale status."""
     if run["status"] == "completed":
@@ -140,7 +176,12 @@ def pending(runs: list[dict], self_name: str) -> list[str]:
     return sorted(r["name"] for r in runs if r["name"] != self_name and not finished(r))
 
 
-def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str]:
+def evaluate(
+    runs: list[dict],
+    self_name: str,
+    allow_skip: set[str] | frozenset[str],
+    skip_ok_suites: set[int] | frozenset[int] = frozenset(),
+) -> list[str]:
     """One line per check run that did not pass; empty when all passed."""
     problems = []
     others = [r for r in runs if r["name"] != self_name]
@@ -148,7 +189,10 @@ def evaluate(runs: list[dict], self_name: str, allow_skip: set[str]) -> list[str
         return [f"no check run besides {self_name!r}; nothing was verified"]
     for run in others:
         conclusion = run["conclusion"]
-        if conclusion == "success" or (conclusion == "skipped" and run["name"] in allow_skip):
+        if conclusion == "success" or (
+            conclusion == "skipped"
+            and (run["name"] in allow_skip or run.get("check_suite") in skip_ok_suites)
+        ):
             continue
         problems.append(f"{run['name']}: {conclusion}")
     return problems
@@ -182,13 +226,24 @@ def decide(
             )
         return "pending", _truncate(f"waiting on {len(names)}: {', '.join(names)}")
     ignore = {self_name} | set(ignored)
-    checks = [r for r in latest(check_runs) if r["name"] not in ignore]
+    stale_suites = superseded_suites(workflow_runs)
+    active_checks = [
+        r
+        for r in check_runs
+        if r.get("check_suite") is None or r["check_suite"] not in stale_suites
+    ]
+    checks = [r for r in latest(active_checks) if r["name"] not in ignore]
     waiting = pending(checks, self_name)
     if waiting:
         return "pending", _truncate(f"waiting on {len(waiting)}: {', '.join(waiting)}")
     # A workflow can fail with no failing check run: startup_failure creates none, and a
     # cancelled run never registers the jobs its needs: would have started.
-    problems = evaluate(checks, self_name, set(allow_skip)) + [
+    problems = evaluate(
+        checks,
+        self_name,
+        set(allow_skip),
+        skip_ok_suites=scheduled_suites(workflow_runs),
+    ) + [
         f"{r['name']}: {r.get('conclusion')}"
         for r in wf_latest
         if r.get("conclusion") not in PASSING_WORKFLOW_CONCLUSIONS
