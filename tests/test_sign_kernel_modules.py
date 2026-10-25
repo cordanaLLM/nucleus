@@ -163,7 +163,11 @@ def test_the_same_key_over_the_same_package_writes_the_same_bytes(tmp_path):
 @pytest.mark.parametrize(
     ("files", "garble", "finding"),
     [
-        ({MODULES[0]: b"\x7fELF"}, "signature = signature[:-1] + b'x'", "openssl cms -verify"),
+        (
+            {MODULES[0]: b"\x7fELF"},
+            "signature = signature[:-1] + bytes([signature[-1] ^ 0xFF])",
+            "openssl cms -verify",
+        ),
         ({MODULES[0]: b"\x7fELF" + b"~Module signature appended~\n"}, "", "already signed"),
         ({MODULES[0] + ".zst": b"\x28\xb5\x2f\xfd"}, "", "compressed modules"),
         ({"boot/vmlinuz": b"MZ"}, "", "carries no kernel module"),
