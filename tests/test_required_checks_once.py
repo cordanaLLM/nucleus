@@ -31,8 +31,12 @@ def _check(
     conclusion: str | None = "success",
     status: str = "completed",
     run_id: int = 1,
+    check_suite: int | None = None,
 ) -> dict:
-    return {"id": run_id, "name": name, "status": status, "conclusion": conclusion}
+    item = {"id": run_id, "name": name, "status": status, "conclusion": conclusion}
+    if check_suite is not None:
+        item["check_suite"] = check_suite
+    return item
 
 
 def _wf(
@@ -42,8 +46,10 @@ def _wf(
     conclusion: str | None = "success",
     created_at: str = "2026-10-22T03:00:00Z",
     run_id: int = 10,
+    event: str = "push",
+    check_suite_id: int | None = None,
 ) -> dict:
-    return {
+    item = {
         "id": run_id,
         "name": name,
         "path": path,
@@ -51,7 +57,11 @@ def _wf(
         "conclusion": conclusion,
         "created_at": created_at,
         "run_attempt": 1,
+        "event": event,
     }
+    if check_suite_id is not None:
+        item["check_suite_id"] = check_suite_id
+    return item
 
 
 def test_decide_positive_all_success_and_allowed_skips():
@@ -379,3 +389,154 @@ def test_once_only_if_pending_skips_settled_and_evaluates_pending(tmp_path: Path
     )
     assert res_pending.returncode == 0
     assert [c for c in calls_pending if "POST" in c] != []
+
+
+def test_superseded_suites():
+    wfs = [
+        _wf("ci", ".github/workflows/ci.yml", run_id=10, check_suite_id=100),
+        _wf("ci", ".github/workflows/ci.yml", run_id=11, check_suite_id=101),
+        _wf("build-matrix", ".github/workflows/build-matrix.yml", run_id=20, check_suite_id=200),
+        _wf("standalone", path="", run_id=30, check_suite_id=300),
+        _wf("standalone", path="", run_id=31, check_suite_id=301),
+        _wf("no-suite", path="no-suite.yml", run_id=40, check_suite_id=None),
+        _wf("no-suite", path="no-suite.yml", run_id=41, check_suite_id=401),
+        _wf("aggregator", path=AGGREGATOR_PATH, run_id=50, check_suite_id=500),
+        _wf("aggregator", path=AGGREGATOR_PATH, run_id=51, check_suite_id=501),
+    ]
+    assert gate.superseded_suites(wfs) == {100, 300, 500}
+
+
+def test_scheduled_suites():
+    wfs = [
+        _wf("push-run", event="push", check_suite_id=100),
+        _wf("pr-run", event="pull_request", check_suite_id=101),
+        _wf("downstream-wf", event="workflow_run", check_suite_id=200),
+        _wf("scheduled-wf", event="schedule", check_suite_id=201),
+        _wf("no-suite-downstream", event="workflow_run", check_suite_id=None),
+    ]
+    assert gate.scheduled_suites(wfs) == {200, 201}
+
+
+def test_decide_positive_downstream_skipped_build_matrix_passes():
+    """Bug (b): workflow_run/schedule job skips when matrix is empty; gate passes."""
+    wf_nvidia = _wf(
+        "nvidia-open-module",
+        path=".github/workflows/nvidia-open-module.yml",
+        event="workflow_run",
+        conclusion="success",
+        check_suite_id=500,
+        run_id=50,
+    )
+    wf_ci = _wf("ci", ".github/workflows/ci.yml", run_id=60, check_suite_id=600)
+    checks = [
+        _check("Lint & Pytest Quality Gates", "success", run_id=1, check_suite=600),
+        _check(
+            "Build NVIDIA Open Module (${{ matrix.stream }})",
+            "skipped",
+            run_id=2,
+            check_suite=500,
+        ),
+    ]
+    state, desc = gate.decide(
+        checks, [wf_nvidia, wf_ci], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "success"
+    assert desc == "2 check runs passed"
+
+
+def test_decide_negative_planted_skipped_check_in_push_event_fails():
+    """Planted (b): skipped check in a push event suite must still fail."""
+    wf_nvidia = _wf(
+        "nvidia-open-module",
+        path=".github/workflows/nvidia-open-module.yml",
+        event="push",
+        conclusion="success",
+        check_suite_id=500,
+        run_id=50,
+    )
+    wf_ci = _wf("ci", ".github/workflows/ci.yml", run_id=60, check_suite_id=600)
+    checks = [
+        _check("Lint & Pytest Quality Gates", "success", run_id=1, check_suite=600),
+        _check(
+            "Build NVIDIA Open Module (${{ matrix.stream }})",
+            "skipped",
+            run_id=2,
+            check_suite=500,
+        ),
+    ]
+    state, desc = gate.decide(
+        checks, [wf_nvidia, wf_ci], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "failure"
+    assert "Build NVIDIA Open Module (${{ matrix.stream }}): skipped" in desc
+
+
+def test_decide_negative_downstream_workflow_failed_with_skipped_check():
+    """Bug (b) negative: workflow_run failing still fails even with skipped check."""
+    wf_nvidia = _wf(
+        "nvidia-open-module",
+        path=".github/workflows/nvidia-open-module.yml",
+        event="workflow_run",
+        conclusion="failure",
+        check_suite_id=500,
+        run_id=50,
+    )
+    wf_ci = _wf("ci", ".github/workflows/ci.yml", run_id=60, check_suite_id=600)
+    checks = [
+        _check("Lint & Pytest Quality Gates", "success", run_id=1, check_suite=600),
+        _check(
+            "Build NVIDIA Open Module (${{ matrix.stream }})",
+            "skipped",
+            run_id=2,
+            check_suite=500,
+        ),
+    ]
+    state, desc = gate.decide(
+        checks, [wf_nvidia, wf_ci], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "failure"
+    assert "nvidia-open-module: failure" in desc
+
+
+def test_decide_positive_superseded_workflow_run_failing_check_ignored():
+    """Hardening (a): check runs from superseded workflow runs do not fail the gate."""
+    wf_old = _wf("ci", ".github/workflows/ci.yml", run_id=10, check_suite_id=100)
+    wf_new = _wf("ci", ".github/workflows/ci.yml", run_id=11, check_suite_id=101)
+    checks = [
+        _check("Old Job", "failure", run_id=1, check_suite=100),
+        _check("New Job", "success", run_id=2, check_suite=101),
+    ]
+    state, desc = gate.decide(
+        checks, [wf_old, wf_new], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "success"
+    assert desc == "1 check runs passed"
+
+
+def test_decide_negative_planted_failing_check_in_newest_suite_fails():
+    """Planted (a): failing check in newest run's suite fails."""
+    wf_old = _wf("ci", ".github/workflows/ci.yml", run_id=10, check_suite_id=100)
+    wf_new = _wf("ci", ".github/workflows/ci.yml", run_id=11, check_suite_id=101)
+    checks = [
+        _check("Old Job", "success", run_id=1, check_suite=100),
+        _check("New Job", "failure", run_id=2, check_suite=101),
+    ]
+    state, desc = gate.decide(
+        checks, [wf_old, wf_new], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "failure"
+    assert "New Job: failure" in desc
+
+
+def test_decide_negative_planted_failing_check_without_check_suite_fails():
+    """Planted (a): failing check with no check_suite key continues to fail."""
+    wf = _wf("ci", ".github/workflows/ci.yml", run_id=10, check_suite_id=100)
+    checks = [
+        _check("Lint & Pytest Quality Gates", "success", run_id=1, check_suite=100),
+        _check("Legacy Failing Check", "failure", run_id=2),
+    ]
+    state, desc = gate.decide(
+        checks, [wf], "required-checks", ALLOW_SKIP, EXCLUDED, BOUND, NOW, IGNORED
+    )
+    assert state == "failure"
+    assert "Legacy Failing Check: failure" in desc
