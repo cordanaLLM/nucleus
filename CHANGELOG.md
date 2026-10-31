@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.5.1...nucleus-v0.5.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ci:** pass downstream skipped jobs and drop superseded suites ([#278](https://github.com/cordanaLLM/nucleus/issues/278)) ([2b1fc8b](https://github.com/cordanaLLM/nucleus/commit/2b1fc8b3d852af435019fe7b38db4a6c4a743a91))
+
 ## [0.5.1](https://github.com/cordanaLLM/nucleus/compare/nucleus-v0.5.0...nucleus-v0.5.1) (2026-10-24)
 
 
