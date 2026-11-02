@@ -8,7 +8,7 @@
 # install, so a local build compiles with the toolchain the matrix proved.
 # tests/test_builder_image.py keeps both in step; build-matrix.yml builds this image.
 
-FROM ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 LABEL org.opencontainers.image.title="lusoris-kernel-builder" \
       org.opencontainers.image.description="The nucleus kernel build environment: ubuntu:26.04 with scripts/install-build-toolchain.sh" \
