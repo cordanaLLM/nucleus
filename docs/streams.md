@@ -16,7 +16,7 @@
         │                   │                    │                   │
         ▼                   ▼                    ▼                   ▼
   Blackwell B200       Intel Xe2 Arc (xe)   Enterprise K8s      Game Servers
-  RTX 5090 / CXL 3.0   AMD ROCm (amdgpu)    OpenZFS 2.3 kmod    Low-latency UDP
+  RTX 5090 / CXL 3.0   AMD ROCm (amdgpu)    OpenZFS 2.3 kmod    Audio & telecom
   sched-ext eBPF       Kubernetes node      CloudNativePG       WireGuard Gateway
 ```
 
@@ -51,10 +51,12 @@ authority, and section 3 says how each source is proven.
 ### 2.4 Realtime Stream (`realtime`)
 
 - **Upstream Release**: Linux 7.2.11 (Stable), built with the in-tree `PREEMPT_RT` option; no out-of-tree rt patch is applied
-- **Target Workloads**: Low-jitter gaming servers (Counter-Strike 2, dedicated game hosts), software-defined radio, audio processing.
-- **Key Features**: Deterministic interrupt handling, high-resolution timers, threaded IRQs.
+- **Target Workloads**: Game servers (dedicated game hosts), software-defined radio, audio processing.
+- **Key Features**: `PREEMPT_RT` and `HZ_1000` enabled, checked by required-config claim `realtime`; latency is not measured (issue #291).
 - **Kconfig**: `kconfig/streams/realtime.config` sets `PREEMPT_RT`, `HZ_1000` and `EXPERT` (section 3).
 - **Flavors**: `appliance-game-server`, `appliance-gateway-dns`.
+
+No latency figure is published; a measurement needs real hardware (issue #291); performance gains are not benchmarked (issue #292).
 
 ---
 
@@ -216,11 +218,13 @@ builds, with the streams and architectures it covers and the symbols that back i
 | `k8s-node-x86_64` | all | x86_64 | the platform drivers of the x86_64 fragment |
 | `xe2` | all | x86_64 | `DRM_XE`, the MEI GSC clients, `MTD_INTEL_DG` |
 | `amd-rocm` | all | x86_64 | `DRM_AMDGPU`, `HSA_AMD=y` |
-| `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y`, `MQ_IOSCHED_DEADLINE=y` |
+| `bbr` | all | all | `TCP_CONG_BBR=y`, `DEFAULT_BBR=y` |
+| `mq-deadline` | all | all | `MQ_IOSCHED_DEADLINE=y` |
+| `nvme-tcp` | all | `x86_64`, `arm64` | `NVME_TCP` built |
 | `bbr3` | `bleeding`, `mainstream`, `realtime` | all | `TCP_CONG_BBR3` built, from the `bbr3` patch series ([patches.md](patches.md)) |
 | `btf` | all | all | `DEBUG_INFO_BTF=y` |
 | `sched-ext` | all | all | `SCHED_CLASS_EXT=y` |
-| `realtime` | `realtime` | all | `PREEMPT_RT=y` |
+| `realtime` | `realtime` | all | `PREEMPT_RT=y`, `HZ_1000=y` |
 
 `scripts/check_required_config.py` refuses a configuration in which a listed symbol is off
 (exit status 1), naming the symbol, its value and the claim. A symbol listed `built` must be
