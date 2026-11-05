@@ -25,9 +25,7 @@ MAX_SCAN_LINE_CHARS = 2048
 MAX_REASON_BYTES = 4096
 BLOCK_EXIT = 2
 
-NO_INPUT_REFUSAL = (
-    "[BLOCKED BY HISS] input: PreToolUse JSON " "on stdin or command arguments required"
-)
+NO_INPUT_REFUSAL = "[BLOCKED BY HISS] input: PreToolUse JSON on stdin or command arguments required"
 INVALID_INPUT_REFUSAL = "[BLOCKED BY HISS] Invalid hook input: "
 NARROWING_REFUSAL = "[BLOCKED BY HISS] hook exclusions: prohibited."
 SCAN_BOUND_REFUSAL = (
@@ -512,9 +510,7 @@ def check_command(command):
     for pattern, refusal in RULES:
         text = judged if pattern in READ_ONLY_EXEMPT else command
         if search(pattern, text):
-            reason = (
-                (refusal + pattern).encode()[:MAX_REASON_BYTES].decode(errors="ignore")
-            )
+            reason = (refusal + pattern).encode()[:MAX_REASON_BYTES].decode(errors="ignore")
             raise Blocked(reason)
 
 

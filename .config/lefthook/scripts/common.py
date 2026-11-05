@@ -116,12 +116,7 @@ def stop_process_group(process, sig=signal.SIGTERM, grace=None):
 
 def _signal_group(pgid, sig):
     """Send ``sig`` to group ``pgid``; False once no process of ours is left in it."""
-    if (
-        not isinstance(pgid, int)
-        or isinstance(pgid, bool)
-        or pgid <= 1
-        or pgid == os.getpgrp()
-    ):
+    if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 1 or pgid == os.getpgrp():
         return False
     try:
         os.killpg(pgid, sig)
@@ -311,19 +306,13 @@ def run_bounded(
                 _stop_bounded(process, grace)
                 raise
             if process.returncode not in allowed:
-                raise HookError(
-                    f"{args[0]} exited {process.returncode}; checkpoint unverified"
-                )
+                raise HookError(f"{args[0]} exited {process.returncode}; checkpoint unverified")
             return stdout
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise HookError(
-            f"{args[0]} checkpoint process failed ({type(error).__name__})"
-        ) from error
+        raise HookError(f"{args[0]} checkpoint process failed ({type(error).__name__})") from error
 
 
-def run(
-    args, cwd=None, *, data=None, timeout=180, capture=True, env=None, allowed=(0,)
-):
+def run(args, cwd=None, *, data=None, timeout=180, capture=True, env=None, allowed=(0,)):
     """Execute argv without a shell; preserve failures and bound every process."""
     settings = dict(os.environ if env is None else env)
     settings["PYTHONDONTWRITEBYTECODE"] = MANAGED_PROCESS_ENV["PYTHONDONTWRITEBYTECODE"]
@@ -482,9 +471,7 @@ def _checkout_identity(directory, budget):
     try:
         return Path(lines[0]).resolve(), Path(lines[1]).resolve()
     except (OSError, RuntimeError) as error:
-        raise HookError(
-            f"checkout identity does not resolve ({type(error).__name__})"
-        ) from error
+        raise HookError(f"checkout identity does not resolve ({type(error).__name__})") from error
 
 
 def _session_directory(root, cwd):
@@ -546,16 +533,12 @@ def index_env():
     """
     env = dict(os.environ)
     if len(env) > MAX_PROCESS_ENV_ENTRIES:
-        raise HookError(
-            f"process environment exceeds {MAX_PROCESS_ENV_ENTRIES} entries"
-        )
+        raise HookError(f"process environment exceeds {MAX_PROCESS_ENV_ENTRIES} entries")
     # Scan a statically bounded snapshot. Removing the count and legacy aggregate disables the
     # Git config injection; removing every indexed value also keeps transport URLs and other
     # caller data out of descendant process environments.
     for key in tuple(env)[:MAX_PROCESS_ENV_ENTRIES]:
-        if key in TRANSIENT_GIT_CONFIG_KEYS or key.startswith(
-            TRANSIENT_GIT_CONFIG_PREFIXES
-        ):
+        if key in TRANSIENT_GIT_CONFIG_KEYS or key.startswith(TRANSIENT_GIT_CONFIG_PREFIXES):
             env.pop(key, None)
     return env
 
@@ -573,9 +556,7 @@ def clean_env():
         env.pop(key, None)
     env.update(MANAGED_PROCESS_ENV)
     if len(env) > MAX_PROCESS_ENV_ENTRIES:
-        raise HookError(
-            f"process environment exceeds {MAX_PROCESS_ENV_ENTRIES} entries"
-        )
+        raise HookError(f"process environment exceeds {MAX_PROCESS_ENV_ENTRIES} entries")
     return env
 
 
@@ -612,9 +593,7 @@ def sweep_stale_snapshots(root=None, now=None):
             if sys.version_info >= (3, 12):
                 shutil.rmtree(entry, onexc=_writable_retry)
             else:  # Python 3.10 and 3.11 (the hooks' floor) name the callback onerror
-                shutil.rmtree(
-                    entry, onerror=_writable_retry
-                )  # pylint: disable=deprecated-argument
+                shutil.rmtree(entry, onerror=_writable_retry)  # pylint: disable=deprecated-argument
             removed += 1
     return removed
 
