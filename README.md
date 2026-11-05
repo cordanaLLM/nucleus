@@ -210,6 +210,12 @@ make ruleset
 
 # Run the praetor checks the CI job runs
 make governance-check PRAETOR_SRC=<praetor checkout at the pin>
+
+# Format and lint check (shfmt, ruff over scripts/, tests/, .agents/hooks-scripts/ and .config/),
+# then the test suite; a dated lint exception within three days of its expiry shows as an
+# ExpiryNotice in the pytest warnings summary, and an expired one fails (docs/community/contributing.md)
+make lint
+make test
 ```
 
 ---

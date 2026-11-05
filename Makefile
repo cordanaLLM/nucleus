@@ -43,7 +43,7 @@ fmt: ## Format shell scripts and Python files (shfmt and ruff from requirements-
 	@$(call require-tool,shfmt)
 	@$(call require-tool,ruff)
 	@shfmt -w -i 2 -bn -ci scripts/*.sh
-	@ruff format tests/ .agents/hooks-scripts/ scripts/
+	@ruff format tests/ .agents/hooks-scripts/ scripts/ .config/
 	@echo "==> Formatting complete."
 
 fmt-check: ## Verify formatting and Python lint without modifying files (shfmt, ruff format, ruff check)
@@ -51,8 +51,8 @@ fmt-check: ## Verify formatting and Python lint without modifying files (shfmt, 
 	@$(call require-tool,shfmt)
 	@$(call require-tool,ruff)
 	@shfmt -d -i 2 -bn -ci scripts/*.sh
-	@ruff format --check tests/ .agents/hooks-scripts/ scripts/
-	@ruff check tests/ .agents/hooks-scripts/ scripts/
+	@ruff format --check tests/ .agents/hooks-scripts/ scripts/ .config/
+	@ruff check tests/ .agents/hooks-scripts/ scripts/ .config/
 	@echo "==> Format check passed."
 
 lint: lint-manifest lint-workflows lint-spelling fmt-check ## Run ShellCheck, Yamllint, Actionlint, codespell, format checks and manifest validation

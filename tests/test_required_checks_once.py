@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -23,7 +24,9 @@ BOUND = 19800
 AGGREGATOR_PATH = ".github/workflows/required-aggregator.yml"
 EXCLUDED = frozenset({AGGREGATOR_PATH})
 IGNORED = frozenset({"Evaluate required checks", "required-checks"})
-ALLOW_SKIP = frozenset({"Semgrep SAST", "Trivy Filesystem CVE Scan", "verify-tool-release"})
+ALLOW_SKIP = frozenset(
+    {"Semgrep SAST", "Trivy Filesystem CVE Scan", "verify-tool-release", "Sourcery review"}
+)
 
 
 def _check(
@@ -540,3 +543,38 @@ def test_decide_negative_planted_failing_check_without_check_suite_fails():
     )
     assert state == "failure"
     assert "Legacy Failing Check: failure" in desc
+
+
+def _workflow_allow_skip() -> frozenset[str]:
+    text = (REPO_ROOT / AGGREGATOR_PATH).read_text(encoding="utf-8")
+    return frozenset(re.findall(r'--allow-skip "([^"]+)"', text))
+
+
+def test_workflow_allow_skip_matches_declared_set():
+    """Workflow allow-skip flags match the declared ALLOW_SKIP test set."""
+    assert _workflow_allow_skip() == ALLOW_SKIP
+
+
+def test_skipped_sourcery_review_passes():
+    """A skipped Sourcery review check passes when allowed by workflow flags."""
+    assert (
+        gate.evaluate(
+            [_check("Sourcery review", "skipped", run_id=1), _check("REUSE lint", run_id=2)],
+            "required-checks",
+            _workflow_allow_skip(),
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "conclusion", ["failure", "cancelled", "timed_out", "action_required", None]
+)
+def test_failed_sourcery_review_stays_red(conclusion):
+    """A non-skipped Sourcery review failure or incomplete run still fails the gate."""
+    result = gate.evaluate(
+        [_check("Sourcery review", conclusion, run_id=1), _check("REUSE lint", run_id=2)],
+        "required-checks",
+        _workflow_allow_skip(),
+    )
+    assert result == [f"Sourcery review: {conclusion}"]
