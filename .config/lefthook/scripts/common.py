@@ -544,6 +544,10 @@ def index_env():
 
 
 def clean_env():
+    """Construct a sanitized process environment free of git directory and transient state.
+
+    Returns the environment mapping, or raises HookError if entry count exceeds bounds.
+    """
     env = index_env()
     for key in (
         "GIT_DIR",

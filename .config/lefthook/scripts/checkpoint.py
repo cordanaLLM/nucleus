@@ -78,6 +78,10 @@ class CheckpointError(Exception):
 
 
 def _run(argv, root, *, allowed=(0,), network=False, timeout=None, index=None):
+    """Run a subprocess with bounded output and a sanitized git environment.
+
+    Raises CheckpointError if the command fails, times out, or exceeds output bounds.
+    """
     env = dict(os.environ)
     for key in (
         "GIT_DIR",
@@ -211,6 +215,10 @@ def _read_inspected(descriptor, inspected):
 
 
 def _read_policy(stream):
+    """Read raw checkpoint policy bytes from an open regular file stream.
+
+    Raises CheckpointError if the stream is not a regular file or exceeds 1 MiB.
+    """
     info = os.fstat(stream.fileno())
     if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OUTPUT:
         raise CheckpointError("checkpoint configuration must be a regular file <= 1 MiB")
@@ -221,6 +229,10 @@ def _read_policy(stream):
 
 
 def _config(root):
+    """Load and validate the checkpoint configuration from the repository root.
+
+    Returns a disabled policy dictionary if absent, or raises CheckpointError if invalid.
+    """
     try:
         raw = _policy_bytes(root)
         if raw is None:
@@ -253,6 +265,10 @@ OPTIONAL_CONFIG_FIELDS = frozenset({"enforce_batch_scope", "require_checks", "re
 
 
 def _validate_config(value, pairs):
+    """Validate parsed checkpoint configuration schema, types, and values.
+
+    Returns the validated configuration dict, or raises CheckpointError if malformed.
+    """
     if any(len(dict(items)) != len(items) for items in pairs):
         raise CheckpointError("checkpoint configuration contains duplicate keys")
     if (
@@ -295,6 +311,10 @@ def _validate_thresholds_and_refs(value):
 
 
 def _validate_repository(repo, prefixes):
+    """Validate repository naming format and allowable branch prefix patterns.
+
+    Raises CheckpointError if the repository slug or branch prefixes violate format bounds.
+    """
     if (
         not isinstance(repo, str)
         or repo.count("/") != 1
@@ -314,6 +334,10 @@ def _validate_repository(repo, prefixes):
 
 
 def _validate_review_policy(value):
+    """Validate optional check enforcement and required hosted check settings.
+
+    Raises CheckpointError if check settings, dependencies, or check names are invalid.
+    """
     for key in ("enforce_batch_scope", "require_checks"):
         if key in value and not isinstance(value[key], bool):
             raise CheckpointError("checkpoint boolean fields must be booleans")
@@ -360,6 +384,10 @@ def _diff_names(root, *options, timeout=None):
 
 
 def _worktree(root, timeout=None):
+    """Collect all modified, staged, and untracked public paths in the working tree.
+
+    Returns a set of public paths, or raises CheckpointError on conflicts or bad states.
+    """
     tracked = _diff_names(root, *NAME_ONLY, "--", timeout=timeout)
     untracked = _paths(
         _git(
@@ -905,6 +933,10 @@ def _ssh_transport_disabled(url):
 
 
 def _push_transport_disabled(root, cfg):
+    """Check whether git push transport to the configured remote is disabled.
+
+    Returns True if SSH is blocked or HTTPS has terminal prompts off without a credential helper.
+    """
     try:
         url = _remote_url(root, cfg["remote"])
     except CheckpointError:
@@ -925,6 +957,11 @@ def _forge_token_absent():
 
 
 def _detached_job_deferral(root, cfg):
+    """Determine whether detached job execution defers commit and publication duties.
+
+    Returns a reason string for a detached job (PRAETOR_DETACHED_JOB set) that has neither push
+    transport nor a forge token, or None otherwise.
+    """
     label = os.environ.get("PRAETOR_DETACHED_JOB")
     if not label or not _push_transport_disabled(root, cfg) or not _forge_token_absent():
         return None
@@ -986,6 +1023,10 @@ def _remote_refs(root, cfg, branch):
 
 
 def _branch_publication(root, head, remote_oid):
+    """Determine publication sync status between local HEAD and a remote branch commit.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if history cannot be verified.
+    """
     if remote_oid == head:
         return "pushed", []
     if not remote_oid:
@@ -1018,6 +1059,10 @@ def _branch_publication(root, head, remote_oid):
 
 
 def _publication(root, cfg, branch, head, observation=None):
+    """Verify remote alignment and determine publication and pull request status.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if remote verification fails.
+    """
     _validate_remote(_remote_url(root, cfg["remote"]), cfg["repository"])
     refs, branch_ref, base_ref = _remote_refs(root, cfg, branch)
     base_oid = refs.get(base_ref)
@@ -1045,6 +1090,10 @@ def _publication(root, cfg, branch, head, observation=None):
 
 
 def _open_pull_requests(root, cfg, branch):
+    """Query open pull requests for the specified branch and base using the gh CLI.
+
+    Returns a list of decoded pull request records, or raises CheckpointError on malformed JSON.
+    """
     fields = "number,url,isDraft,headRefOid,headRefName,baseRefName"
     if cfg.get("require_checks", False):
         fields += ",statusCheckRollup"
@@ -1058,6 +1107,10 @@ def _open_pull_requests(root, cfg, branch):
 
 
 def _pull_request(root, cfg, branch, head, observation=None):
+    """Inspect open pull request status and review checks for the branch and HEAD.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if PR state is ambiguous.
+    """
     repo = cfg["repository"]
     prs = _open_pull_requests(root, cfg, branch)
     if not isinstance(prs, list) or len(prs) > 1:
@@ -1081,6 +1134,10 @@ def _pull_request(root, cfg, branch, head, observation=None):
 
 
 def _check_run_state(check):
+    """Map a hosted check run's status and conclusion to an internal normalized state.
+
+    Returns 'pending', 'passed', 'failed', or 'skipped', or raises CheckpointError if invalid.
+    """
     status, conclusion = check.get("status"), check.get("conclusion")
     if not isinstance(status, str) or (conclusion is not None and not isinstance(conclusion, str)):
         raise CheckpointError("hosted check status and conclusion must be strings")
@@ -1244,6 +1301,10 @@ def _draft_gate_checks(root, cfg, pr, checks):
 
 
 def _review_state(checks, required, draft_gates=frozenset()):
+    """Aggregate hosted check results into an overall review status and counts.
+
+    Returns a (status, counts, missing) tuple, or raises CheckpointError if checks are invalid.
+    """
     if not isinstance(checks, list) or len(checks) >= MAX_CHECKS:
         raise CheckpointError("hosted check coverage is invalid or reaches its observation bound")
     states = ("passed", "failed", "pending", "draft_pending", "skipped")
@@ -1271,6 +1332,10 @@ def _review_state(checks, required, draft_gates=frozenset()):
 
 
 def _review_checks(root, pr, cfg, result):
+    """Evaluate hosted pull request checks and record review status into the result.
+
+    Returns a list of actionable instructions based on check outcomes, or an empty list.
+    """
     if not cfg.get("require_checks", False):
         return []
     checks = pr.get("statusCheckRollup")
@@ -1349,6 +1414,10 @@ def _observe_worktree(root, cfg, event, include_paths, result, *, require_branch
 
 
 def _verified_head(root):
+    """Resolve and validate the current HEAD commit object ID in the repository.
+
+    Returns the commit hex string or empty string, or raises CheckpointError if invalid.
+    """
     head = _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1)).decode().strip()
     if head and not OID.fullmatch(head):
         raise CheckpointError("HEAD is not a valid Git object ID")
@@ -1356,6 +1425,10 @@ def _verified_head(root):
 
 
 def _commit_due(root, cfg, event, head, public):
+    """Determine whether working tree changes meet criteria for a checkpoint commit.
+
+    Returns True if public changes exceed age or file count limits, or on a configured stop event.
+    """
     age = (
         time.time() - int(_git(root, "show", "-s", "--format=%ct", "HEAD").decode().strip())
         if head
@@ -1419,6 +1492,10 @@ def _observe_base(root, cfg, result):
 
 
 def _validate_stability(root, head, public, result):
+    """Verify that branch, HEAD, and public working tree state remained unchanged.
+
+    Raises CheckpointError if repository state mutated during checkpoint observation.
+    """
     if (
         _branch(root) != result["branch"]
         or _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1)).decode().strip()

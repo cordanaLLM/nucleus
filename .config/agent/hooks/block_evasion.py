@@ -499,6 +499,10 @@ def search(pattern, text):
 
 
 def check_command(command):
+    """Validate a pending command against size bounds and prohibited evasion patterns.
+
+    Raises Blocked if the command exceeds scan limits or matches a banned pattern.
+    """
     command = join_line_continuations(command)
     # re backtracks, so a longer command or line could stall this script past the harness's
     # hook timeout. Such a command is refused, never truncated.

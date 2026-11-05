@@ -69,6 +69,7 @@ def expiring_soon(entries, today, notice_days=NOTICE_DAYS):
 
 
 def warn_expiring(entries, today):
+    """Emit an ExpiryNotice warning for each entry expiring within the notice window."""
     for notice in expiring_soon(entries, today):
         warnings.warn(ExpiryNotice(notice), stacklevel=2)
 
@@ -91,6 +92,7 @@ def test_an_entry_near_its_expiry_raises_a_notice():
 
 
 def test_a_planted_entry_expiring_tomorrow_raises_a_notice():
+    """Verify that an entry expiring on the next day triggers an ExpiryNotice warning."""
     today = datetime.date(2026, 11, 5)
     entry = {"path": "pyproject.toml", "rule": "C420", "expires": "2026-11-06"}
     with pytest.warns(ExpiryNotice, match="pyproject.toml C420 expires on 2026-11-06"):
@@ -107,6 +109,7 @@ def test_a_planted_entry_expiring_tomorrow_raises_a_notice():
     ],
 )
 def test_the_notice_window_is_today_through_three_days_ahead(expires, noticed):
+    """Verify that the notice window includes dates from today through three days ahead."""
     entry = {"path": "pyproject.toml", "rule": "C420", "expires": expires}
     assert bool(expiring_soon([entry], datetime.date(2026, 11, 5))) is noticed
 
