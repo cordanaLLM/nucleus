@@ -2,12 +2,15 @@
 dated exception.
 
 An exception names one file and one rule. It expires on its category's interval and then fails
-this suite, so it is a debt with a due date and never grows into a tier of unlinted files.
+this suite, so it is a debt with a due date and never grows into a tier of unlinted files. In the
+NOTICE_DAYS before its expiry an entry raises an ExpiryNotice warning, which pytest lists in the
+warnings summary of every run, so the fix starts before the gate turns red.
 """
 
 import configparser
 import datetime
 import tomllib
+import warnings
 from pathlib import Path
 
 import pytest
@@ -24,6 +27,11 @@ FIELDS = {"path", "tool", "rule", "category", "entered", "expires", "reason"}
 TOOLS = {"ruff-lint", "ruff-format", "adoption-decline", "codespell"}
 # licence.yml already runs the REUSE lint job the ruleset requires (comment in .standards.yaml).
 PERMANENT_DECLINES = {"reuse-gate"}
+NOTICE_DAYS = 3
+
+
+class ExpiryNotice(UserWarning):
+    """An exception that still holds but expires within NOTICE_DAYS."""
 
 
 def load_entries(path=EXCEPTIONS):
@@ -50,6 +58,22 @@ def entry_problems(entry, today):
     return problems
 
 
+def expiring_soon(entries, today, notice_days=NOTICE_DAYS):
+    """Return 'path rule expires on <date>' for each entry that holds today but not for long."""
+    soon = []
+    for entry in entries:
+        expires = datetime.date.fromisoformat(entry["expires"])
+        if today <= expires <= today + datetime.timedelta(days=notice_days):
+            soon.append(f"{entry['path']} {entry['rule']} expires on {expires}")
+    return soon
+
+
+def warn_expiring(entries, today):
+    """Emit an ExpiryNotice warning for each entry expiring within the notice window."""
+    for notice in expiring_soon(entries, today):
+        warnings.warn(ExpiryNotice(notice), stacklevel=2)
+
+
 def pairs(entries, tool):
     return {(entry["path"], entry["rule"]) for entry in entries if entry["tool"] == tool}
 
@@ -61,6 +85,33 @@ def test_every_entry_holds_today():
         for entry in load_entries()
     }
     assert not {name: found for name, found in problems.items() if found}
+
+
+def test_an_entry_near_its_expiry_raises_a_notice():
+    warn_expiring(load_entries(), datetime.date.today())
+
+
+def test_a_planted_entry_expiring_tomorrow_raises_a_notice():
+    """Verify that an entry expiring on the next day triggers an ExpiryNotice warning."""
+    today = datetime.date(2026, 11, 5)
+    entry = {"path": "pyproject.toml", "rule": "C420", "expires": "2026-11-06"}
+    with pytest.warns(ExpiryNotice, match="pyproject.toml C420 expires on 2026-11-06"):
+        warn_expiring([entry], today)
+
+
+@pytest.mark.parametrize(
+    ("expires", "noticed"),
+    [
+        ("2026-11-04", False),
+        ("2026-11-05", True),
+        ("2026-11-08", True),
+        ("2026-11-09", False),
+    ],
+)
+def test_the_notice_window_is_today_through_three_days_ahead(expires, noticed):
+    """Verify that the notice window includes dates from today through three days ahead."""
+    entry = {"path": "pyproject.toml", "rule": "C420", "expires": expires}
+    assert bool(expiring_soon([entry], datetime.date(2026, 11, 5))) is noticed
 
 
 def test_every_entry_names_an_existing_file():

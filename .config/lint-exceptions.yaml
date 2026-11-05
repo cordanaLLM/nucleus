@@ -6,42 +6,6 @@
 # pyproject.toml, adoption decline in .standards.yaml or codespell skip in .codespellrc that no
 # entry names.
 exceptions:
-  - path: .config/lefthook/scripts/checkpoint.py
-    tool: ruff-lint
-    rule: C420
-    category: C
-    entered: "2026-10-25"
-    expires: "2026-11-04"
-    reason: >-
-      Engine-owned checkpoint evaluator from praetor's verified bundle; a local fix fails the
-      evaluator check. The engine fix is cordanaLLM/praetor#1250, still open on 2026-10-25.
-  - path: .config/lefthook/scripts/checkpoint.py
-    tool: ruff-format
-    rule: format
-    category: C
-    entered: "2026-10-25"
-    expires: "2026-11-04"
-    reason: >-
-      Engine-owned checkpoint evaluator, formatted at a shorter line length than this
-      repository's 100; cordanaLLM/praetor#1250.
-  - path: .config/lefthook/scripts/common.py
-    tool: ruff-format
-    rule: format
-    category: C
-    entered: "2026-10-25"
-    expires: "2026-11-04"
-    reason: >-
-      Engine-owned checkpoint helper, formatted at a shorter line length than this
-      repository's 100; cordanaLLM/praetor#1250.
-  - path: .config/agent/hooks/block_evasion.py
-    tool: ruff-format
-    rule: format
-    category: C
-    entered: "2026-10-25"
-    expires: "2026-11-04"
-    reason: >-
-      Engine-owned PreToolUse interceptor, formatted at a shorter line length than this
-      repository's 100; cordanaLLM/praetor#1250.
   - path: tools/figures/player/player.js
     tool: codespell
     rule: skip
