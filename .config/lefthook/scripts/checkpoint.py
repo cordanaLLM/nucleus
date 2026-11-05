@@ -266,7 +266,8 @@ def _validate_config(value, pairs):
     ):
         raise CheckpointError("checkpoint configuration has unknown or missing fields")
     if any(
-        type(value[name]) is not bool for name in ("enabled", "on_stop", "publish", "require_pr")
+        not isinstance(value[name], bool)
+        for name in ("enabled", "on_stop", "publish", "require_pr")
     ):
         raise CheckpointError("checkpoint boolean fields must be booleans")
     _validate_review_policy(value)
@@ -314,7 +315,7 @@ def _validate_repository(repo, prefixes):
 
 def _validate_review_policy(value):
     for key in ("enforce_batch_scope", "require_checks"):
-        if key in value and type(value[key]) is not bool:
+        if key in value and not isinstance(value[key], bool):
             raise CheckpointError("checkpoint boolean fields must be booleans")
     names = value.get("required_checks", [])
     if (
@@ -1068,7 +1069,7 @@ def _pull_request(root, cfg, branch, head, observation=None):
         not isinstance(pr, dict)
         or type(pr.get("number")) is not int
         or pr["number"] <= 0
-        or type(pr.get("isDraft")) is not bool
+        or not isinstance(pr.get("isDraft"), bool)
         or pr.get("headRefOid") != head
         or pr.get("headRefName") != branch
         or pr.get("baseRefName") != cfg["base"]

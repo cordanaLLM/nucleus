@@ -51,6 +51,11 @@ exclude = [
     "build",
 ]
 
+# The lefthook scripts run under the interpreter .config/lefthook/python.sh finds, which accepts
+# Python 3.10 (its floor), so they keep the branches 3.10 and 3.11 need.
+[tool.ruff.per-file-target-version]
+".config/lefthook/scripts/*.py" = "py310"
+
 [tool.ruff.lint]
 select = [
     "E",

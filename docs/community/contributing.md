@@ -79,7 +79,7 @@ sequenceDiagram
    ```
 
    `make lint` includes `make fmt-check`: `shfmt` and `ruff format` must report no change and
-   `ruff check` no finding (`make fmt` applies the formatting). Both tools come from the lock
+   `ruff check` no finding, over `scripts/`, `tests/`, `.agents/hooks-scripts/` and `.config/` (`make fmt` applies the formatting; the lefthook scripts are checked against Python 3.10, the floor `.config/lefthook/python.sh` accepts). Both tools come from the lock
    file. `make lint` also runs `make lint-spelling`: codespell, pinned in the same lock file, over
    every tracked file with the one configuration in `.codespellrc`, which names each word it
    ignores and why, and skips only the files `.config/lint-exceptions.yaml` names as dated
