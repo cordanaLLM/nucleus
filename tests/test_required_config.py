@@ -244,3 +244,35 @@ def test_merge_config_runs_the_check_after_the_survival_check():
     required = script.index("python3 scripts/check_required_config.py --config")
     copy = script.index('cp "${BUILD_DIR}/.config" "${OUTPUT_FILE}"')
     assert survival < required < copy
+
+
+def test_documented_configuration_claims_are_listed():
+    """Documented configuration claims are listed in required-config.json with their symbols."""
+    claims = {c.ident: c for c in crc.load_claims(REQUIRED)}
+    for ident in ("mq-deadline", "nvme-tcp", "bbr", "bbr3", "sched-ext", "realtime"):
+        assert ident in claims, f"claim {ident} is missing from {REQUIRED}"
+    realtime = claims["realtime"]
+    assert "CONFIG_HZ_1000" in realtime.symbols
+    assert "CONFIG_PREEMPT_RT" in realtime.symbols
+    assert realtime.symbols["CONFIG_HZ_1000"] == "y"
+    assert realtime.symbols["CONFIG_PREEMPT_RT"] == "y"
+
+
+def test_docs_make_no_latency_promise():
+    """Documentation files make no unverified latency, jitter, or performance promises."""
+    forbidden = (
+        "low-jitter",
+        "deterministic low-latency",
+        "nvme-of tcp optimizations",
+        "high-performance bare-metal",
+        "threaded irqs",
+    )
+    doc_files = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "docs" / "index.md",
+        REPO_ROOT / "docs" / "streams.md",
+    ]
+    for path in doc_files:
+        text = path.read_text(encoding="utf-8").lower()
+        for phrase in forbidden:
+            assert phrase not in text, f"{path.name} contains forbidden phrase {phrase!r}"

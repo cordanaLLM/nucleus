@@ -78,6 +78,10 @@ class CheckpointError(Exception):
 
 
 def _run(argv, root, *, allowed=(0,), network=False, timeout=None, index=None):
+    """Run a subprocess with bounded output and a sanitized git environment.
+
+    Raises CheckpointError if the command fails, times out, or exceeds output bounds.
+    """
     env = dict(os.environ)
     for key in (
         "GIT_DIR",
@@ -88,9 +92,7 @@ def _run(argv, root, *, allowed=(0,), network=False, timeout=None, index=None):
         "GIT_DIFF_OPTS",
     ):
         env.pop(key, None)
-    env.update(
-        GIT_TERMINAL_PROMPT="0", GH_PROMPT_DISABLED="1", PYTHONDONTWRITEBYTECODE="1"
-    )
+    env.update(GIT_TERMINAL_PROMPT="0", GH_PROMPT_DISABLED="1", PYTHONDONTWRITEBYTECODE="1")
     if index is not None:
         env["GIT_INDEX_FILE"] = str(index)
     try:
@@ -115,9 +117,7 @@ def _git(root, *args, **kwargs):
 # O_DIRECTORY or O_NOFOLLOW, so there the evaluator raised AttributeError before it read
 # anything, and every checkpoint hook in an adopted repository failed.
 DESCRIPTOR_RELATIVE = (
-    os.open in os.supports_dir_fd
-    and hasattr(os, "O_DIRECTORY")
-    and hasattr(os, "O_NOFOLLOW")
+    os.open in os.supports_dir_fd and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
 )
 POLICY_PARTS = (".config", "agent")
 POLICY_FILE = "checkpoint.json"
@@ -210,18 +210,18 @@ def _read_inspected(descriptor, inspected):
     """
     with open(descriptor, "rb", closefd=False) as stream:
         if not os.path.samestat(inspected, os.fstat(stream.fileno())):
-            raise CheckpointError(
-                "checkpoint configuration was replaced while it was read"
-            )
+            raise CheckpointError("checkpoint configuration was replaced while it was read")
         return _read_policy(stream)
 
 
 def _read_policy(stream):
+    """Read raw checkpoint policy bytes from an open regular file stream.
+
+    Raises CheckpointError if the stream is not a regular file or exceeds 1 MiB.
+    """
     info = os.fstat(stream.fileno())
     if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OUTPUT:
-        raise CheckpointError(
-            "checkpoint configuration must be a regular file <= 1 MiB"
-        )
+        raise CheckpointError("checkpoint configuration must be a regular file <= 1 MiB")
     raw = stream.read(MAX_OUTPUT + 1)
     if len(raw) > MAX_OUTPUT:
         raise CheckpointError("checkpoint configuration exceeds 1 MiB")
@@ -229,6 +229,10 @@ def _read_policy(stream):
 
 
 def _config(root):
+    """Load and validate the checkpoint configuration from the repository root.
+
+    Returns a disabled policy dictionary if absent, or raises CheckpointError if invalid.
+    """
     try:
         raw = _policy_bytes(root)
         if raw is None:
@@ -238,9 +242,7 @@ def _config(root):
             raw, object_pairs_hook=lambda items: (pairs.append(items), dict(items))[1]
         )
     except (OSError, ValueError, RecursionError) as error:
-        raise CheckpointError(
-            "invalid or inaccessible checkpoint configuration"
-        ) from error
+        raise CheckpointError("invalid or inaccessible checkpoint configuration") from error
     return _validate_config(value, pairs)
 
 
@@ -259,12 +261,14 @@ CONFIG_FIELDS = frozenset(
         "require_pr",
     }
 )
-OPTIONAL_CONFIG_FIELDS = frozenset(
-    {"enforce_batch_scope", "require_checks", "required_checks"}
-)
+OPTIONAL_CONFIG_FIELDS = frozenset({"enforce_batch_scope", "require_checks", "required_checks"})
 
 
 def _validate_config(value, pairs):
+    """Validate parsed checkpoint configuration schema, types, and values.
+
+    Returns the validated configuration dict, or raises CheckpointError if malformed.
+    """
     if any(len(dict(items)) != len(items) for items in pairs):
         raise CheckpointError("checkpoint configuration contains duplicate keys")
     if (
@@ -278,7 +282,7 @@ def _validate_config(value, pairs):
     ):
         raise CheckpointError("checkpoint configuration has unknown or missing fields")
     if any(
-        type(value[name]) is not bool
+        not isinstance(value[name], bool)
         for name in ("enabled", "on_stop", "publish", "require_pr")
     ):
         raise CheckpointError("checkpoint boolean fields must be booleans")
@@ -307,13 +311,14 @@ def _validate_thresholds_and_refs(value):
 
 
 def _validate_repository(repo, prefixes):
+    """Validate repository naming format and allowable branch prefix patterns.
+
+    Raises CheckpointError if the repository slug or branch prefixes violate format bounds.
+    """
     if (
         not isinstance(repo, str)
         or repo.count("/") != 1
-        or any(
-            item in {".", ".."} or not REPO_PART.fullmatch(item)
-            for item in repo.split("/")
-        )
+        or any(item in {".", ".."} or not REPO_PART.fullmatch(item) for item in repo.split("/"))
         or not isinstance(prefixes, list)
         or not 1 <= len(prefixes) <= 32
         or any(
@@ -329,8 +334,12 @@ def _validate_repository(repo, prefixes):
 
 
 def _validate_review_policy(value):
+    """Validate optional check enforcement and required hosted check settings.
+
+    Raises CheckpointError if check settings, dependencies, or check names are invalid.
+    """
     for key in ("enforce_batch_scope", "require_checks"):
-        if key in value and type(value[key]) is not bool:
+        if key in value and not isinstance(value[key], bool):
             raise CheckpointError("checkpoint boolean fields must be booleans")
     names = value.get("required_checks", [])
     if (
@@ -344,21 +353,15 @@ def _validate_review_policy(value):
             for name in names
         )
     ):
-        raise CheckpointError(
-            "required_checks must contain at most 64 bounded check names"
-        )
+        raise CheckpointError("required_checks must contain at most 64 bounded check names")
     if len(set(names)) != len(names):
         raise CheckpointError("required_checks contains duplicate names")
     if names and not value.get("require_checks", False):
         raise CheckpointError("required_checks requires require_checks")
-    if value.get("require_checks", False) and not (
-        value["publish"] and value["require_pr"]
-    ):
+    if value.get("require_checks", False) and not (value["publish"] and value["require_pr"]):
         raise CheckpointError("require_checks requires publication and PR observation")
     if value.get("require_checks", False) and not names:
-        raise CheckpointError(
-            "require_checks requires a nonempty required_checks selection"
-        )
+        raise CheckpointError("require_checks requires a nonempty required_checks selection")
 
 
 def _paths(raw):
@@ -381,6 +384,10 @@ def _diff_names(root, *options, timeout=None):
 
 
 def _worktree(root, timeout=None):
+    """Collect all modified, staged, and untracked public paths in the working tree.
+
+    Returns a set of public paths, or raises CheckpointError on conflicts or bad states.
+    """
     tracked = _diff_names(root, *NAME_ONLY, "--", timeout=timeout)
     untracked = _paths(
         _git(
@@ -401,10 +408,7 @@ def _worktree(root, timeout=None):
     public = {name for name in tracked | staged | untracked if _public(name)}
     if len(public) > MAX_PATHS:
         raise CheckpointError(f"changed public path count exceeds {MAX_PATHS}")
-    if any(
-        name == ".workingdir" or name.startswith(".workingdir/")
-        for name in private_writes
-    ):
+    if any(name == ".workingdir" or name.startswith(".workingdir/") for name in private_writes):
         raise CheckpointError("private .workingdir content is staged")
     if conflicts:
         raise CheckpointError("unresolved merge conflict in worktree")
@@ -556,13 +560,9 @@ def _worktree_base_ahead(path, cfg):
     remote = cfg["remote"]
     branch_ref = f"refs/remotes/{remote}/{branch}"
     base_ref = f"refs/remotes/{remote}/{cfg['base']}"
-    if not _remote_ref_exists(path, branch_ref) or not _remote_ref_exists(
-        path, base_ref
-    ):
+    if not _remote_ref_exists(path, branch_ref) or not _remote_ref_exists(path, base_ref):
         return False
-    return (
-        _rev_list_count(path, branch_ref) == 0 and _rev_list_count(path, base_ref) > 0
-    )
+    return _rev_list_count(path, branch_ref) == 0 and _rev_list_count(path, base_ref) > 0
 
 
 def _pull_request_argv(cfg, branch=None):
@@ -692,9 +692,7 @@ def _session_owned_worktrees(common_dir):
     session_hash = os.environ.get(SESSION_ENV, "").strip().lower()
     if not SESSION_HASH_RE.fullmatch(session_hash):
         return None
-    record_file = (
-        common_dir / "praetor-checkpoint" / "sessions" / f"{session_hash}.json"
-    )
+    record_file = common_dir / "praetor-checkpoint" / "sessions" / f"{session_hash}.json"
     try:
         with record_file.open("rb") as stream:
             raw = stream.read(MAX_RECORD_BYTES + 1)
@@ -818,8 +816,7 @@ def _ordered_map(fn, items):
                 return
 
     threads = [
-        threading.Thread(target=work)
-        for _ in range(min(WORKTREE_CHECK_WORKERS, len(items)))
+        threading.Thread(target=work) for _ in range(min(WORKTREE_CHECK_WORKERS, len(items)))
     ]
     for thread in threads:
         thread.start()
@@ -875,9 +872,7 @@ def _unfinished_worktree_records(root, cfg):
         if state is None or "UNVERIFIED" in state:
             reasons.append("pull request state not verified")
         elif not state.intersection({"OPEN", "MERGED"}):
-            reasons.append(
-                "pushed branch ahead of base has no open or merged pull request"
-            )
+            reasons.append("pushed branch ahead of base has no open or merged pull request")
     unfinished = [(entry, reasons) for entry, reasons in records if reasons]
     if owned is None:
         for _entry, reasons in unfinished:
@@ -894,9 +889,7 @@ def _add_unfinished_worktrees(root, cfg, result):
         {"path": item[0]["path"], "branch": item[0]["branch"], "reasons": item[1]}
         for item in records[:MAX_UNFINISHED_WORKTREES]
     ]
-    result["unfinished_worktrees_truncated"] = max(
-        0, len(records) - MAX_UNFINISHED_WORKTREES
-    )
+    result["unfinished_worktrees_truncated"] = max(0, len(records) - MAX_UNFINISHED_WORKTREES)
     if skipped:
         result["pull_request_check_skipped"] = skipped
     for entry, reasons in records[:MAX_WORKTREE_ACTIONS]:
@@ -940,23 +933,19 @@ def _ssh_transport_disabled(url):
 
 
 def _push_transport_disabled(root, cfg):
+    """Check whether git push transport to the configured remote is disabled.
+
+    Returns True if SSH is blocked or HTTPS has terminal prompts off without a credential helper.
+    """
     try:
         url = _remote_url(root, cfg["remote"])
     except CheckpointError:
         return False
-    if (
-        url.startswith("git@")
-        or url.startswith("ssh://")
-        or urlsplit(url).scheme == "ssh"
-    ):
+    if url.startswith("git@") or url.startswith("ssh://") or urlsplit(url).scheme == "ssh":
         return _ssh_transport_disabled(url)
     if urlsplit(url).scheme != "https" or os.environ.get("GIT_TERMINAL_PROMPT") != "0":
         return False
-    helper = (
-        _git(root, "config", "--get", "credential.helper", allowed=(0, 1))
-        .decode()
-        .strip()
-    )
+    helper = _git(root, "config", "--get", "credential.helper", allowed=(0, 1)).decode().strip()
     return not helper
 
 
@@ -968,17 +957,15 @@ def _forge_token_absent():
 
 
 def _detached_job_deferral(root, cfg):
+    """Determine whether detached job execution defers commit and publication duties.
+
+    Returns a reason string for a detached job (PRAETOR_DETACHED_JOB set) that has neither push
+    transport nor a forge token, or None otherwise.
+    """
     label = os.environ.get("PRAETOR_DETACHED_JOB")
-    if (
-        not label
-        or not _push_transport_disabled(root, cfg)
-        or not _forge_token_absent()
-    ):
+    if not label or not _push_transport_disabled(root, cfg) or not _forge_token_absent():
         return None
-    return (
-        f"detached job {label}: no push transport, no forge token; "
-        "the launching session commits"
-    )
+    return f"detached job {label}: no push transport, no forge token; the launching session commits"
 
 
 def _validate_remote(url, repository):
@@ -1036,6 +1023,10 @@ def _remote_refs(root, cfg, branch):
 
 
 def _branch_publication(root, head, remote_oid):
+    """Determine publication sync status between local HEAD and a remote branch commit.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if history cannot be verified.
+    """
     if remote_oid == head:
         return "pushed", []
     if not remote_oid:
@@ -1051,9 +1042,7 @@ def _branch_publication(root, head, remote_oid):
             "branch ancestry is unverified in shallow history; fetch missing history and review"
         )
     counts = (
-        _git(root, "rev-list", "--left-right", "--count", f"{head}...{remote_oid}")
-        .decode()
-        .split()
+        _git(root, "rev-list", "--left-right", "--count", f"{head}...{remote_oid}").decode().split()
     )
     if len(counts) != 2 or any(not value.isdecimal() for value in counts):
         raise CheckpointError("branch ancestry count is malformed")
@@ -1070,6 +1059,10 @@ def _branch_publication(root, head, remote_oid):
 
 
 def _publication(root, cfg, branch, head, observation=None):
+    """Verify remote alignment and determine publication and pull request status.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if remote verification fails.
+    """
     _validate_remote(_remote_url(root, cfg["remote"]), cfg["repository"])
     refs, branch_ref, base_ref = _remote_refs(root, cfg, branch)
     base_oid = refs.get(base_ref)
@@ -1086,9 +1079,7 @@ def _publication(root, cfg, branch, head, observation=None):
     status, actions = _branch_publication(root, head, refs.get(branch_ref))
     if status in {"remote_ahead", "diverged"}:
         return status, actions
-    ahead = int(
-        _git(root, "rev-list", "--count", f"{base_oid}..{head}").decode().strip()
-    )
+    ahead = int(_git(root, "rev-list", "--count", f"{base_oid}..{head}").decode().strip())
     if ahead <= 0:
         return "not_ahead", []
     if status == "due_push":
@@ -1099,6 +1090,10 @@ def _publication(root, cfg, branch, head, observation=None):
 
 
 def _open_pull_requests(root, cfg, branch):
+    """Query open pull requests for the specified branch and base using the gh CLI.
+
+    Returns a list of decoded pull request records, or raises CheckpointError on malformed JSON.
+    """
     fields = "number,url,isDraft,headRefOid,headRefName,baseRefName"
     if cfg.get("require_checks", False):
         fields += ",statusCheckRollup"
@@ -1108,12 +1103,14 @@ def _open_pull_requests(root, cfg, branch):
     try:
         return json.loads(raw)
     except json.JSONDecodeError as error:
-        raise CheckpointError(
-            f"gh returned malformed pull request data: {error}"
-        ) from error
+        raise CheckpointError(f"gh returned malformed pull request data: {error}") from error
 
 
 def _pull_request(root, cfg, branch, head, observation=None):
+    """Inspect open pull request status and review checks for the branch and HEAD.
+
+    Returns a (status, actions) tuple, or raises CheckpointError if PR state is ambiguous.
+    """
     repo = cfg["repository"]
     prs = _open_pull_requests(root, cfg, branch)
     if not isinstance(prs, list) or len(prs) > 1:
@@ -1125,24 +1122,24 @@ def _pull_request(root, cfg, branch, head, observation=None):
         not isinstance(pr, dict)
         or type(pr.get("number")) is not int
         or pr["number"] <= 0
-        or type(pr.get("isDraft")) is not bool
+        or not isinstance(pr.get("isDraft"), bool)
         or pr.get("headRefOid") != head
         or pr.get("headRefName") != branch
         or pr.get("baseRefName") != cfg["base"]
         or pr.get("url") != f"https://github.com/{repo}/pull/{pr['number']}"
     ):
         raise CheckpointError("pull request does not match the exact branch head/base")
-    actions = _review_checks(
-        root, pr, cfg, observation if observation is not None else {}
-    )
+    actions = _review_checks(root, pr, cfg, observation if observation is not None else {})
     return "present", actions
 
 
 def _check_run_state(check):
+    """Map a hosted check run's status and conclusion to an internal normalized state.
+
+    Returns 'pending', 'passed', 'failed', or 'skipped', or raises CheckpointError if invalid.
+    """
     status, conclusion = check.get("status"), check.get("conclusion")
-    if not isinstance(status, str) or (
-        conclusion is not None and not isinstance(conclusion, str)
-    ):
+    if not isinstance(status, str) or (conclusion is not None and not isinstance(conclusion, str)):
         raise CheckpointError("hosted check status and conclusion must be strings")
     if status in {"QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED"}:
         if conclusion not in {None, ""}:
@@ -1264,9 +1261,7 @@ def _draft_marked_names(data):
             name = run.get("name") if isinstance(run, dict) else None
             if not isinstance(name, str):
                 raise CheckpointError("gh returned malformed check annotation data")
-            carries = _carries_draft_marker(
-                _nodes(run, "annotations", MAX_DRAFT_ANNOTATIONS)
-            )
+            carries = _carries_draft_marker(_nodes(run, "annotations", MAX_DRAFT_ANNOTATIONS))
             marked[name] = marked.get(name, True) and carries
     return {name for name, carries in marked.items() if carries}
 
@@ -1301,19 +1296,19 @@ def _draft_gate_checks(root, cfg, pr, checks):
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise CheckpointError(
-            f"gh returned malformed check annotation data: {error}"
-        ) from error
+        raise CheckpointError(f"gh returned malformed check annotation data: {error}") from error
     return frozenset(_draft_marked_names(data) & failed)
 
 
 def _review_state(checks, required, draft_gates=frozenset()):
+    """Aggregate hosted check results into an overall review status and counts.
+
+    Returns a (status, counts, missing) tuple, or raises CheckpointError if checks are invalid.
+    """
     if not isinstance(checks, list) or len(checks) >= MAX_CHECKS:
-        raise CheckpointError(
-            "hosted check coverage is invalid or reaches its observation bound"
-        )
+        raise CheckpointError("hosted check coverage is invalid or reaches its observation bound")
     states = ("passed", "failed", "pending", "draft_pending", "skipped")
-    counts = {name: 0 for name in states}
+    counts = dict.fromkeys(states, 0)
     passed = set()
     for check in _latest_runs(checks):
         name, state = _check_observation(check)
@@ -1337,6 +1332,10 @@ def _review_state(checks, required, draft_gates=frozenset()):
 
 
 def _review_checks(root, pr, cfg, result):
+    """Evaluate hosted pull request checks and record review status into the result.
+
+    Returns a list of actionable instructions based on check outcomes, or an empty list.
+    """
     if not cfg.get("require_checks", False):
         return []
     checks = pr.get("statusCheckRollup")
@@ -1354,8 +1353,7 @@ def _review_checks(root, pr, cfg, result):
     )
     actions = {
         "failed": (
-            "Inspect and repair failed hosted checks; "
-            "record blockers before claiming completion."
+            "Inspect and repair failed hosted checks; record blockers before claiming completion."
         ),
         "pending": (
             "Recheck pending hosted checks for this exact head before claiming completion."
@@ -1416,26 +1414,28 @@ def _observe_worktree(root, cfg, event, include_paths, result, *, require_branch
 
 
 def _verified_head(root):
-    head = (
-        _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1))
-        .decode()
-        .strip()
-    )
+    """Resolve and validate the current HEAD commit object ID in the repository.
+
+    Returns the commit hex string or empty string, or raises CheckpointError if invalid.
+    """
+    head = _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1)).decode().strip()
     if head and not OID.fullmatch(head):
         raise CheckpointError("HEAD is not a valid Git object ID")
     return head
 
 
 def _commit_due(root, cfg, event, head, public):
+    """Determine whether working tree changes meet criteria for a checkpoint commit.
+
+    Returns True if public changes exceed age or file count limits, or on a configured stop event.
+    """
     age = (
-        time.time()
-        - int(_git(root, "show", "-s", "--format=%ct", "HEAD").decode().strip())
+        time.time() - int(_git(root, "show", "-s", "--format=%ct", "HEAD").decode().strip())
         if head
         else cfg["commit_after_minutes"] * 60
     )
     due = bool(public) and (
-        age >= cfg["commit_after_minutes"] * 60
-        or len(public) >= cfg["commit_after_files"]
+        age >= cfg["commit_after_minutes"] * 60 or len(public) >= cfg["commit_after_files"]
     )
     return due or (event == "stop" and cfg["on_stop"] and bool(public))
 
@@ -1492,20 +1492,18 @@ def _observe_base(root, cfg, result):
 
 
 def _validate_stability(root, head, public, result):
+    """Verify that branch, HEAD, and public working tree state remained unchanged.
+
+    Raises CheckpointError if repository state mutated during checkpoint observation.
+    """
     if (
         _branch(root) != result["branch"]
-        or _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1))
-        .decode()
-        .strip()
+        or _git(root, "rev-parse", "--verify", "--quiet", "HEAD", allowed=(0, 1)).decode().strip()
         != head
     ):
-        raise CheckpointError(
-            "branch or HEAD changed during checkpoint observation; retry"
-        )
+        raise CheckpointError("branch or HEAD changed during checkpoint observation; retry")
     if not result["due"] and _worktree(root) != public:
-        raise CheckpointError(
-            "working tree changed during checkpoint observation; retry"
-        )
+        raise CheckpointError("working tree changed during checkpoint observation; retry")
 
 
 def _inspect_enabled_checkpoint(root, cfg, event, include_paths, result):

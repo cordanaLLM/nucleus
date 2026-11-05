@@ -43,7 +43,7 @@ private scratch-link policy.
 
 1. **Multi-Stream Channels**: Builds and packages 4 kernel streams from live upstream sources (kernel.org).
 2. **Multi-Architecture**: Produces native `.deb` packages for `x86_64` (AMD64), `arm64` (AArch64), and `riscv64`.
-3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBR congestion control (BBRv1 the default; BBRv3 as a module on `bleeding`, `mainstream` and `realtime`, from Google's patch series in [`docs/patches.md`](docs/patches.md)), eBPF sched-ext scheduling, and NVMe-oF TCP optimizations. Every release in OpenZFS's supported Linux range is checked by building the OpenZFS module against its published headers (section 5.6 of [`docs/packaging.md`](docs/packaging.md)).
+3. **Hardened Configuration Fragments**: Enforces NASA/JPL Power of 10 principles, KSPP security hardening, BBR congestion control (BBRv1 the default, BBRv3 as a module on `bleeding`, `mainstream` and `realtime`, from Google's patch series in [`docs/patches.md`](docs/patches.md)), eBPF sched-ext scheduling, and the NVMe-oF TCP host driver (`nvme-tcp` module on `x86_64` and `arm64`). BBR/BBRv3, sched-ext, and nvme-tcp are configuration present and enabled, checked by `kconfig/required-config.json` and `scripts/check_required_config.py`. Every release in OpenZFS's supported Linux range is checked by building the OpenZFS module against its published headers (section 5.6 of [`docs/packaging.md`](docs/packaging.md)).
 4. **Bidirectional Downstream Integration**: Synchronizes verified releases downstream to `imago` via GitHub `repository_dispatch`. A kernel release is tagged `v<version>-<stream>-lusoris<N>`; the repository's own releases are tagged `nucleus-v<X.Y.Z>` and never start one (section 5.4 of [`docs/packaging.md`](docs/packaging.md)).
 
 ```mermaid
@@ -62,7 +62,7 @@ flowchart TD
         Bleeding["bleeding (7.3-rc7)<br/><small>RTX 5090 / B200 / sched-ext</small>"]:::stream
         Mainstream["mainstream (7.2.11)<br/><small>AMD ROCm / Podman 5.x</small>"]:::stream
         LTS["lts (6.18.58)<br/><small>Enterprise K8s / OpenZFS 2.3</small>"]:::stream
-        RT["realtime (7.2.11 + PREEMPT_RT)<br/><small>Deterministic Low-Latency</small>"]:::stream
+        RT["realtime (7.2.11 + PREEMPT_RT)<br/><small>PREEMPT_RT, HZ_1000</small>"]:::stream
     end
 
     Downstream["Downstream Image Forge<br/><small>cordanaLLM/imago</small>"]:::dest
@@ -85,7 +85,7 @@ flowchart TD
 | **`bleeding`** | **Linux 7.3-rc7** | NVIDIA Blackwell RTX 5090 / B200 (open kernel modules checked in CI, [packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)), CXL 3.0, sched-ext, BBR | `*-nvidia-bleeding` |
 | **`mainstream`** | **Linux 7.2.11** | Podman 5.x; Intel Arc Battlemage Xe2 (`xe`) and AMD Radeon for ROCm (`amdgpu` with KFD) are built and claimed on all four streams on x86_64 (arm64 waits for a consumer requirement document); NVIDIA open kernel modules checked in CI ([packaging 5.7](docs/packaging.md#57-nvidia-open-gpu-kernel-modules-build-githubworkflowsnvidia-open-moduleyml)) | `base-*`, `docker-*`, `ai-infer-*` |
 | **`lts`** | **Linux 6.18.58** | Enterprise Kubernetes nodes (`k8s-node-*`), OpenZFS 2.3, CloudNativePG (`cloudnative-pg`) | `k8s-node-*`, `cloudnative-storage` |
-| **`realtime`** | **Linux 7.2.11**, in-tree `PREEMPT_RT` | PREEMPT_RT deterministic gaming servers, low-latency audio/telecom, WireGuard gateway | `appliance-game-server`, `appliance-gateway-dns` |
+| **`realtime`** | **Linux 7.2.11**, in-tree `PREEMPT_RT` | Intended for game servers, audio/telecom and gateways; PREEMPT_RT and HZ_1000 enabled, latency not measured | `appliance-game-server`, `appliance-gateway-dns` |
 
 Intel Arc Battlemage (Xe2) on `xe` and AMD Radeon for ROCm on `amdgpu` with `HSA_AMD` are built and claimed across all four streams on x86_64; arm64 is not claimed until a consumer requirement document asks for it. Level Zero is user space: `intel/compute-runtime` runs on the xe uAPI and needs no kernel patch; nucleus ships no user space. The oldest pinned stream (`lts` 6.18.58) provides the xe uAPI of Linux 6.18 (`include/uapi/drm/xe_drm.h`).
 
@@ -210,6 +210,12 @@ make ruleset
 
 # Run the praetor checks the CI job runs
 make governance-check PRAETOR_SRC=<praetor checkout at the pin>
+
+# Format and lint check (shfmt, ruff over scripts/, tests/, .agents/hooks-scripts/ and .config/),
+# then the test suite; a dated lint exception within three days of its expiry shows as an
+# ExpiryNotice in the pytest warnings summary, and an expired one fails (docs/community/contributing.md)
+make lint
+make test
 ```
 
 ---

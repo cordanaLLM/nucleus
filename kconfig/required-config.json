@@ -150,13 +150,33 @@
     },
     {
       "id": "bbr",
-      "claim": "BBR congestion control and mq-deadline (README.md, docs/streams.md)",
+      "claim": "BBR congestion control (README.md, docs/streams.md)",
       "streams": "all",
       "architectures": "all",
       "symbols": {
         "CONFIG_TCP_CONG_BBR": "y",
-        "CONFIG_DEFAULT_BBR": "y",
+        "CONFIG_DEFAULT_BBR": "y"
+      }
+    },
+    {
+      "id": "mq-deadline",
+      "claim": "mq-deadline I/O scheduler (README.md, docs/streams.md)",
+      "streams": "all",
+      "architectures": "all",
+      "symbols": {
         "CONFIG_MQ_IOSCHED_DEADLINE": "y"
+      }
+    },
+    {
+      "id": "nvme-tcp",
+      "claim": "NVMe-oF TCP host driver (README.md, docs/streams.md)",
+      "streams": "all",
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ],
+      "symbols": {
+        "CONFIG_NVME_TCP": "built"
       }
     },
     {
@@ -192,13 +212,14 @@
     },
     {
       "id": "realtime",
-      "claim": "the in-tree PREEMPT_RT preemption model (docs/streams.md)",
+      "claim": "the in-tree PREEMPT_RT preemption model and 1000 Hz timer (docs/streams.md)",
       "streams": [
         "realtime"
       ],
       "architectures": "all",
       "symbols": {
-        "CONFIG_PREEMPT_RT": "y"
+        "CONFIG_PREEMPT_RT": "y",
+        "CONFIG_HZ_1000": "y"
       }
     }
   ]

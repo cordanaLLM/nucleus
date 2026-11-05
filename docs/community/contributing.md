@@ -79,11 +79,11 @@ sequenceDiagram
    ```
 
    `make lint` includes `make fmt-check`: `shfmt` and `ruff format` must report no change and
-   `ruff check` no finding (`make fmt` applies the formatting). Both tools come from the lock
+   `ruff check` no finding, over `scripts/`, `tests/`, `.agents/hooks-scripts/` and `.config/` (`make fmt` applies the formatting; the lefthook scripts are checked against Python 3.10, the floor `.config/lefthook/python.sh` accepts). Both tools come from the lock
    file. `make lint` also runs `make lint-spelling`: codespell, pinned in the same lock file, over
    every tracked file with the one configuration in `.codespellrc`, which names each word it
    ignores and why, and skips only the files `.config/lint-exceptions.yaml` names as dated
-   exceptions (a minified bundle, an upstream patch and the base64 praetor source chunks). `make audit` runs `scripts/audit-repository-health.sh`. Each of them fails, naming the
+   exceptions (a minified bundle, an upstream patch and the base64 praetor source chunks). Each such exception expires on its category's interval; `tests/test_lint_exceptions.py` fails on an expired one and, in the three days before, lists an `ExpiryNotice` in the pytest warnings summary of `make test`. `make audit` runs `scripts/audit-repository-health.sh`. Each of them fails, naming the
    tool, when a tool it needs is missing. `make docs-build` runs `mkdocs build --strict`, which
    fails on a broken link or any other warning. `ci.yml` runs all four on every pull request.
    When you add or bump an action pin under `.github/workflows/`, also run `make lint-pins`.
