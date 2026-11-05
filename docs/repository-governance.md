@@ -160,12 +160,14 @@ belongs to a workflow run whose event is `workflow_run` or `schedule` (`schedule
 their build job's `if:` skips it by design when the plan matrix is empty. Main commit da43025
 went red on that skip. The workflow run's own conclusion still gates, so a failed or cancelled
 downstream run still fails, and a skipped job in a `push` or `pull_request` run still fails. The list holds
-`Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan Gate judges, and
+`Semgrep SAST` and `Trivy Filesystem CVE Scan`, whose skips the Security Scan Gate judges,
 `verify-tool-release`, which `release-please.yml` runs only on the push to `main` that creates a
-release, or on a dispatch that names a tag. Every other push to `main` skips it, and main commit
-3392531 went red on that skip. `tests/test_gates_refuse_skipped.py` fails when the list differs
-from the detector-gated jobs in `security-scans.yml` plus the release-gated jobs in
-`release-please.yml`, and when a listed check that failed or was cancelled passes. The gate also
+release, or on a dispatch that names a tag (every other push to `main` skips it, and main commit
+3392531 went red on that skip), and `Sourcery review`, which the Sourcery app reports as skipped
+when its review budget is spent; a failed review still fails. `tests/test_gates_refuse_skipped.py`
+fails when the list differs from the detector-gated jobs in `security-scans.yml` plus the
+release-gated jobs in `release-please.yml` and external app checks, and when a listed check that
+failed or was cancelled passes. The gate also
 fails when it finds no other check run. `tests/test_required_checks_once.py` tests `decide()`
 across positive, negative, pending, boundary (`bound` vs `bound + 1` s), never-finishing build,
 excluded workflow, ignored check-name, non-Actions pending, superseded-suite and downstream-skip cases, plus end-to-end

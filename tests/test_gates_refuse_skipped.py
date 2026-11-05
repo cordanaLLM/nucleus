@@ -20,6 +20,8 @@ GATE_SCRIPT = REPO_ROOT / "scripts" / "required_checks_gate.py"
 DETECTOR_GATED = {"Semgrep SAST", "Trivy Filesystem CVE Scan"}
 # release-please.yml jobs that run only when a release was created (or a tag was dispatched).
 RELEASE_GATED = {"verify-tool-release"}
+# External GitHub Apps that post check runs whose budget exhaustion concludes "skipped".
+EXTERNAL_GATED = {"Sourcery review"}
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import required_checks_gate as gate  # noqa: E402
@@ -269,7 +271,7 @@ def test_the_aggregator_runs_the_gate_and_allows_only_detector_and_release_gated
         step["run"] for step in job["steps"] if "required_checks_gate.py" in step.get("run", "")
     )
     allowed = {part.split('"')[1] for part in run.split("--allow-skip")[1:]}
-    assert allowed == DETECTOR_GATED | RELEASE_GATED
+    assert allowed == DETECTOR_GATED | RELEASE_GATED | EXTERNAL_GATED
 
 
 def test_the_allowed_release_skips_are_exactly_the_jobs_gated_on_a_created_release():

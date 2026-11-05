@@ -25,7 +25,8 @@
 # (--exclude-workflow .github/workflows/required-aggregator.yml) and its check-run names
 # (--ignore-check "Evaluate required checks" and legacy --ignore-check required-checks).
 # Skipped checks pass only when named with --allow-skip (Semgrep SAST, Trivy Filesystem CVE Scan,
-# verify-tool-release).
+# verify-tool-release, and Sourcery review, which the Sourcery app reports as skipped when its
+# review budget is spent; a failed review still fails).
 
 name: required-aggregator
 on:
@@ -162,6 +163,7 @@ jobs:
               --allow-skip "Semgrep SAST" \
               --allow-skip "Trivy Filesystem CVE Scan" \
               --allow-skip "verify-tool-release" \
+              --allow-skip "Sourcery review" \
               --target-url "${TARGET_URL}" \
               "${extra_args[@]}" || rc=$?
             if [[ "${rc}" -ne 0 ]]; then
