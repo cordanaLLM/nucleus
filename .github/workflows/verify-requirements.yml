@@ -262,7 +262,7 @@ jobs:
       cancel-in-progress: false
     container:
       # The digest every workflow that runs ubuntu:26.04 pins (tests/test_workflows.py).
-      image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+      image: ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.verify.outputs.plan) }}
